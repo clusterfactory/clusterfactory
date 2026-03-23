@@ -6,8 +6,8 @@ description: >
   platform. All connections live in readable wiring/ YAML files.
   Includes a browser terminal (Cockpit) and cluster UI (Headlamp).
 type: application
-version: 0.1.5
-appVersion: "0.1.5"
+version: 0.1.6
+appVersion: "0.1.6"
 keywords:
   - gitops
   - gitea
