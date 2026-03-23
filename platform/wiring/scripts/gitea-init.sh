@@ -16,15 +16,78 @@ HARBOR_URL="http://${RELEASE_NAME}-harbor-core.${NS}.svc.cluster.local"
 HARBOR_PASSWORD="${HARBOR_PASSWORD}"
 OPENBAO_ADDR="http://${RELEASE_NAME}-openbao.${NS}.svc.cluster.local:8200"
 OPENBAO_TOKEN="${OPENBAO_TOKEN}"
+ARGOCD_SERVER="http://clusterfactory-argo-cd-server.${NS}.svc.cluster.local:80"
 
-# ── 1. Wait for Gitea ──────────────────────────────────────────────────────
-echo "=== [1] Waiting for Gitea ==="
-for i in $(seq 1 60); do
-  curl -sf "${GITEA_URL}/api/healthz" > /dev/null 2>&1 && { echo "Gitea ready"; break; }
-  echo "  [$i/60] not ready, retrying..."
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  READINESS GATE — wait for all 6 components in order               ║
+# ║  Nothing starts until every service is up.                         ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+_wait() {
+  local name="$1" url="$2" retries="${3:-120}" delay="${4:-5}"
+  echo ">>> [$name] waiting (up to $((retries * delay))s)..."
+  for i in $(seq 1 "${retries}"); do
+    curl -sf --max-time 3 "${url}" > /dev/null 2>&1 && { echo ">>> [$name] ready"; return 0; }
+    echo "    [$i/${retries}] not ready..."
+    sleep "${delay}"
+  done
+  echo ">>> [$name] TIMED OUT — aborting" && exit 1
+}
+_wait_auth() {
+  local name="$1" url="$2" user="$3" pass="$4" retries="${5:-120}" delay="${6:-5}"
+  echo ">>> [$name] waiting (up to $((retries * delay))s)..."
+  for i in $(seq 1 "${retries}"); do
+    curl -sf --max-time 3 -u "${user}:${pass}" "${url}" > /dev/null 2>&1 && { echo ">>> [$name] ready"; return 0; }
+    echo "    [$i/${retries}] not ready..."
+    sleep "${delay}"
+  done
+  echo ">>> [$name] TIMED OUT — aborting" && exit 1
+}
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║  clusterfactory init — readiness gate                               ║"
+echo "╚══════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# 1. OpenBao — secrets must be writable before anything else
+_wait      "1/6 OpenBao"    "${OPENBAO_ADDR}/v1/sys/health"
+
+# 2. Gitea — source of truth for repo, tokens, runner
+_wait      "2/6 Gitea"      "${GITEA_URL}/api/healthz"
+
+# 3. Harbor core — registry must be up before project creation
+_wait_auth "3/6 Harbor"     "${HARBOR_URL}/api/v2.0/ping" "admin" "${HARBOR_PASSWORD}"
+
+# 4. ArgoCD server — must be up to read initial admin secret
+_wait      "4/6 ArgoCD"     "${ARGOCD_SERVER}/healthz"
+
+# 5. Crossplane — check deployment rolled out (pod label)
+echo ">>> [5/6 Crossplane] waiting for pod to be Running..."
+for i in $(seq 1 120); do
+  PHASE=$(kubectl get pods -n "${NS}" -l app=crossplane \
+    --field-selector=status.phase=Running -o name 2>/dev/null | head -1)
+  [ -n "${PHASE}" ] && { echo ">>> [5/6 Crossplane] ready"; break; }
+  [ "${i}" -eq 120 ] && { echo ">>> [5/6 Crossplane] TIMED OUT — aborting"; exit 1; }
+  echo "    [$i/120] not ready..."
   sleep 5
 done
-# ── 2. Create demo repo ────────────────────────────────────────────────────
+
+# 6. ArgoCD initial-admin-secret — created after server is live, takes a moment
+echo ">>> [6/6 ArgoCD admin secret] waiting..."
+for i in $(seq 1 60); do
+  SECRET=$(kubectl get secret argocd-initial-admin-secret -n "${NS}" \
+    -o jsonpath='{.data.password}' 2>/dev/null || true)
+  [ -n "${SECRET}" ] && { echo ">>> [6/6 ArgoCD admin secret] ready"; break; }
+  [ "${i}" -eq 60 ] && { echo ">>> [6/6 ArgoCD admin secret] TIMED OUT — aborting"; exit 1; }
+  echo "    [$i/60] not ready..."
+  sleep 5
+done
+
+echo ""
+echo "  all 6 components ready — starting init sequence"
+echo ""
+
+# ── 1. Create demo repo ────────────────────────────────────────────────────
 echo "=== [2] Creating demo repo ==="
 curl -sf -X POST "${GITEA_URL}/api/v1/user/repos" \
   -u "${GITEA_USER}:${GITEA_PASSWORD}" \
@@ -84,14 +147,8 @@ GITEA_TOKEN=$(curl -sf -X POST "${GITEA_URL}/api/v1/users/${GITEA_USER}/tokens" 
   -d '{"name":"argocd-token","scopes":["read:repository","write:repository","read:admin"]}' | jq -r '.sha1')
 REPO_URL="http://${RELEASE_NAME}-gitea-http.${NS}.svc.cluster.local:3000/${GITEA_USER}/clusterfactory-demo.git"
 echo "  Gitea token created."
-# ── 6. Wait for Harbor + create project ─────────────────────────────────────
-echo "=== [6] Waiting for Harbor ==="
-for i in $(seq 1 120); do
-  curl -sf -u "admin:${HARBOR_PASSWORD}" "${HARBOR_URL}/api/v2.0/ping" > /dev/null 2>&1 \
-    && { echo "Harbor ready"; break; }
-  echo "  [$i/120] not ready..."
-  sleep 5
-done
+# ── 6. Create Harbor project ────────────────────────────────────────────────
+echo "=== [6] Creating Harbor project ==="
 curl -s -X POST "${HARBOR_URL}/api/v2.0/projects" \
   -u "admin:${HARBOR_PASSWORD}" \
   -H "Content-Type: application/json" \
@@ -99,11 +156,6 @@ curl -s -X POST "${HARBOR_URL}/api/v2.0/projects" \
   > /dev/null || echo "  (project may already exist)"
 # ── 7. Configure OpenBao ────────────────────────────────────────────────────
 echo "=== [7] Configuring OpenBao ==="
-for i in $(seq 1 30); do
-  curl -sf "${OPENBAO_ADDR}/v1/sys/health" > /dev/null 2>&1 && { echo "OpenBao ready"; break; }
-  echo "  [$i/30] not ready..."
-  sleep 5
-done
 curl -s -X POST "${OPENBAO_ADDR}/v1/sys/auth/kubernetes" \
   -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
   -H "Content-Type: application/json" \
@@ -131,13 +183,8 @@ curl -sf -X POST "${OPENBAO_ADDR}/v1/secret/data/harbor" \
 echo "  Harbor credentials stored at secret/harbor."
 # ── 9. Store ArgoCD credentials in OpenBao ──────────────────────────────────
 echo "=== [9] Storing ArgoCD creds in OpenBao ==="
-for i in $(seq 1 30); do
-  ARGOCD_PASS=$(kubectl get secret argocd-initial-admin-secret \
-    -n "${NS}" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
-  [ -n "${ARGOCD_PASS}" ] && break
-  echo "  [$i/30] waiting for ArgoCD admin secret..."
-  sleep 5
-done
+ARGOCD_PASS=$(kubectl get secret argocd-initial-admin-secret \
+  -n "${NS}" -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
 curl -sf -X POST "${OPENBAO_ADDR}/v1/secret/data/argocd" \
   -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
   -H "Content-Type: application/json" \
