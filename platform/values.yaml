@@ -36,6 +36,13 @@ gitea:
         DEFAULT_ACTIONS_URL: github
       server:
         ROOT_URL: http://localhost:30080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
   service:
     http:
       type: NodePort
@@ -47,8 +54,23 @@ gitea:
     primary:
       persistence:
         size: 2Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
   valkey:
     enabled: true
+    master:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
   valkey-cluster:
     enabled: false
   postgresql-ha:
@@ -69,6 +91,37 @@ argo-cd:
     service:
       type: LoadBalancer
       servicePortHttp: 8080
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  repoServer:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  controller:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+  redis:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
 
 crossplaneProviders:
   enabled: false   # set true to install the Kubernetes provider via wiring
@@ -82,6 +135,13 @@ crossplane:
     limits:
       cpu: 200m
       memory: 256Mi
+  resourcesRBACManager:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 
 openbao:
   enabled: true
@@ -96,6 +156,9 @@ openbao:
       requests:
         cpu: 50m
         memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
 
 harbor:
   enabled: true
@@ -115,18 +178,66 @@ harbor:
     resources:
       requests:
         cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
   core:
     resources:
       requests:
         cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
   jobservice:
     resources:
       requests:
         cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
   registry:
     resources:
       requests:
         cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  trivy:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+  nginx:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  database:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  redis:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
 
 velero:
   enabled: false
