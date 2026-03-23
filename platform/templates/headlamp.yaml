@@ -1,0 +1,60 @@
+{{- if .Values.headlamp.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-headlamp
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-headlamp
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-headlamp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}-headlamp
+    spec:
+      serviceAccountName: {{ .Release.Name }}-init   # reuses existing cluster-admin SA
+      containers:
+        - name: headlamp
+          image: ghcr.io/headlamp-k8s/headlamp:latest
+          args:
+            - -in-cluster          # use pod's mounted SA token, no kubeconfig needed
+            - -plugins-dir=/headlamp/plugins
+          ports:
+            - containerPort: 4466
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 4466
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-headlamp
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-headlamp
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: {{ .Release.Name }}-headlamp
+  ports:
+    - port: {{ .Values.headlamp.port | default 4466 }}
+      targetPort: 4466
+      protocol: TCP
+{{- end }}

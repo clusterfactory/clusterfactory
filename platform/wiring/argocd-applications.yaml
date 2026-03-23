@@ -1,0 +1,28 @@
+# argocd-applications.yaml
+# CONNECTION: ArgoCD watches Gitea repo
+# WHAT: ArgoCD syncs any Kubernetes manifests committed under deploy/
+# VARIABLES: $ARGOCD_NS, $NS, $REPO_URL
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-demo
+  namespace: $ARGOCD_NS
+  labels:
+    platform/wiring: "argocd-applications"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: $REPO_URL
+    targetRevision: main
+    path: deploy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: $NS
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,4 @@
+repositoryID: ""   # filled in by Artifact Hub after first claim
+owners:
+  - name: clusterfactory
+    homeURL: https://github.com/clusterfactory

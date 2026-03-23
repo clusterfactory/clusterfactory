@@ -1,0 +1,75 @@
+---
+# runner.yaml — Gitea Actions runner Deployment
+#
+# The runner token is injected via the runner-token-secret.yaml wiring file
+# (applied during Phase 3). The Deployment is created here but the runner
+# will not register successfully until that Secret exists.
+{{- if .Values.runner.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-runner
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}-runner
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name }}-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}-runner
+    spec:
+      containers:
+        - name: runner
+          image: {{ .Values.runner.image }}:{{ .Values.runner.imageTag }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for the runner token Secret to appear (written by wiring Job)
+              echo "Waiting for runner token secret..."
+              until [ -f /runner-token/token ]; do
+                sleep 5
+              done
+              TOKEN=$(cat /runner-token/token)
+              GITEA_URL=$(cat /runner-token/gitea_url)
+              echo "Registering runner with ${GITEA_URL}..."
+              act_runner register \
+                --no-interactive \
+                --instance "${GITEA_URL}" \
+                --token "${TOKEN}" \
+                --name "$(hostname)" \
+                --labels "ubuntu-latest:docker://node:20-alpine"
+              echo "Starting runner..."
+              exec act_runner daemon
+          env:
+            - name: DOCKER_HOST
+              value: unix:///var/run/docker.sock
+          volumeMounts:
+            - name: runner-token
+              mountPath: /runner-token
+              readOnly: true
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+      volumes:
+        - name: runner-token
+          secret:
+            secretName: {{ .Release.Name }}-runner-token
+            optional: true   # will not exist until wiring Job runs
+        - name: docker-sock
+          hostPath:
+            path: {{ .Values.runner.dockerSocket }}
+            type: Socket
+{{- end }}

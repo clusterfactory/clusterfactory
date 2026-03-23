@@ -1,0 +1,61 @@
+---
+# summary-job.yaml — Phase 4 (post-install hook, weight 20)
+#
+# Runs after wiring (weight 10). Reads credentials from OpenBao and prints
+# a complete access summary. Logs persist until next helm upgrade.
+# View with: kubectl logs job/{{ .Release.Name }}-summary -n {{ .Values.namespace | default .Release.Namespace }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-summary
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    app.kubernetes.io/name: {{ .Release.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name }}-summary
+    spec:
+      serviceAccountName: {{ .Release.Name }}-init
+      restartPolicy: Never
+      containers:
+        - name: summary
+          image: alpine/k8s:1.30.2
+          command: ["/bin/sh", "/scripts/summary.sh"]
+          env:
+            - name: NS
+              value: {{ .Values.namespace | default .Release.Namespace | quote }}
+            - name: RELEASE_NAME
+              value: {{ .Release.Name | quote }}
+            - name: CONTROL_PLANE_HOST
+              value: {{ .Values.host | quote }}
+            - name: GITEA_PASSWORD
+              value: {{ .Values.gitea.gitea.admin.password | quote }}
+            - name: OPENBAO_ADDR
+              value: "http://{{ .Release.Name }}-openbao.{{ .Values.namespace | default .Release.Namespace }}.svc.cluster.local:8200"
+            - name: OPENBAO_TOKEN
+              value: {{ .Values.openbao.server.dev.devRootToken | default "root" | quote }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ .Release.Name }}-init-scripts
+            defaultMode: 0755

@@ -1,0 +1,48 @@
+apiVersion: v2
+name: clusterfactory
+description: >
+  One helm install. Five CNCF-upstream components (Gitea, ArgoCD, Harbor,
+  OpenBao, Crossplane) pre-wired and ready to use as a GitOps management
+  platform. All connections live in readable wiring/ YAML files.
+  Includes a browser terminal (Cockpit) and cluster UI (Headlamp).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - gitops
+  - gitea
+  - argocd
+  - harbor
+  - crossplane
+  - openbao
+  - kubernetes
+  - platform-engineering
+  - infrastructure-as-code
+home: https://github.com/clusterfactory/clusterfactory
+sources:
+  - https://github.com/clusterfactory/clusterfactory
+maintainers:
+  - name: clusterfactory
+    url: https://github.com/clusterfactory
+
+dependencies:
+  - name: harbor
+    version: "1.16.2"
+    repository: "https://helm.goharbor.io"
+    condition: harbor.enabled
+  - name: gitea
+    version: "12.5.0"
+    repository: "https://dl.gitea.com/charts/"
+    condition: gitea.enabled
+  - name: openbao
+    version: "0.5.0"
+    repository: "https://openbao.github.io/openbao-helm"
+    condition: openbao.enabled
+  - name: crossplane
+    version: "1.18.5"
+    repository: "https://charts.crossplane.io/stable"
+    condition: crossplane.enabled
+  - name: argo-cd
+    version: "7.8.28"
+    repository: "https://argoproj.github.io/argo-helm"
+    condition: argo-cd.enabled

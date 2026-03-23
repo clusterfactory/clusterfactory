@@ -1,0 +1,3 @@
+# Patterns to ignore when building packages.
+files/terminal/node_modules/
+files/terminal/test/

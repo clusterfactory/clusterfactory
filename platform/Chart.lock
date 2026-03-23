@@ -1,0 +1,18 @@
+dependencies:
+- name: harbor
+  repository: https://helm.goharbor.io
+  version: 1.16.2
+- name: gitea
+  repository: https://dl.gitea.com/charts/
+  version: 12.5.0
+- name: openbao
+  repository: https://openbao.github.io/openbao-helm
+  version: 0.5.0
+- name: crossplane
+  repository: https://charts.crossplane.io/stable
+  version: 1.18.5
+- name: argo-cd
+  repository: https://argoproj.github.io/argo-helm
+  version: 7.8.28
+digest: sha256:163e129d3520ce3a536820946581f4819ddd69de7abf189b8f5a6b92b8c463a6
+generated: "2026-03-22T17:16:03.098803+02:00"

@@ -1,0 +1,21 @@
+---
+# init-configmap.yaml
+# Embeds the init script and seed files as a ConfigMap mounted by the init Job.
+# Adding a seed file: drop it in files/ and reference it here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-init-scripts
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    helm.sh/hook-weight: "-5"
+data:
+  gitea-init.sh: |
+{{ .Files.Get "wiring/scripts/gitea-init.sh" | indent 4 }}
+  ci.yaml: |
+{{ .Files.Get "files/ci.yaml" | indent 4 }}
+  summary.sh: |
+{{ .Files.Get "wiring/scripts/summary.sh" | indent 4 }}

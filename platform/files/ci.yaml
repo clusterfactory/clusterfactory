@@ -1,0 +1,21 @@
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Print environment info
+        run: |
+          echo "Hostname : $(hostname)"
+          echo "OS       : $(uname -a)"
+          echo "Branch   : ${{ gitea.ref_name }}"
+          echo "Commit   : ${{ gitea.sha }}"
+
+      - name: All checks passed
+        run: echo "CI passed"

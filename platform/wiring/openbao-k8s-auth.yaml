@@ -1,0 +1,29 @@
+# openbao-k8s-auth.yaml
+# CONNECTION: OpenBao → cluster workloads
+# WHAT: ServiceAccount + ConfigMap that advertises OpenBao to workloads
+#       The Kubernetes auth method is configured in the init job.
+# VARIABLES: $NS, $OPENBAO_ADDR
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-reader
+  namespace: $NS
+  labels:
+    platform/wiring: "openbao-k8s-auth"
+    platform/component: "openbao"
+  annotations:
+    openbao.org/addr: "$OPENBAO_ADDR"
+    openbao.org/role: "platform-reader"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-config
+  namespace: $NS
+  labels:
+    platform/wiring: "openbao-k8s-auth"
+    platform/component: "openbao"
+data:
+  OPENBAO_ADDR: "$OPENBAO_ADDR"
+  OPENBAO_ROLE: "platform-reader"
+  OPENBAO_AUTH_PATH: "auth/kubernetes"
