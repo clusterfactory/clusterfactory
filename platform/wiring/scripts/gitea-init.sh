@@ -24,67 +24,76 @@ ARGOCD_SERVER="http://clusterfactory-argo-cd-server.${NS}.svc.cluster.local:80"
 # ╚══════════════════════════════════════════════════════════════════════╝
 _wait() {
   local name="$1" url="$2" retries="${3:-120}" delay="${4:-5}"
-  echo ">>> [$name] waiting (up to $((retries * delay))s)..."
+  printf "  ○ %-42s" "${name}"
   for i in $(seq 1 "${retries}"); do
-    curl -sf --max-time 3 "${url}" > /dev/null 2>&1 && { echo ">>> [$name] ready"; return 0; }
-    echo "    [$i/${retries}] not ready..."
+    curl -sf --max-time 3 "${url}" > /dev/null 2>&1 && { echo "● READY"; return 0; }
+    [ $((i % 12)) -eq 0 ] && printf "\n    still waiting... (%ds elapsed)\n  ○ %-42s" "$((i * delay))" "${name}"
     sleep "${delay}"
   done
-  echo ">>> [$name] TIMED OUT — aborting" && exit 1
+  echo "✗ TIMED OUT after $((retries * delay))s — aborting"
+  exit 1
 }
 _wait_auth() {
   local name="$1" url="$2" user="$3" pass="$4" retries="${5:-120}" delay="${6:-5}"
-  echo ">>> [$name] waiting (up to $((retries * delay))s)..."
+  printf "  ○ %-42s" "${name}"
   for i in $(seq 1 "${retries}"); do
-    curl -sf --max-time 3 -u "${user}:${pass}" "${url}" > /dev/null 2>&1 && { echo ">>> [$name] ready"; return 0; }
-    echo "    [$i/${retries}] not ready..."
+    curl -sf --max-time 3 -u "${user}:${pass}" "${url}" > /dev/null 2>&1 && { echo "● READY"; return 0; }
+    [ $((i % 12)) -eq 0 ] && printf "\n    still waiting... (%ds elapsed)\n  ○ %-42s" "$((i * delay))" "${name}"
     sleep "${delay}"
   done
-  echo ">>> [$name] TIMED OUT — aborting" && exit 1
+  echo "✗ TIMED OUT after $((retries * delay))s — aborting"
+  exit 1
 }
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════╗"
-echo "║  clusterfactory init — readiness gate                               ║"
+echo "║  clusterfactory — readiness gate                                    ║"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
 # 1. OpenBao — secrets must be writable before anything else
-_wait      "1/6 OpenBao"    "${OPENBAO_ADDR}/v1/sys/health"
+_wait      "1/6  OpenBao   — secrets"       "${OPENBAO_ADDR}/v1/sys/health"
 
 # 2. Gitea — source of truth for repo, tokens, runner
-_wait      "2/6 Gitea"      "${GITEA_URL}/api/healthz"
+_wait      "2/6  Gitea     — git + CI"      "${GITEA_URL}/api/healthz"
 
 # 3. Harbor core — registry must be up before project creation
-_wait_auth "3/6 Harbor"     "${HARBOR_URL}/api/v2.0/ping" "admin" "${HARBOR_PASSWORD}"
+_wait_auth "3/6  Harbor    — registry"      "${HARBOR_URL}/api/v2.0/ping" "admin" "${HARBOR_PASSWORD}"
 
 # 4. ArgoCD server — must be up to read initial admin secret
-_wait      "4/6 ArgoCD"     "${ARGOCD_SERVER}/healthz"
+_wait      "4/6  ArgoCD    — GitOps"        "${ARGOCD_SERVER}/healthz"
 
-# 5. Crossplane — check deployment rolled out (pod label)
-echo ">>> [5/6 Crossplane] waiting for pod to be Running..."
+# 5. Crossplane — check pod running
+printf "  ○ %-42s" "5/6  Crossplane — cloud resources"
 for i in $(seq 1 120); do
-  PHASE=$(kubectl get pods -n "${NS}" -l app=crossplane \
+  POD=$(kubectl get pods -n "${NS}" -l app=crossplane \
     --field-selector=status.phase=Running -o name 2>/dev/null | head -1)
-  [ -n "${PHASE}" ] && { echo ">>> [5/6 Crossplane] ready"; break; }
-  [ "${i}" -eq 120 ] && { echo ">>> [5/6 Crossplane] TIMED OUT — aborting"; exit 1; }
-  echo "    [$i/120] not ready..."
+  [ -n "${POD}" ] && { echo "● READY"; break; }
+  [ "${i}" -eq 120 ] && { echo "✗ TIMED OUT — aborting"; exit 1; }
+  [ $((i % 12)) -eq 0 ] && printf "\n    still waiting... (%ds elapsed)\n  ○ %-42s" "$((i * 5))" "5/6  Crossplane — cloud resources"
   sleep 5
 done
 
-# 6. ArgoCD initial-admin-secret — created after server is live, takes a moment
-echo ">>> [6/6 ArgoCD admin secret] waiting..."
+# 6. ArgoCD initial-admin-secret
+printf "  ○ %-42s" "6/6  ArgoCD    — admin secret"
 for i in $(seq 1 60); do
   SECRET=$(kubectl get secret argocd-initial-admin-secret -n "${NS}" \
     -o jsonpath='{.data.password}' 2>/dev/null || true)
-  [ -n "${SECRET}" ] && { echo ">>> [6/6 ArgoCD admin secret] ready"; break; }
-  [ "${i}" -eq 60 ] && { echo ">>> [6/6 ArgoCD admin secret] TIMED OUT — aborting"; exit 1; }
-  echo "    [$i/60] not ready..."
+  [ -n "${SECRET}" ] && { echo "● READY"; break; }
+  [ "${i}" -eq 60 ] && { echo "✗ TIMED OUT — aborting"; exit 1; }
+  [ $((i % 12)) -eq 0 ] && printf "\n    still waiting... (%ds elapsed)\n  ○ %-42s" "$((i * 5))" "6/6  ArgoCD    — admin secret"
   sleep 5
 done
 
 echo ""
-echo "  all 6 components ready — starting init sequence"
+echo "╔══════════════════════════════════════════════════════════════════════╗"
+echo "║                                                                      ║"
+echo "║   ●  1/6  OpenBao      ●  2/6  Gitea      ●  3/6  Harbor           ║"
+echo "║   ●  4/6  ArgoCD       ●  5/6  Crossplane  ●  6/6  ArgoCD secret   ║"
+echo "║                                                                      ║"
+echo "║                     ALL SYSTEMS READY                                ║"
+echo "║                                                                      ║"
+echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
 # ── 1. Create demo repo ────────────────────────────────────────────────────

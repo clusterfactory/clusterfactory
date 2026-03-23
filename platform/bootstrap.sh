@@ -81,10 +81,10 @@ kubectl create secret generic "${RELEASE_NAME}-kubeconfig" \
   )" \
   --dry-run=client -o yaml | kubectl apply -f - > /dev/null
 
-# ── Helm install ──────────────────────────────────────────────────────────────
+# ── Helm install (background) ─────────────────────────────────────────────────
 echo -e "\n${BOLD}  Running helm install...${NC}\n"
 
-# Update dependencies only if charts/ is missing (local dev). Skipped when using packaged chart.
+# Update dependencies only if charts/ is missing (local dev).
 if [ ! -d "${CHART_DIR}/charts" ] || [ -z "$(ls -A "${CHART_DIR}/charts" 2>/dev/null)" ]; then
   helm dependency update "$CHART_DIR"
 fi
@@ -93,32 +93,46 @@ helm upgrade --install "$RELEASE_NAME" "$CHART_DIR" \
   --namespace "$NAMESPACE" \
   --set "host=${HOST}" \
   --set "namespace=${NAMESPACE}" \
-  --timeout 20m
+  --timeout 20m &
+HELM_PID=$!
 
-# ── Access summary ────────────────────────────────────────────────────────────
-echo -e "\n  ${BOLD}Waiting for access summary...${NC}"
-POD=""
-for i in $(seq 1 30); do
-  POD=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/name=${RELEASE_NAME}-summary" \
-    --field-selector=status.phase=Succeeded -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-  [ -n "${POD}" ] && break
-  POD=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/name=${RELEASE_NAME}-summary" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-  [ -n "${POD}" ] && break
-  sleep 3
-done
+# ── Live log streaming ────────────────────────────────────────────────────────
+# Streams each job's logs as they run so you see exactly what's happening.
+_stream_job() {
+  local job_name="$1"
+  local label="$2"
+  local pod=""
 
-if [ -n "${POD}" ]; then
-  kubectl logs -n "${NAMESPACE}" "${POD}" --follow 2>/dev/null || \
-    kubectl logs "job/${RELEASE_NAME}-summary" -n "${NAMESPACE}" 2>/dev/null || true
-else
-  echo "  (summary job not found — run manually:)"
-  echo "  kubectl logs job/${RELEASE_NAME}-summary -n ${NAMESPACE}"
+  echo -e "\n${CYAN}  ┌─ ${job_name} ────────────────────────────────────────────────${NC}"
+
+  # Wait up to 5 min for the job pod to appear
+  for i in $(seq 1 100); do
+    pod=$(kubectl get pods -n "${NAMESPACE}" -l "${label}" \
+      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    [ -n "${pod}" ] && break
+    sleep 3
+  done
+
+  if [ -z "${pod}" ]; then
+    echo -e "${CYAN}  │  (pod not found)${NC}"
+  else
+    # Follow logs; --pod-running-timeout waits for the container to start
+    kubectl logs -n "${NAMESPACE}" "${pod}" -f --pod-running-timeout=120s 2>/dev/null \
+      | sed "s/^/${CYAN}  │  ${NC}/" || true
+  fi
+
+  echo -e "${CYAN}  └──────────────────────────────────────────────────────────${NC}"
+}
+
+_stream_job "${RELEASE_NAME}-init"    "app.kubernetes.io/name=${RELEASE_NAME}-init"
+_stream_job "${RELEASE_NAME}-wiring"  "app.kubernetes.io/name=${RELEASE_NAME}-wiring"
+_stream_job "${RELEASE_NAME}-summary" "app.kubernetes.io/name=${RELEASE_NAME}-summary"
+
+# ── Wait for helm to finish ───────────────────────────────────────────────────
+if ! wait "$HELM_PID"; then
+  echo -e "\n  ${YELLOW}helm install reported an error — check above for details${NC}"
+  echo -e "  kubectl get jobs -n ${NAMESPACE}"
+  exit 1
 fi
 
-echo ""
-echo -e "  Debug:"
-echo -e "    kubectl get jobs -n ${NAMESPACE}"
-echo -e "    kubectl logs job/${RELEASE_NAME}-init   -n ${NAMESPACE}"
-echo -e "    kubectl logs job/${RELEASE_NAME}-wiring -n ${NAMESPACE}"
-echo ""
+echo -e "\n  ${GREEN}${BOLD}done.${NC}\n"
