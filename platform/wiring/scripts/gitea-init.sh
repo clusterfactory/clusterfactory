@@ -31,14 +31,44 @@ curl -sf -X POST "${GITEA_URL}/api/v1/user/repos" \
   -H "Content-Type: application/json" \
   -d '{"name":"clusterfactory-demo","description":"clusterfactory demo repo","auto_init":true,"default_branch":"main"}' \
   > /dev/null || echo "  (repo may already exist)"
-# ── 3. Push CI workflow ─────────────────────────────────────────────────────
-echo "=== [3] Pushing .gitea/workflows/ci.yaml ==="
-CI_CONTENT=$(base64 -w0 /scripts/ci.yaml)
-curl -sf -X POST "${GITEA_URL}/api/v1/repos/${GITEA_USER}/clusterfactory-demo/contents/.gitea/workflows/ci.yaml" \
-  -u "${GITEA_USER}:${GITEA_PASSWORD}" \
-  -H "Content-Type: application/json" \
-  -d "{\"message\":\"feat: add CI workflow\",\"content\":\"${CI_CONTENT}\"}" \
-  > /dev/null || echo "  (file may already exist)"
+# ── 3. Push seed files ──────────────────────────────────────────────────────
+echo "=== [3] Pushing seed files to demo repo ==="
+_push_file() {
+  local repo_path="$1"
+  local local_path="$2"
+  local msg="$3"
+  local content
+  content=$(base64 -w0 "${local_path}")
+  curl -sf -X POST "${GITEA_URL}/api/v1/repos/${GITEA_USER}/clusterfactory-demo/contents/${repo_path}" \
+    -u "${GITEA_USER}:${GITEA_PASSWORD}" \
+    -H "Content-Type: application/json" \
+    -d "{\"message\":\"${msg}\",\"content\":\"${content}\"}" \
+    > /dev/null || echo "  (${repo_path} may already exist)"
+}
+
+# CI workflow
+_push_file ".gitea/workflows/ci.yaml" "/scripts/ci.yaml" "feat: add CI workflow"
+
+# Crossplane configure-cloud workflow (flat key name from ConfigMap)
+_push_file ".gitea/workflows/configure-cloud.yaml" "/scripts/crossplane-configure-cloud.yaml" "feat: add configure-cloud workflow"
+
+# Crossplane providers in deploy/ (ArgoCD syncs these automatically)
+_push_file "deploy/crossplane/provider-aws.yaml"   "/scripts/crossplane-provider-aws.yaml"   "feat: add AWS Crossplane provider"
+_push_file "deploy/crossplane/provider-azure.yaml" "/scripts/crossplane-provider-azure.yaml" "feat: add Azure Crossplane provider"
+_push_file "deploy/crossplane/provider-gcp.yaml"   "/scripts/crossplane-provider-gcp.yaml"   "feat: add GCP Crossplane provider"
+
+# Crossplane ProviderConfig templates + examples
+_push_file "crossplane/aws/providerconfig.yaml"    "/scripts/crossplane-aws-providerconfig.yaml"    "feat: add AWS ProviderConfig template"
+_push_file "crossplane/aws/credentials.conf"       "/scripts/crossplane-aws-credentials.conf"       "feat: add AWS credentials template"
+_push_file "crossplane/aws/example-bucket.yaml"    "/scripts/crossplane-aws-example-bucket.yaml"    "feat: add AWS S3 bucket example"
+_push_file "crossplane/azure/providerconfig.yaml"  "/scripts/crossplane-azure-providerconfig.yaml"  "feat: add Azure ProviderConfig template"
+_push_file "crossplane/azure/credentials.json"     "/scripts/crossplane-azure-credentials.json"     "feat: add Azure credentials template"
+_push_file "crossplane/azure/example-storage.yaml" "/scripts/crossplane-azure-example-storage.yaml" "feat: add Azure storage example"
+_push_file "crossplane/gcp/providerconfig.yaml"    "/scripts/crossplane-gcp-providerconfig.yaml"    "feat: add GCP ProviderConfig template"
+_push_file "crossplane/gcp/credentials.json"       "/scripts/crossplane-gcp-credentials.json"       "feat: add GCP credentials template"
+_push_file "crossplane/gcp/example-bucket.yaml"    "/scripts/crossplane-gcp-example-bucket.yaml"    "feat: add GCP GCS bucket example"
+
+echo "  Seed files pushed."
 # ── 4. Obtain runner registration token ─────────────────────────────────────
 echo "=== [4] Obtaining runner registration token ==="
 RUNNER_TOKEN=$(curl -sf "${GITEA_URL}/api/v1/admin/runners/registration-token" \
@@ -127,8 +157,30 @@ curl -sf -X POST "${OPENBAO_ADDR}/v1/secret/data/headlamp" \
   -d "{\"data\":{\"token\":\"${HEADLAMP_TOKEN}\",\"url\":\"http://localhost:4466\"}}" \
   > /dev/null
 echo "  Headlamp token stored at secret/headlamp."
-# ── 11. Write handoff Secret (Phase 2 → Phase 3) ───────────────────────────
-echo "=== [11] Writing clusterfactory-wiring-tokens ==="
+# ── 11. Store KUBECONFIG in Gitea Actions secrets ───────────────────────────
+echo "=== [11] Storing KUBECONFIG as Gitea Actions secret ==="
+# Patch server URL for docker-desktop so in-cluster runners can reach the API
+KUBECONFIG_B64=$(kubectl config view --minify --flatten \
+  | sed 's|https://127.0.0.1:|https://kubernetes.docker.internal:|g' \
+  | sed 's|https://localhost:|https://kubernetes.docker.internal:|g' \
+  | base64 -w0)
+# Create repo-level Actions secret
+_gitea_secret() {
+  local name="$1"
+  local value="$2"
+  curl -sf -X PUT "${GITEA_URL}/api/v1/repos/${GITEA_USER}/clusterfactory-demo/actions/secrets/${name}" \
+    -u "${GITEA_USER}:${GITEA_PASSWORD}" \
+    -H "Content-Type: application/json" \
+    -d "{\"data\":\"${value}\"}" > /dev/null \
+    && echo "  secret ${name} stored" || echo "  (${name} store failed)"
+}
+_gitea_secret "KUBECONFIG_B64" "${KUBECONFIG_B64}"
+echo "  Gitea Actions secrets stored."
+echo "  Add AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, AZURE_CREDENTIALS_JSON,"
+echo "  GCP_CREDENTIALS_JSON / GCP_PROJECT_ID via Gitea UI before running configure-cloud."
+
+# ── 12. Write handoff Secret (Phase 2 → Phase 3) ───────────────────────────
+echo "=== [12] Writing clusterfactory-wiring-tokens ==="
 kubectl create secret generic clusterfactory-wiring-tokens \
   --namespace "${NS}" \
   --from-literal=RUNNER_TOKEN="${RUNNER_TOKEN}" \

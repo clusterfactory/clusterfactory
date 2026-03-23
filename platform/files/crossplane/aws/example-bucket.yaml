@@ -1,0 +1,13 @@
+# Example: S3 bucket managed by Crossplane
+# Apply after configuring AWS credentials via the Gitea workflow.
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: my-crossplane-bucket
+  annotations:
+    crossplane.io/external-name: my-crossplane-bucket-UNIQUE_SUFFIX
+spec:
+  forProvider:
+    region: us-east-1
+  providerConfigRef:
+    name: default

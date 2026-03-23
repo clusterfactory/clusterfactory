@@ -15,7 +15,33 @@ metadata:
 data:
   gitea-init.sh: |
 {{ .Files.Get "wiring/scripts/gitea-init.sh" | indent 4 }}
-  ci.yaml: |
-{{ .Files.Get "files/ci.yaml" | indent 4 }}
   summary.sh: |
 {{ .Files.Get "wiring/scripts/summary.sh" | indent 4 }}
+  ci.yaml: |
+{{ .Files.Get "files/ci.yaml" | indent 4 }}
+  crossplane-configure-cloud.yaml: |
+{{ .Files.Get "files/crossplane/workflows/configure-cloud.yaml" | indent 4 }}
+  crossplane-provider-aws.yaml: |
+{{ .Files.Get "files/crossplane/deploy/provider-aws.yaml" | indent 4 }}
+  crossplane-provider-azure.yaml: |
+{{ .Files.Get "files/crossplane/deploy/provider-azure.yaml" | indent 4 }}
+  crossplane-provider-gcp.yaml: |
+{{ .Files.Get "files/crossplane/deploy/provider-gcp.yaml" | indent 4 }}
+  crossplane-aws-providerconfig.yaml: |
+{{ .Files.Get "files/crossplane/aws/providerconfig.yaml" | indent 4 }}
+  crossplane-aws-credentials.conf: |
+{{ .Files.Get "files/crossplane/aws/credentials.conf" | indent 4 }}
+  crossplane-aws-example-bucket.yaml: |
+{{ .Files.Get "files/crossplane/aws/example-bucket.yaml" | indent 4 }}
+  crossplane-azure-providerconfig.yaml: |
+{{ .Files.Get "files/crossplane/azure/providerconfig.yaml" | indent 4 }}
+  crossplane-azure-credentials.json: |
+{{ .Files.Get "files/crossplane/azure/credentials.json" | indent 4 }}
+  crossplane-azure-example-storage.yaml: |
+{{ .Files.Get "files/crossplane/azure/example-storage.yaml" | indent 4 }}
+  crossplane-gcp-providerconfig.yaml: |
+{{ .Files.Get "files/crossplane/gcp/providerconfig.yaml" | indent 4 }}
+  crossplane-gcp-credentials.json: |
+{{ .Files.Get "files/crossplane/gcp/credentials.json" | indent 4 }}
+  crossplane-gcp-example-bucket.yaml: |
+{{ .Files.Get "files/crossplane/gcp/example-bucket.yaml" | indent 4 }}

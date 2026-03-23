@@ -1,0 +1,83 @@
+name: Configure Cloud Provider
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud provider to configure"
+        required: true
+        type: choice
+        options:
+          - aws
+          - azure
+          - gcp
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        run: |
+          curl -sSLo kubectl "https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Ensure crossplane-system namespace
+        run: |
+          kubectl create namespace crossplane-system --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Configure AWS
+        if: inputs.cloud == 'aws'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          kubectl create secret generic aws-credentials \
+            --namespace crossplane-system \
+            --from-literal=credentials="[default]
+          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f crossplane/aws/providerconfig.yaml
+          echo "AWS ProviderConfig applied."
+
+      - name: Configure Azure
+        if: inputs.cloud == 'azure'
+        env:
+          AZURE_CREDENTIALS_JSON: ${{ secrets.AZURE_CREDENTIALS_JSON }}
+        run: |
+          kubectl create secret generic azure-credentials \
+            --namespace crossplane-system \
+            --from-literal=credentials="${AZURE_CREDENTIALS_JSON}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f crossplane/azure/providerconfig.yaml
+          echo "Azure ProviderConfig applied."
+
+      - name: Configure GCP
+        if: inputs.cloud == 'gcp'
+        env:
+          GCP_CREDENTIALS_JSON: ${{ secrets.GCP_CREDENTIALS_JSON }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          kubectl create secret generic gcp-credentials \
+            --namespace crossplane-system \
+            --from-literal=credentials="${GCP_CREDENTIALS_JSON}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          sed "s/REPLACE_PROJECT_ID/${GCP_PROJECT_ID}/" crossplane/gcp/providerconfig.yaml \
+            | kubectl apply -f -
+          echo "GCP ProviderConfig applied."
+
+      - name: Wait for provider health
+        run: |
+          echo "Waiting for Crossplane providers to become healthy..."
+          sleep 30
+          kubectl get providers -o wide || true
