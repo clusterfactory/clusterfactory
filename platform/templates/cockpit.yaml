@@ -55,10 +55,11 @@ spec:
               cp /config/index.html   /app/
               cp /config/wiring.md    /app/
               cd /app && npm install 2>&1
-              # Download kubectl so the main container's PATH finds it
+              # Download kubectl — detect arch so arm64 nodes work too
               KUBECTL_VER=$(curl -sSL https://dl.k8s.io/release/stable.txt)
+              ARCH=$(uname -m); [ "$ARCH" = "aarch64" ] && ARCH="arm64" || ARCH="amd64"
               curl -sSLo /app/kubectl \
-                "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/amd64/kubectl"
+                "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/${ARCH}/kubectl"
               chmod +x /app/kubectl
           volumeMounts:
             - name: config
