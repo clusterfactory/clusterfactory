@@ -91,11 +91,13 @@ preflight() {
     -o jsonpath='{range .items[*]}{.status.allocatable.cpu}{" "}{.status.allocatable.memory}{"\n"}{end}' \
     2>/dev/null)
 
+  # Pure bash 1-decimal formatting — avoids awk printf incompatibilities on macOS
+  _dp1() { echo "$(( $1 / $2 )).$(( ($1 % $2) * 10 / $2 ))"; }
   local have_cpu have_mem
-  have_cpu=$(awk "BEGIN {printf \"%.1f\", ${total_cpu_milli} / 1000}")
-  have_mem=$(awk "BEGIN {printf \"%.1f\", ${total_mem_mi} / 1024}")
-  local need_cpu="$(awk "BEGIN {printf \"%.1f\", ${NEED_CPU_MILLI} / 1000}")"
-  local need_mem="$(awk "BEGIN {printf \"%.1f\", ${NEED_MEM_MI} / 1024}")"
+  have_cpu=$(_dp1 "$total_cpu_milli" 1000)
+  have_mem=$(_dp1 "$total_mem_mi"    1024)
+  local need_cpu="4.0"   # derived from NEED_CPU_MILLI=4000
+  local need_mem="6.0"   # derived from NEED_MEM_MI=6144
 
   echo -e "  You are on   : ${CYAN}${env_name}${NC}"
   echo -e "  Allocatable  : ${CYAN}${have_cpu} CPU  /  ${have_mem}Gi RAM${NC}"
