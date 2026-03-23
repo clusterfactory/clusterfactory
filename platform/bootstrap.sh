@@ -7,7 +7,7 @@
 #   bash ./clusterfactory/bootstrap.sh
 #
 # Or from source:
-#   bash ./platform/bootstrap.sh
+#   bash ./clusterfactory/bootstrap.sh
 
 set -euo pipefail
 

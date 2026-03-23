@@ -1,4 +1,4 @@
-== platform installed ==
+== clusterfactory installed ==
 
 Components:    A, B{{ if .Values.enabled }}, C{{ end }}{{ if .Values.enabled }}, D{{ end }}
 Namespace:     {{ .Values.namespace | default .Release.Namespace }}

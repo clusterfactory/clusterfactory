@@ -6,8 +6,8 @@ set -e
 apk add -q jq
 
 HOST="${CONTROL_PLANE_HOST:-localhost}"
-NS="${NS:-platform}"
-RELEASE_NAME="${RELEASE_NAME:-platform}"
+NS="${NS:-clusterfactory}"
+RELEASE_NAME="${RELEASE_NAME:-clusterfactory}"
 
 # ── Read credentials from OpenBao ───────────────────────────────────────────
 _bao() {
@@ -22,7 +22,7 @@ HEADLAMP_TOKEN=$(_bao headlamp token)
 # ── Print summary ────────────────────────────────────────────────────────────
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
-echo "║                  platform — access summary                      ║"
+echo "║                  clusterfactory — access summary                      ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
 echo ""
 echo "  ACCESS POINTS"

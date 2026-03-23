@@ -17,8 +17,8 @@ const giteaPort    = process.env.GITEA_PORT          || '30080';
 const argoPort     = process.env.ARGOCD_PORT         || '8080';
 const headlampPort = process.env.HEADLAMP_PORT       || '4466';
 const title        = process.env.COCKPIT_TITLE       || 'planectl management cluster';
-const releaseName  = process.env.RELEASE_NAME        || 'platform';
-const namespace    = process.env.NAMESPACE           || 'platform';
+const releaseName  = process.env.RELEASE_NAME        || 'clusterfactory';
+const namespace    = process.env.NAMESPACE           || 'clusterfactory';
 
 app.get('/wiring', (_req, res) => {
   const md = require('fs').readFileSync(path.join(__dirname, 'wiring.md'), 'utf8');
@@ -27,7 +27,7 @@ app.get('/wiring', (_req, res) => {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>wiring — platform</title>
+<title>wiring — clusterfactory</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
 <style>

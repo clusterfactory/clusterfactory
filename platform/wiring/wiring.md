@@ -82,10 +82,10 @@ Phase 2 — init job (hook weight 0)
     → seeds Gitea (demo repo, CI workflow)
     → obtains tokens (runner, ArgoCD, Headlamp)
     → stores all credentials in OpenBao
-    → writes platform-wiring-tokens Secret (handoff to Phase 3)
+    → writes clusterfactory-wiring-tokens Secret (handoff to Phase 3)
 
 Phase 3 — wiring job (hook weight 10)
-  reads platform-wiring-tokens
+  reads clusterfactory-wiring-tokens
   runs sed on each wiring/*.yaml to substitute $VARIABLES
   kubectl apply -f each file
 
@@ -95,7 +95,7 @@ Phase 4 — summary job (hook weight 20)
     → prints access summary (URLs, passwords, tokens)
 ```
 
-The only contract between phases is the `platform-wiring-tokens` Secret.
+The only contract between phases is the `clusterfactory-wiring-tokens` Secret.
 Phase 3 does not care how Phase 2 produced those values.
 
 ---
@@ -114,7 +114,7 @@ Phase 3 does not care how Phase 2 produced those values.
 All wiring objects carry these labels so you can query them as a group:
 
 ```bash
-kubectl get all -A -l platform/wiring
+kubectl get all -A -l clusterfactory/wiring
 ```
 
 ---
@@ -139,6 +139,6 @@ Both are visible, readable, and editable. There is no framework between you and 
 1. Create a new YAML file here describing the Kubernetes object (Secret, ConfigMap, CRD)
 2. Use `$VARIABLE` placeholders for any runtime values
 3. Add the sed substitution + kubectl apply block in `templates/wiring-job.yaml`
-4. If the variable comes from a component, generate it in `scripts/gitea-init.sh` and add it to `platform-wiring-tokens`
+4. If the variable comes from a component, generate it in `scripts/gitea-init.sh` and add it to `clusterfactory-wiring-tokens`
 
 That's it.

@@ -5,10 +5,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: platform-demo
+  name: clusterfactory-demo
   namespace: $ARGOCD_NS
   labels:
-    platform/wiring: "argocd-applications"
+    clusterfactory/wiring: "argocd-applications"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

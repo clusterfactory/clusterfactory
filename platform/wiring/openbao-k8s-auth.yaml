@@ -9,11 +9,11 @@ metadata:
   name: openbao-reader
   namespace: $NS
   labels:
-    platform/wiring: "openbao-k8s-auth"
-    platform/component: "openbao"
+    clusterfactory/wiring: "openbao-k8s-auth"
+    clusterfactory/component: "openbao"
   annotations:
     openbao.org/addr: "$OPENBAO_ADDR"
-    openbao.org/role: "platform-reader"
+    openbao.org/role: "clusterfactory-reader"
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -21,9 +21,9 @@ metadata:
   name: openbao-config
   namespace: $NS
   labels:
-    platform/wiring: "openbao-k8s-auth"
-    platform/component: "openbao"
+    clusterfactory/wiring: "openbao-k8s-auth"
+    clusterfactory/component: "openbao"
 data:
   OPENBAO_ADDR: "$OPENBAO_ADDR"
-  OPENBAO_ROLE: "platform-reader"
+  OPENBAO_ROLE: "clusterfactory-reader"
   OPENBAO_AUTH_PATH: "auth/kubernetes"

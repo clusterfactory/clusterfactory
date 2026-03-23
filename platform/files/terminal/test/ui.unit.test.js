@@ -84,7 +84,7 @@ function buildSandbox() {
   // Default fetch stub — returns an empty config so the script doesn't throw.
   if (!global.fetch || !global.fetch.mock) {
     global.fetch = jest.fn(() =>
-      Promise.resolve({ json: () => Promise.resolve({ host: 'localhost', title: 'platform cockpit', giteaUrl: 'http://localhost:30080', argoUrl: 'http://localhost:8080' }) })
+      Promise.resolve({ json: () => Promise.resolve({ host: 'localhost', title: 'clusterfactory cockpit', giteaUrl: 'http://localhost:30080', argoUrl: 'http://localhost:8080' }) })
     );
   }
   window.fetch = global.fetch;
@@ -245,7 +245,7 @@ describe('connect() — WebSocket connection setup', () => {
 
 describe('/config fetch — header and title DOM patching', () => {
   // The fetch resolved during the file-level beforeAll with:
-  // { host: 'myhost', title: 'platform cockpit', giteaUrl: 'http://myhost:30080', argoUrl: 'http://myhost:8080' }
+  // { host: 'myhost', title: 'clusterfactory cockpit', giteaUrl: 'http://myhost:30080', argoUrl: 'http://myhost:8080' }
   // Promise microtasks were flushed before any test ran.
 
   test('updates logo-text from first word of cfg.title', () => {

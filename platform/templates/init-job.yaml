@@ -5,9 +5,9 @@
 #   - wait for Gitea, create demo repo, push CI workflow
 #   - obtain runner registration token
 #   - create Gitea token for ArgoCD
-#   - wait for Harbor, create platform project
+#   - wait for Harbor, create clusterfactory project
 #   - configure OpenBao (Kubernetes auth + policies + harbor creds)
-#   - write platform-wiring-tokens Secret (handoff to Phase 3)
+#   - write clusterfactory-wiring-tokens Secret (handoff to Phase 3)
 #
 # The actual work is in files/gitea-init.sh, mounted via init-configmap.yaml.
 apiVersion: batch/v1

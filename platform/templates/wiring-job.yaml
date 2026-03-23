@@ -2,12 +2,12 @@
 # wiring-job.yaml — Phase 3 (post-install hook, weight 10)
 #
 # PURPOSE: apply every file in wiring/ to the cluster, with runtime
-# values from platform-wiring-tokens substituted in via sed.
+# values from clusterfactory-wiring-tokens substituted in via sed.
 #
 # DEPENDENCY CHAIN:
 #   Phase 1 (helm install) → Phase 2 (init-job, weight 0) → Phase 3 (this job, weight 10)
 #
-# The only input from Phase 2 is the platform-wiring-tokens Secret.
+# The only input from Phase 2 is the clusterfactory-wiring-tokens Secret.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -39,18 +39,18 @@ spec:
             - -c
             - |
               set -e
-              echo "=== platform wiring ==="
+              echo "=== clusterfactory wiring ==="
 
               # ── Wait for Phase 2 handoff Secret ───────────────────────────
-              echo "Waiting for platform-wiring-tokens..."
+              echo "Waiting for clusterfactory-wiring-tokens..."
               for i in $(seq 1 60); do
-                kubectl get secret platform-wiring-tokens -n "$NS" > /dev/null 2>&1 && break
+                kubectl get secret clusterfactory-wiring-tokens -n "$NS" > /dev/null 2>&1 && break
                 echo "  [$i] not yet ready..."
                 sleep 5
               done
 
               # ── Read runtime values ────────────────────────────────────────
-              _get() { kubectl get secret platform-wiring-tokens -n "$NS" \
+              _get() { kubectl get secret clusterfactory-wiring-tokens -n "$NS" \
                          -o jsonpath="{.data.$1}" | base64 -d; }
 
               RUNNER_TOKEN=$(_get RUNNER_TOKEN)
@@ -119,7 +119,7 @@ spec:
                 --from-literal=timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
                 --dry-run=client -o yaml | kubectl apply -f -
 
-              echo "=== platform wiring complete ==="
+              echo "=== clusterfactory wiring complete ==="
           env:
             - name: NS
               value: {{ .Values.namespace | default .Release.Namespace | quote }}

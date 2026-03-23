@@ -147,11 +147,11 @@
 </div>
 
 <div class="cmd-bar">
-  <div class="cmd-pill" onclick="run('kubectl get pods -n platform\r')">pods</div>
-  <div class="cmd-pill" onclick="run('kubectl get jobs -n platform\r')">jobs</div>
-  <div class="cmd-pill" onclick="run('kubectl get secret platform-wiring-tokens -n platform -o json | python3 -c \"import json,sys,base64; [print(k,\\\":\\\",base64.b64decode(v).decode()) for k,v in json.load(sys.stdin)[\\\"data\\\"].items()]\"\r')">tokens</div>
-  <div class="cmd-pill" onclick="run('kubectl get events -n platform --sort-by=.lastTimestamp | tail -15\r')">events</div>
-  <div class="cmd-pill" onclick="run('kubectl get applications -n platform 2>/dev/null || echo \"no argocd apps yet\"\r')">apps</div>
+  <div class="cmd-pill" onclick="run('kubectl get pods -n clusterfactory\r')">pods</div>
+  <div class="cmd-pill" onclick="run('kubectl get jobs -n clusterfactory\r')">jobs</div>
+  <div class="cmd-pill" onclick="run('kubectl get secret clusterfactory-wiring-tokens -n clusterfactory -o json | python3 -c \"import json,sys,base64; [print(k,\\\":\\\",base64.b64decode(v).decode()) for k,v in json.load(sys.stdin)[\\\"data\\\"].items()]\"\r')">tokens</div>
+  <div class="cmd-pill" onclick="run('kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -15\r')">events</div>
+  <div class="cmd-pill" onclick="run('kubectl get applications -n clusterfactory 2>/dev/null || echo \"no argocd apps yet\"\r')">apps</div>
   <div class="cmd-pill" onclick="run('helm list -A\r')">helm</div>
 </div>
 

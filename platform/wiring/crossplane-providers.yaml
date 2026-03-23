@@ -7,8 +7,8 @@ kind: Provider
 metadata:
   name: crossplane-contrib-provider-kubernetes
   labels:
-    platform/wiring: "crossplane-providers"
-    platform/component: "crossplane"
+    clusterfactory/wiring: "crossplane-providers"
+    clusterfactory/component: "crossplane"
 spec:
   package: xpkg.upbound.io/crossplane-contrib/provider-kubernetes:v0.14.0
   runtimeConfigRef:
@@ -28,7 +28,7 @@ kind: ClusterRoleBinding
 metadata:
   name: crossplane-provider-kubernetes-admin
   labels:
-    platform/wiring: "crossplane-providers"
+    clusterfactory/wiring: "crossplane-providers"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

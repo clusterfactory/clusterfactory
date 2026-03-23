@@ -4,7 +4,7 @@
 # Components: Harbor, Gitea, OpenBao, Crossplane, ArgoCD
 #
 # Runs inside the init Job (hook weight 0).
-# Writes platform-wiring-tokens Secret at the end (handoff to Phase 3).
+# Writes clusterfactory-wiring-tokens Secret at the end (handoff to Phase 3).
 
 set -e
 apk add -q jq
@@ -29,12 +29,12 @@ echo "=== [2] Creating demo repo ==="
 curl -sf -X POST "${GITEA_URL}/api/v1/user/repos" \
   -u "${GITEA_USER}:${GITEA_PASSWORD}" \
   -H "Content-Type: application/json" \
-  -d '{"name":"platform-demo","description":"Platform demo repo","auto_init":true,"default_branch":"main"}' \
+  -d '{"name":"clusterfactory-demo","description":"clusterfactory demo repo","auto_init":true,"default_branch":"main"}' \
   > /dev/null || echo "  (repo may already exist)"
 # ── 3. Push CI workflow ─────────────────────────────────────────────────────
 echo "=== [3] Pushing .gitea/workflows/ci.yaml ==="
 CI_CONTENT=$(base64 -w0 /scripts/ci.yaml)
-curl -sf -X POST "${GITEA_URL}/api/v1/repos/${GITEA_USER}/platform-demo/contents/.gitea/workflows/ci.yaml" \
+curl -sf -X POST "${GITEA_URL}/api/v1/repos/${GITEA_USER}/clusterfactory-demo/contents/.gitea/workflows/ci.yaml" \
   -u "${GITEA_USER}:${GITEA_PASSWORD}" \
   -H "Content-Type: application/json" \
   -d "{\"message\":\"feat: add CI workflow\",\"content\":\"${CI_CONTENT}\"}" \
@@ -52,7 +52,7 @@ GITEA_TOKEN=$(curl -sf -X POST "${GITEA_URL}/api/v1/users/${GITEA_USER}/tokens" 
   -u "${GITEA_USER}:${GITEA_PASSWORD}" \
   -H "Content-Type: application/json" \
   -d '{"name":"argocd-token","scopes":["read:repository","write:repository","read:admin"]}' | jq -r '.sha1')
-REPO_URL="http://${RELEASE_NAME}-gitea-http.${NS}.svc.cluster.local:3000/${GITEA_USER}/platform-demo.git"
+REPO_URL="http://${RELEASE_NAME}-gitea-http.${NS}.svc.cluster.local:3000/${GITEA_USER}/clusterfactory-demo.git"
 echo "  Gitea token created."
 # ── 6. Wait for Harbor + create project ─────────────────────────────────────
 echo "=== [6] Waiting for Harbor ==="
@@ -65,7 +65,7 @@ done
 curl -s -X POST "${HARBOR_URL}/api/v2.0/projects" \
   -u "admin:${HARBOR_PASSWORD}" \
   -H "Content-Type: application/json" \
-  -d '{"project_name":"platform","public":true,"metadata":{"public":"true"}}' \
+  -d '{"project_name":"clusterfactory","public":true,"metadata":{"public":"true"}}' \
   > /dev/null || echo "  (project may already exist)"
 # ── 7. Configure OpenBao ────────────────────────────────────────────────────
 echo "=== [7] Configuring OpenBao ==="
@@ -82,14 +82,14 @@ curl -sf -X POST "${OPENBAO_ADDR}/v1/auth/kubernetes/config" \
   -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"kubernetes_host":"https://kubernetes.default.svc"}' > /dev/null
-curl -sf -X PUT "${OPENBAO_ADDR}/v1/sys/policies/acl/platform-reader" \
+curl -sf -X PUT "${OPENBAO_ADDR}/v1/sys/policies/acl/clusterfactory-reader" \
   -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"policy":"path \"secret/data/*\" { capabilities = [\"read\"] }\npath \"secret/metadata/*\" { capabilities = [\"read\", \"list\"] }"}' > /dev/null
-curl -sf -X POST "${OPENBAO_ADDR}/v1/auth/kubernetes/role/platform-reader" \
+curl -sf -X POST "${OPENBAO_ADDR}/v1/auth/kubernetes/role/clusterfactory-reader" \
   -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "{\"bound_service_account_names\":[\"*\"],\"bound_service_account_namespaces\":[\"${NS}\"],\"policies\":[\"platform-reader\"],\"ttl\":\"1h\"}" > /dev/null
+  -d "{\"bound_service_account_names\":[\"*\"],\"bound_service_account_namespaces\":[\"${NS}\"],\"policies\":[\"clusterfactory-reader\"],\"ttl\":\"1h\"}" > /dev/null
 echo "  OpenBao configured."
 # ── 8. Store Harbor credentials in OpenBao ─────────────────────────────────
 echo "=== [8] Storing Harbor creds in OpenBao ==="
@@ -128,8 +128,8 @@ curl -sf -X POST "${OPENBAO_ADDR}/v1/secret/data/headlamp" \
   > /dev/null
 echo "  Headlamp token stored at secret/headlamp."
 # ── 11. Write handoff Secret (Phase 2 → Phase 3) ───────────────────────────
-echo "=== [11] Writing platform-wiring-tokens ==="
-kubectl create secret generic platform-wiring-tokens \
+echo "=== [11] Writing clusterfactory-wiring-tokens ==="
+kubectl create secret generic clusterfactory-wiring-tokens \
   --namespace "${NS}" \
   --from-literal=RUNNER_TOKEN="${RUNNER_TOKEN}" \
   --from-literal=GITEA_TOKEN="${GITEA_TOKEN}" \
