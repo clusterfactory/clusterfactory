@@ -16,7 +16,7 @@ HARBOR_URL="http://${RELEASE_NAME}-harbor-core.${NS}.svc.cluster.local"
 HARBOR_PASSWORD="${HARBOR_PASSWORD}"
 OPENBAO_ADDR="http://${RELEASE_NAME}-openbao.${NS}.svc.cluster.local:8200"
 OPENBAO_TOKEN="${OPENBAO_TOKEN}"
-ARGOCD_SERVER="http://clusterfactory-argo-cd-server.${NS}.svc.cluster.local:80"
+ARGOCD_SERVER="http://${RELEASE_NAME}-argocd-server.${NS}.svc.cluster.local:8080"
 
 # ╔══════════════════════════════════════════════════════════════════════╗
 # ║  READINESS GATE — wait for all 6 components in order               ║
