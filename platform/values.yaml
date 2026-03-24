@@ -29,9 +29,10 @@ ingress-nginx:
         https: 30443
 
 # Port used to reach services from the browser.
-# Local/SSM: match the localPortNumber in your SSM port-forward command (default 8080).
-# Cloud LoadBalancer: set to 80.
-accessPort: 8080
+# Default 30080 = ingress-nginx NodePort (Docker Desktop, kind, bare metal).
+# SSM tunnel: override with --set accessPort=8080 (match your localPortNumber).
+# Cloud LoadBalancer: override with --set accessPort=80.
+accessPort: 30080
 
 cockpit:
   enabled: true

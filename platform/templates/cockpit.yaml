@@ -1,9 +1,9 @@
 {{- if .Values.cockpit.enabled }}
 ---
 # cockpit.yaml — browser terminal + status dashboard
-# Files live in files/terminal/ and are embedded here via .Files.Get.
-# An initContainer (node:20 Debian) installs npm deps + downloads kubectl into
-# an emptyDir so the main container starts instantly with no compilation.
+# Image ghcr.io/drulacosmin/cockpit:1.0 has node_modules + kubectl pre-installed.
+# server.js, index.html, wiring.md are mounted as subPaths so they update with
+# the chart without rebuilding the image.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,8 +13,6 @@ metadata:
     app.kubernetes.io/name: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
-  package.json: |
-{{ .Files.Get "files/terminal/package.json" | indent 4 }}
   server.js: |
 {{ .Files.Get "files/terminal/server.js" | indent 4 }}
   index.html: |
@@ -42,54 +40,17 @@ spec:
         app.kubernetes.io/name: {{ .Release.Name }}-cockpit
     spec:
       serviceAccountName: {{ .Release.Name }}-init
-      initContainers:
-        - name: npm-install
-          image: node:20
-          command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              cp /config/package.json /app/
-              cp /config/server.js    /app/
-              cp /config/index.html   /app/
-              cp /config/wiring.md    /app/
-              cd /app && npm install 2>&1
-              # Download kubectl — detect arch so arm64 nodes work too
-              # -k bypasses SSL verification (node:20 on ARM lacks system CA bundle)
-              KUBECTL_VER=$(curl -sSLk https://dl.k8s.io/release/stable.txt)
-              ARCH=$(uname -m); [ "$ARCH" = "aarch64" ] && ARCH="arm64" || ARCH="amd64"
-              curl -sSLko /app/kubectl \
-                "https://dl.k8s.io/release/${KUBECTL_VER}/bin/linux/${ARCH}/kubectl"
-              chmod +x /app/kubectl
-          volumeMounts:
-            - name: config
-              mountPath: /config
-            - name: app
-              mountPath: /app
-          resources:
-            requests:
-              cpu: 200m
-              memory: 512Mi
-            limits:
-              cpu: 1000m
-              memory: 1Gi
       containers:
         - name: cockpit
-          image: node:20
-          command:
-            - sh
-            - -c
-            - |
-              ln -sf /app/kubectl /usr/local/bin/kubectl
-              exec node /app/server.js
+          image: ghcr.io/clusterfactory/cockpit:1.0
+          command: ["node", "/app/server.js"]
           env:
             - name: PORT
               value: "3000"
             - name: CONTROL_PLANE_HOST
               value: {{ .Values.host | quote }}
             - name: COCKPIT_TITLE
-              value: {{ .Values.cockpit.title | default "planectl management cluster" | quote }}
+              value: {{ .Values.cockpit.title | default "clusterfactory" | quote }}
             - name: GITEA_URL
               value: "http://gitea.{{ .Values.host }}:{{ .Values.accessPort }}"
             - name: ARGOCD_URL
@@ -97,7 +58,7 @@ spec:
             - name: HEADLAMP_URL
               value: "http://headlamp.{{ .Values.host }}:{{ .Values.accessPort }}"
             - name: SHELL_CMD
-              value: "/bin/bash --login"
+              value: "/bin/sh"
             - name: RELEASE_NAME
               value: {{ .Release.Name | quote }}
             - name: NAMESPACE
@@ -105,8 +66,15 @@ spec:
           ports:
             - containerPort: 3000
           volumeMounts:
-            - name: app
-              mountPath: /app
+            - name: cockpit-config
+              mountPath: /app/server.js
+              subPath: server.js
+            - name: cockpit-config
+              mountPath: /app/index.html
+              subPath: index.html
+            - name: cockpit-config
+              mountPath: /app/wiring.md
+              subPath: wiring.md
           readinessProbe:
             httpGet:
               path: /
@@ -121,11 +89,9 @@ spec:
               cpu: 500m
               memory: 256Mi
       volumes:
-        - name: config
+        - name: cockpit-config
           configMap:
             name: {{ .Release.Name }}-cockpit
-        - name: app
-          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
