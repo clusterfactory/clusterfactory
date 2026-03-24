@@ -1,7 +1,7 @@
 {{- if .Values.cockpit.enabled }}
 ---
 # cockpit.yaml — browser terminal + status dashboard
-# Image ghcr.io/drulacosmin/cockpit:1.0 has node_modules + kubectl pre-installed.
+# Image ghcr.io/clusterfactory/cockpit:1.0 has node_modules + kubectl pre-installed.
 # server.js, index.html, wiring.md are mounted as subPaths so they update with
 # the chart without rebuilding the image.
 apiVersion: v1
