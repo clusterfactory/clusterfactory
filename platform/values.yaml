@@ -20,6 +20,8 @@ serviceType: NodePort
 ingress-nginx:
   enabled: true
   controller:
+    admissionWebhooks:
+      enabled: false
     service:
       type: NodePort
       nodePorts:
