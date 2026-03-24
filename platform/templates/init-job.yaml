@@ -62,6 +62,16 @@ spec:
               value: {{ .Values.harbor.enabled | quote }}
             - name: OPENBAO_ENABLED
               value: {{ .Values.openbao.enabled | quote }}
+            - name: HOST
+              value: {{ .Values.host | default "localhost" | quote }}
+            - name: SERVICE_TYPE
+              value: {{ .Values.serviceType | default "NodePort" | quote }}
+            - name: KUBECONFIG_SECRET
+              value: {{ .Release.Name }}-kubeconfig
+            {{- if .Values.debugForceEnv }}
+            - name: DEBUG_FORCE_ENV
+              value: {{ .Values.debugForceEnv | quote }}
+            {{- end }}
           volumeMounts:
             - name: scripts
               mountPath: /scripts

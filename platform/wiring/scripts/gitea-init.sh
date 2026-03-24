@@ -9,6 +9,91 @@
 set -e
 apk add -q jq
 
+# ── Environment detection ──────────────────────────────────────────────────────
+echo "=== [0] Detecting cluster environment ==="
+
+# Allow forcing a specific environment for local testing without a real cloud cluster:
+#   helm upgrade clusterfactory . --set-string debugForceEnv=eks
+CLUSTER_ENV="${DEBUG_FORCE_ENV:-}"
+
+if [ -z "$CLUSTER_ENV" ]; then
+  PROVIDER_ID=$(kubectl get nodes -o jsonpath='{.items[0].spec.providerID}' 2>/dev/null || echo "")
+
+  if echo "$PROVIDER_ID" | grep -q "^aws:"; then
+    CLUSTER_ENV="eks"
+  elif echo "$PROVIDER_ID" | grep -q "^azure:"; then
+    CLUSTER_ENV="aks"
+  elif echo "$PROVIDER_ID" | grep -q "^gce:"; then
+    CLUSTER_ENV="gke"
+  elif echo "$PROVIDER_ID" | grep -qi "docker\|desktop"; then
+    CLUSTER_ENV="docker-desktop"
+  elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' \
+       2>/dev/null | grep -q "kubernetes.docker.internal"; then
+    CLUSTER_ENV="docker-desktop"
+  else
+    API_URL=$(kubectl get secret "${KUBECONFIG_SECRET}" -n "${NS}" \
+      -o jsonpath='{.data.kubeconfig}' 2>/dev/null | base64 -d \
+      | grep "server:" | awk '{print $2}' | head -1 || echo "")
+    if echo "$API_URL" | grep -qE "127\.0\.0\.1|localhost"; then
+      CLUSTER_ENV="local"
+    else
+      CLUSTER_ENV="remote"
+    fi
+  fi
+fi
+
+echo "  Detected environment: $CLUSTER_ENV"
+
+# Detect if LoadBalancer services work.
+# On Docker Desktop and kind, LoadBalancer stays Pending — use NodePort.
+HAS_LB="false"
+if [ "$CLUSTER_ENV" = "eks" ] || [ "$CLUSTER_ENV" = "aks" ] || [ "$CLUSTER_ENV" = "gke" ]; then
+  HAS_LB="true"
+fi
+
+# Detect default StorageClass
+HAS_STORAGECLASS=$(kubectl get storageclass \
+  -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' \
+  2>/dev/null || echo "")
+[ -n "$HAS_STORAGECLASS" ] && HAS_PERSISTENT="true" || HAS_PERSISTENT="false"
+
+echo "  LoadBalancer available : $HAS_LB"
+echo "  Default StorageClass   : ${HAS_STORAGECLASS:-none}"
+
+# ── Compute external URLs ──────────────────────────────────────────────────────
+if [ "$HAS_LB" = "true" ]; then
+  echo "  Waiting for Gitea LoadBalancer IP..."
+  GITEA_EXT_IP=""
+  for i in $(seq 1 60); do
+    GITEA_EXT_IP=$(kubectl get svc "${RELEASE_NAME}-gitea-http" -n "${NS}" \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+    [ -n "$GITEA_EXT_IP" ] && break
+    sleep 5
+  done
+  GITEA_ROOT_URL="http://${GITEA_EXT_IP}:3000"
+
+  echo "  Waiting for Harbor LoadBalancer IP..."
+  HARBOR_EXT_IP=""
+  for i in $(seq 1 60); do
+    HARBOR_EXT_IP=$(kubectl get svc "${RELEASE_NAME}-harbor" -n "${NS}" \
+      -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+    [ -n "$HARBOR_EXT_IP" ] && break
+    sleep 5
+  done
+  HARBOR_EXT_URL="http://${HARBOR_EXT_IP}"
+else
+  # NodePort — discover the actual assigned port from the running service
+  GITEA_PORT=$(kubectl get svc "${RELEASE_NAME}-gitea-http" -n "${NS}" \
+    -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "30080")
+  HARBOR_PORT=$(kubectl get svc "${RELEASE_NAME}-harbor" -n "${NS}" \
+    -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null || echo "30002")
+  GITEA_ROOT_URL="http://${HOST}:${GITEA_PORT}"
+  HARBOR_EXT_URL="http://${HOST}:${HARBOR_PORT}"
+fi
+
+echo "  Gitea external URL  : $GITEA_ROOT_URL"
+echo "  Harbor external URL : $HARBOR_EXT_URL"
+
 GITEA_URL="http://${RELEASE_NAME}-gitea-http.${NS}.svc.cluster.local:3000"
 GITEA_USER="${GITEA_USER}"
 GITEA_PASSWORD="${GITEA_PASSWORD}"
@@ -156,6 +241,13 @@ GITEA_TOKEN=$(curl -sf -X POST "${GITEA_URL}/api/v1/users/${GITEA_USER}/tokens" 
   -d '{"name":"argocd-token","scopes":["read:repository","write:repository","read:admin"]}' | jq -r '.sha1')
 REPO_URL="http://${RELEASE_NAME}-gitea-http.${NS}.svc.cluster.local:3000/${GITEA_USER}/clusterfactory-demo.git"
 echo "  Gitea token created."
+# ── 5b. Patch Gitea ROOT_URL ─────────────────────────────────────────────────
+echo "=== [5b] Patching Gitea ROOT_URL ==="
+curl -sf -X PUT "${GITEA_URL}/api/v1/admin/settings" \
+  -u "${GITEA_USER}:${GITEA_PASSWORD}" \
+  -H "Content-Type: application/json" \
+  -d "{\"app_url\":\"${GITEA_ROOT_URL}\"}" > /dev/null || true
+echo "  Gitea ROOT_URL set to ${GITEA_ROOT_URL}."
 # ── 6. Create Harbor project ────────────────────────────────────────────────
 echo "=== [6] Creating Harbor project ==="
 curl -s -X POST "${HARBOR_URL}/api/v2.0/projects" \
@@ -163,6 +255,12 @@ curl -s -X POST "${HARBOR_URL}/api/v2.0/projects" \
   -H "Content-Type: application/json" \
   -d '{"project_name":"clusterfactory","public":true,"metadata":{"public":"true"}}' \
   > /dev/null || echo "  (project may already exist)"
+# Patch Harbor externalURL so UI pull commands reference the correct host
+curl -sf -X PUT "${HARBOR_URL}/api/v2.0/configurations" \
+  -u "admin:${HARBOR_PASSWORD}" \
+  -H "Content-Type: application/json" \
+  -d "{\"external_url\":\"${HARBOR_EXT_URL}\"}" > /dev/null || true
+echo "  Harbor externalURL set to ${HARBOR_EXT_URL}."
 # ── 7. Configure OpenBao ────────────────────────────────────────────────────
 echo "=== [7] Configuring OpenBao ==="
 curl -s -X POST "${OPENBAO_ADDR}/v1/sys/auth/kubernetes" \
@@ -215,11 +313,23 @@ curl -sf -X POST "${OPENBAO_ADDR}/v1/secret/data/headlamp" \
 echo "  Headlamp token stored at secret/headlamp."
 # ── 11. Store KUBECONFIG in Gitea Actions secrets ───────────────────────────
 echo "=== [11] Storing KUBECONFIG as Gitea Actions secret ==="
-# Patch server URL for docker-desktop so in-cluster runners can reach the API
-KUBECONFIG_B64=$(kubectl config view --minify --flatten \
-  | sed 's|https://127.0.0.1:|https://kubernetes.docker.internal:|g' \
-  | sed 's|https://localhost:|https://kubernetes.docker.internal:|g' \
-  | base64 -w0)
+# Read the kubeconfig from the pre-install Secret created by bootstrap.sh,
+# then patch the API server URL based on the detected environment so that
+# in-cluster runners can reach the API server.
+RAW_KUBECONFIG=$(kubectl get secret "${KUBECONFIG_SECRET}" -n "${NS}" \
+  -o jsonpath='{.data.kubeconfig}' | base64 -d)
+
+if [ "$CLUSTER_ENV" = "docker-desktop" ] || [ "$CLUSTER_ENV" = "local" ]; then
+  # Runners in pods cannot reach 127.0.0.1 or localhost — patch to host alias.
+  PATCHED_KUBECONFIG=$(echo "$RAW_KUBECONFIG" \
+    | sed 's|https://127\.0\.0\.1:|https://kubernetes.docker.internal:|g' \
+    | sed 's|https://localhost:|https://kubernetes.docker.internal:|g')
+else
+  # On remote clusters the API server URL is already routable from pods.
+  PATCHED_KUBECONFIG="$RAW_KUBECONFIG"
+fi
+
+KUBECONFIG_B64=$(echo "$PATCHED_KUBECONFIG" | base64 -w0)
 # Create repo-level Actions secret
 _gitea_secret() {
   local name="$1"

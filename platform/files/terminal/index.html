@@ -153,6 +153,7 @@
   <div class="cmd-pill" onclick="run('kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -15\r')">events</div>
   <div class="cmd-pill" onclick="run('kubectl get applications -n clusterfactory 2>/dev/null || echo \"no argocd apps yet\"\r')">apps</div>
   <div class="cmd-pill" onclick="run('helm list -A\r')">helm</div>
+  <div class="cmd-pill" onclick="run('kubectl create token headlamp-admin -n kube-system --duration=8760h\r')">headlamp token</div>
 </div>
 
 <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>

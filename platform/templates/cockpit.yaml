@@ -90,12 +90,12 @@ spec:
               value: {{ .Values.host | quote }}
             - name: COCKPIT_TITLE
               value: {{ .Values.cockpit.title | default "planectl management cluster" | quote }}
-            - name: GITEA_PORT
-              value: "30080"
-            - name: ARGOCD_PORT
-              value: "8080"
-            - name: HEADLAMP_PORT
-              value: {{ .Values.headlamp.port | default 4466 | quote }}
+            - name: GITEA_URL
+              value: "http://gitea.{{ .Values.host }}:{{ .Values.accessPort }}"
+            - name: ARGOCD_URL
+              value: "http://argocd.{{ .Values.host }}:{{ .Values.accessPort }}"
+            - name: HEADLAMP_URL
+              value: "http://headlamp.{{ .Values.host }}:{{ .Values.accessPort }}"
             - name: SHELL_CMD
               value: "/bin/bash --login"
             - name: RELEASE_NAME
@@ -135,7 +135,7 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ .Release.Name }}-cockpit
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
     app.kubernetes.io/name: {{ .Release.Name }}-cockpit
   ports:

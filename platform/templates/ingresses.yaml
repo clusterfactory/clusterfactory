@@ -1,0 +1,99 @@
+{{- if index .Values "ingress-nginx" "enabled" }}
+# All browser-facing services behind a single nginx ingress.
+# Hosts: *.{{ .Values.host }} — on macOS, *.localhost resolves to 127.0.0.1 natively.
+# Access via SSM port-forward to NodePort 30080, then open http://<service>.{{ .Values.host }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+
+  {{- if .Values.gitea.enabled }}
+  - host: gitea.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-gitea-http
+            port:
+              number: 3000
+  {{- end }}
+
+  {{- if index .Values "argo-cd" "enabled" }}
+  - host: argocd.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-argocd-server
+            port:
+              number: 8080
+  {{- end }}
+
+  {{- if .Values.harbor.enabled }}
+  - host: harbor.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-harbor-nginx
+            port:
+              number: 80
+  {{- end }}
+
+  {{- if .Values.openbao.enabled }}
+  - host: openbao.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-openbao
+            port:
+              number: 8200
+  {{- end }}
+
+  {{- if .Values.cockpit.enabled }}
+  - host: cockpit.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-cockpit
+            port:
+              number: {{ .Values.cockpit.port }}
+  {{- end }}
+
+  {{- if .Values.headlamp.enabled }}
+  - host: headlamp.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-headlamp
+            port:
+              number: {{ .Values.headlamp.port }}
+  {{- end }}
+
+{{- end }}

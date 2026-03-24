@@ -7,6 +7,30 @@
 host: localhost
 namespace: clusterfactory
 
+# Controls service type for all browser-facing services.
+# Override at install time:
+#   --set serviceType=LoadBalancer   (cloud clusters: EKS, AKS, GKE)
+#   --set serviceType=NodePort       (local clusters: Docker Desktop, kind, etc.)
+serviceType: NodePort
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+# Single entry point for all services. NodePort 30080 on local clusters,
+# LoadBalancer on cloud. One SSM port-forward tunnel covers everything.
+# Hosts use *.localhost which resolves to 127.0.0.1 on macOS natively.
+ingress-nginx:
+  enabled: true
+  controller:
+    service:
+      type: NodePort
+      nodePorts:
+        http: 30080
+        https: 30443
+
+# Port used to reach services from the browser.
+# Local/SSM: match the localPortNumber in your SSM port-forward command (default 8080).
+# Cloud LoadBalancer: set to 80.
+accessPort: 8080
+
 cockpit:
   enabled: true
   port: 4000
@@ -34,8 +58,6 @@ gitea:
       actions:
         ENABLED: "true"
         DEFAULT_ACTIONS_URL: github
-      server:
-        ROOT_URL: http://localhost:30080
   resources:
     requests:
       cpu: 100m
@@ -46,7 +68,6 @@ gitea:
   service:
     http:
       type: NodePort
-      nodePort: 30080
   persistence:
     size: 5Gi
   postgresql:
@@ -89,7 +110,7 @@ argo-cd:
     enabled: false
   server:
     service:
-      type: LoadBalancer
+      type: ClusterIP
       servicePortHttp: 8080
     resources:
       requests:
@@ -151,7 +172,6 @@ openbao:
       devRootToken: "root"
     service:
       type: NodePort
-      nodePort: 30820
     resources:
       requests:
         cpu: 50m
@@ -164,13 +184,8 @@ harbor:
   enabled: true
   expose:
     type: nodePort
-    nodePort:
-      ports:
-        http:
-          nodePort: 30002
     tls:
       enabled: false
-  externalURL: http://localhost:30002
   harborAdminPassword: "Harbor12345"
   persistence:
     enabled: true
