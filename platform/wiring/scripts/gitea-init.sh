@@ -117,6 +117,21 @@ _wait() {
   echo "✗ TIMED OUT after $((retries * delay))s — aborting"
   exit 1
 }
+# _wait_any: accepts any HTTP response (including 4xx/5xx) — used for services
+# that return non-200 before being fully configured (e.g. OpenBao returns 501
+# when uninitialized, 503 when sealed).
+_wait_any() {
+  local name="$1" url="$2" retries="${3:-120}" delay="${4:-5}"
+  printf "  ○ %-42s" "${name}"
+  for i in $(seq 1 "${retries}"); do
+    HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "${url}" 2>/dev/null)
+    [ -n "$HTTP" ] && [ "$HTTP" != "000" ] && { echo "● READY"; return 0; }
+    [ $((i % 12)) -eq 0 ] && printf "\n    still waiting... (%ds elapsed)\n  ○ %-42s" "$((i * delay))" "${name}"
+    sleep "${delay}"
+  done
+  echo "✗ TIMED OUT after $((retries * delay))s — aborting"
+  exit 1
+}
 _wait_auth() {
   local name="$1" url="$2" user="$3" pass="$4" retries="${5:-120}" delay="${6:-5}"
   printf "  ○ %-42s" "${name}"
@@ -135,8 +150,8 @@ echo "║  clusterfactory — readiness gate                                    
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# 1. OpenBao — secrets must be writable before anything else
-_wait      "1/6  OpenBao   — secrets"       "${OPENBAO_ADDR}/v1/sys/health"
+# 1. OpenBao — wait for HTTP server to respond (501=uninitialized is fine; we init below)
+_wait_any  "1/6  OpenBao   — secrets"       "${OPENBAO_ADDR}/v1/sys/health"
 
 # 2. Gitea — source of truth for repo, tokens, runner
 _wait      "2/6  Gitea     — git + CI"      "${GITEA_URL}/api/healthz"

@@ -17,14 +17,5 @@ dependencies:
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.12.2
-- name: authentik
-  repository: https://charts.goauthentik.io
-  version: 2025.4.1
-- name: kyverno
-  repository: https://kyverno.github.io/kyverno/
-  version: 3.3.4
-- name: falco
-  repository: https://falcosecurity.github.io/charts
-  version: 4.14.0
-digest: sha256:bc799f7092bba824162e63ea2eec6e3abbb8abd0def7be570c79a41fe217a6c3
-generated: "2026-03-25T07:53:38.315625+02:00"
+digest: sha256:b0f8e05d79dd64aa36a8976dc3ce860cd8037b0d0f54a1f5459168332f73805f
+generated: "2026-03-25T10:31:04.779154+02:00"

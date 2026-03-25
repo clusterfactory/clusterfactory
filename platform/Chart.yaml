@@ -50,15 +50,23 @@ dependencies:
     version: "4.12.2"
     repository: "https://kubernetes.github.io/ingress-nginx"
     condition: ingress-nginx.enabled
-  - name: authentik
-    version: "2025.4.1"
-    repository: "https://charts.goauthentik.io"
-    condition: authentik.enabled
-  - name: kyverno
-    version: "3.3.4"
-    repository: "https://kyverno.github.io/kyverno/"
-    condition: kyverno.enabled
-  - name: falco
-    version: "4.14.0"
-    repository: "https://falcosecurity.github.io/charts"
-    condition: falco.enabled
+  # Optional security add-ons — NOT included by default (large charts that push
+  # the Helm release secret over 1MB). To enable, install them separately:
+  #
+  #   helm repo add goauthentik https://charts.goauthentik.io
+  #   helm upgrade clusterfactory . --set authentik.enabled=true \
+  #     --dependency-update
+  #
+  # Uncomment to include in this chart:
+  # - name: authentik
+  #   version: "2025.4.1"
+  #   repository: "https://charts.goauthentik.io"
+  #   condition: authentik.enabled
+  # - name: kyverno
+  #   version: "3.3.4"
+  #   repository: "https://kyverno.github.io/kyverno/"
+  #   condition: kyverno.enabled
+  # - name: falco
+  #   version: "4.14.0"
+  #   repository: "https://falcosecurity.github.io/charts"
+  #   condition: falco.enabled
