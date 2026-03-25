@@ -1,13 +1,12 @@
 apiVersion: v2
 name: clusterfactory
 description: >
-  One helm install. Five CNCF-upstream components (Gitea, ArgoCD, Harbor,
-  OpenBao, Crossplane) pre-wired and ready to use as a GitOps management
-  platform. All connections live in readable wiring/ YAML files.
-  Includes a browser terminal (Cockpit) and cluster UI (Headlamp).
+  Bootstrap chart. Installs Cockpit, Headlamp, act_runner, and Ingress rules.
+  The platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed
+  automatically by a Gitea Actions workflow triggered after this chart installs.
 type: application
-version: 0.1.18
-appVersion: "0.1.18"
+version: 0.2.0
+appVersion: "0.2.0"
 keywords:
   - gitops
   - gitea
@@ -26,47 +25,16 @@ maintainers:
     url: https://github.com/clusterfactory
 
 dependencies:
-  - name: harbor
-    version: "1.16.2"
-    repository: "https://helm.goharbor.io"
-    condition: harbor.enabled
-  # gitea is installed as a separate helm release by bootstrap.sh
-  # (the gitea chart alone is 450KB, which pushes the Helm release secret
-  #  over Kubernetes' 1MB Secret limit when combined with the other charts).
-  # Service names are identical: clusterfactory-gitea-http, etc.
-  - name: openbao
-    version: "0.5.0"
-    repository: "https://openbao.github.io/openbao-helm"
-    condition: openbao.enabled
-  - name: crossplane
-    version: "1.18.5"
-    repository: "https://charts.crossplane.io/stable"
-    condition: crossplane.enabled
-  - name: argo-cd
-    version: "7.8.28"
-    repository: "https://argoproj.github.io/argo-helm"
-    condition: argo-cd.enabled
   - name: ingress-nginx
     version: "4.12.2"
     repository: "https://kubernetes.github.io/ingress-nginx"
     condition: ingress-nginx.enabled
-  # Optional security add-ons — NOT included by default (large charts that push
-  # the Helm release secret over 1MB). To enable, install them separately:
+  # Heavy platform components are installed by the Gitea Actions workflow, NOT
+  # here. Embedding them as subcharts would push the Helm release Secret over
+  # Kubernetes' 1MB limit (ArgoCD CRDs alone are 1MB+ of OpenAPI schema).
   #
-  #   helm repo add goauthentik https://charts.goauthentik.io
-  #   helm upgrade clusterfactory . --set authentik.enabled=true \
-  #     --dependency-update
-  #
-  # Uncomment to include in this chart:
-  # - name: authentik
-  #   version: "2025.4.1"
-  #   repository: "https://charts.goauthentik.io"
-  #   condition: authentik.enabled
-  # - name: kyverno
-  #   version: "3.3.4"
-  #   repository: "https://kyverno.github.io/kyverno/"
-  #   condition: kyverno.enabled
-  # - name: falco
-  #   version: "4.14.0"
-  #   repository: "https://falcosecurity.github.io/charts"
-  #   condition: falco.enabled
+  # The workflow installs (via bootstrap-triggered Gitea Actions):
+  #   - argo-cd    chart: argoproj.github.io/argo-helm
+  #   - harbor     chart: helm.goharbor.io
+  #   - openbao    chart: openbao.github.io/openbao-helm
+  #   - crossplane chart: charts.crossplane.io/stable

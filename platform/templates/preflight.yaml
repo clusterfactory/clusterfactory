@@ -1,5 +1,5 @@
-{{- if and .Values.harbor.enabled (eq (.Values.harbor.harborAdminPassword | default "") "") }}
-{{ fail "harbor.harborAdminPassword is required. Set it with --set harbor.harborAdminPassword=..." }}
+{{- if and .Values.workflow.harborAdminPassword (eq (.Values.workflow.harborAdminPassword | default "") "") }}
+{{ fail "workflow.harborAdminPassword is required. Set it with --set workflow.harborAdminPassword=..." }}
 {{- end }}
 
 {{- if and .Values.gitea.enabled (eq (.Values.gitea.adminPassword | default "") "") }}

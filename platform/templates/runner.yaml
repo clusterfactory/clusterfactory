@@ -24,6 +24,7 @@ spec:
       labels:
         app.kubernetes.io/name: {{ .Release.Name }}-runner
     spec:
+      serviceAccountName: {{ .Release.Name }}-runner
       containers:
         - name: runner
           image: {{ .Values.runner.image }}:{{ .Values.runner.imageTag }}
