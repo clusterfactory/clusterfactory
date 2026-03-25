@@ -41,6 +41,12 @@ echo "    COCKPIT_TOKEN=$COCKPIT_TOKEN"
 echo ""
 
 # ── Prerequisites ──────────────────────────────────────────────────────────────
+# Auto-install jq if missing (needed for Gitea API calls)
+command -v jq > /dev/null 2>&1 || {
+  apt-get install -yq jq 2>/dev/null || \
+  apk add -q jq 2>/dev/null || \
+  { echo "ERROR: jq not found and could not be installed"; exit 1; }
+}
 for cmd in helm kubectl curl jq; do
   command -v "$cmd" > /dev/null 2>&1 || { echo "ERROR: $cmd not found"; exit 1; }
 done
