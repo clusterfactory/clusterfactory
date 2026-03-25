@@ -43,9 +43,9 @@ spec:
             - name: RELEASE_NAME
               value: {{ .Release.Name | quote }}
             - name: GITEA_USER
-              value: {{ .Values.gitea.gitea.admin.username | quote }}
+              value: {{ .Values.gitea.adminUsername | default "admin" | quote }}
             - name: GITEA_PASSWORD
-              value: {{ .Values.gitea.gitea.admin.password | quote }}
+              value: {{ .Values.gitea.adminPassword | quote }}
             - name: GITEA_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Values.namespace | default .Release.Namespace }}.svc.cluster.local:3000"
             - name: HARBOR_URL

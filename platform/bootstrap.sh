@@ -110,7 +110,7 @@ if [ -n "${TLS_EMAIL:-}" ]; then
   EXTRA_ARGS="$EXTRA_ARGS --set tls.enabled=true --set tls.email=${TLS_EMAIL} --set tls.issuer=${TLS_ISSUER} --set accessPort=443"
 fi
 
-EXTRA_ARGS="$EXTRA_ARGS --set harbor.harborAdminPassword=${HARBOR_PASS} --set cockpit.token=${COCKPIT_TOKEN}"
+EXTRA_ARGS="$EXTRA_ARGS --set gitea.adminPassword=${GITEA_PASS} --set harbor.harborAdminPassword=${HARBOR_PASS} --set cockpit.token=${COCKPIT_TOKEN}"
 
 # ── Gitea ──────────────────────────────────────────────────────────────────────
 # Gitea is installed as its own release so the main chart stays under K8s's

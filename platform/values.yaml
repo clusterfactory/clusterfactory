@@ -84,7 +84,9 @@ runner:
 # The service names produced are identical: clusterfactory-gitea-http, etc.
 # These values are used by ingresses.yaml and runner.yaml for service discovery.
 gitea:
-  enabled: true   # controls Ingress rule + runner; does NOT install the subchart
+  enabled: true        # controls Ingress rule + runner; does NOT install the subchart
+  adminUsername: admin # must match what was passed to clusterfactory-gitea install
+  adminPassword: ""    # required: --set gitea.adminPassword=...
 
 argo-cd:
   enabled: true

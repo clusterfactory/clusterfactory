@@ -37,7 +37,7 @@ spec:
             - name: CONTROL_PLANE_HOST
               value: {{ .Values.host | quote }}
             - name: GITEA_PASSWORD
-              value: {{ .Values.gitea.gitea.admin.password | quote }}
+              value: {{ .Values.gitea.adminPassword | quote }}
             - name: OPENBAO_ADDR
               value: "http://{{ .Release.Name }}-openbao.{{ .Values.namespace | default .Release.Namespace }}.svc.cluster.local:8200"
             - name: OPENBAO_TOKEN

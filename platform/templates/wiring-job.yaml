@@ -59,7 +59,7 @@ spec:
               OPENBAO_TOKEN=$(_get OPENBAO_TOKEN)
               OPENBAO_ADDR=$(_get OPENBAO_ADDR)
               RELEASE_NAME="{{ .Release.Name }}"
-              GITEA_USER="{{ .Values.gitea.gitea.admin.username }}"
+              GITEA_USER="{{ .Values.gitea.adminUsername | default "admin" }}"
               ARGOCD_NS="$NS"
 
               echo "Applying wiring files..."
