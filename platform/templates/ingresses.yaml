@@ -1,4 +1,4 @@
-{{- if index .Values "ingress-nginx" "enabled" }}
+{{- if .Values.ingress.enabled }}
 # All browser-facing services behind a single nginx ingress.
 # Hosts: *.{{ .Values.host }} — on macOS, *.localhost resolves to 127.0.0.1 natively.
 # Access via SSM port-forward to NodePort 30080, then open http://<service>.{{ .Values.host }}
@@ -14,8 +14,39 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    {{- if .Values.tls.enabled }}
+    {{- if eq .Values.tls.issuer "selfsigned" }}
+    cert-manager.io/cluster-issuer: "clusterfactory-ca-issuer"
+    {{- else }}
+    cert-manager.io/cluster-issuer: {{ .Values.tls.issuer | quote }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
 spec:
   ingressClassName: nginx
+  {{- if .Values.tls.enabled }}
+  tls:
+  - hosts:
+    {{- if .Values.gitea.enabled }}
+    - gitea.{{ .Values.host }}
+    {{- end }}
+    {{- if index .Values "argo-cd" "enabled" }}
+    - argocd.{{ .Values.host }}
+    {{- end }}
+    {{- if .Values.harbor.enabled }}
+    - harbor.{{ .Values.host }}
+    {{- end }}
+    {{- if .Values.openbao.enabled }}
+    - openbao.{{ .Values.host }}
+    {{- end }}
+    {{- if .Values.cockpit.enabled }}
+    - cockpit.{{ .Values.host }}
+    {{- end }}
+    {{- if .Values.headlamp.enabled }}
+    - headlamp.{{ .Values.host }}
+    {{- end }}
+    secretName: {{ .Release.Name }}-tls
+  {{- end }}
   rules:
 
   {{- if .Values.gitea.enabled }}
@@ -52,7 +83,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: {{ .Release.Name }}-harbor-nginx
+            name: {{ index .Values "harbor" "expose" "nodePort" "name" | default "harbor" }}
             port:
               number: 80
   {{- end }}

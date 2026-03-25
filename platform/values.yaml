@@ -17,6 +17,14 @@ serviceType: NodePort
 # Single entry point for all services. NodePort 30080 on local clusters,
 # LoadBalancer on cloud. One SSM port-forward tunnel covers everything.
 # Hosts use *.localhost which resolves to 127.0.0.1 on macOS natively.
+#
+# ingress.enabled     — controls whether Ingress resources are created
+# ingress-nginx.enabled — controls whether the bundled nginx controller is deployed
+#   Set ingress-nginx.enabled=false on clusters with a pre-installed nginx controller
+#   (e.g. RKE2 ships rke2-ingress-nginx). bootstrap.sh detects this automatically.
+ingress:
+  enabled: true
+
 ingress-nginx:
   enabled: true
   controller:
@@ -30,9 +38,26 @@ ingress-nginx:
 
 # Port used to reach services from the browser.
 # Default 30080 = ingress-nginx NodePort (Docker Desktop, kind, bare metal).
+# RKE2: set accessPort=80 (rke2-ingress-nginx uses hostPort 80).
 # SSM tunnel: override with --set accessPort=8080 (match your localPortNumber).
 # Cloud LoadBalancer: override with --set accessPort=80.
 accessPort: 30080
+
+# ── TLS ───────────────────────────────────────────────────────────────────────
+# Requires cert-manager in the cluster (bootstrap.sh installs it automatically
+# when TLS_EMAIL is set, or skip if already present).
+#
+# Usage:
+#   TLS_EMAIL=you@example.com TLS_ISSUER=letsencrypt bash bootstrap.sh
+#
+# tls.issuer options:
+#   selfsigned          — self-signed CA, no domain required (browser warns)
+#   letsencrypt-staging — Let's Encrypt staging (safe for testing, not trusted)
+#   letsencrypt         — Let's Encrypt production (trusted, real domain required)
+tls:
+  enabled: false
+  email: ""
+  issuer: letsencrypt-staging
 
 cockpit:
   enabled: true

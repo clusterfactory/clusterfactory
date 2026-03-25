@@ -109,6 +109,9 @@
     <a class="header-link" id="argo-link" href="#" target="_blank">
       <span class="live-dot"></span>ArgoCD
     </a>
+    <a class="header-link" id="harbor-link" href="#" target="_blank">
+      <span class="live-dot"></span>Harbor
+    </a>
     <a class="header-link" id="headlamp-link" href="#" target="_blank">
       <span>⎈</span> headlamp
     </a>
@@ -141,7 +144,7 @@
   <div class="terminal-bar">
     <div class="traffic"><span class="tl tl-r"></span><span class="tl tl-y"></span><span class="tl tl-g"></span></div>
     <span class="t-title">live shell</span>
-    <button class="t-btn" onclick="term.clear()">clear</button>
+<button class="t-btn" onclick="term.clear()">clear</button>
   </div>
   <div id="tc"></div>
 </div>
@@ -149,10 +152,14 @@
 <div class="cmd-bar">
   <div class="cmd-pill" onclick="run('kubectl get pods -n clusterfactory\r')">pods</div>
   <div class="cmd-pill" onclick="run('kubectl get jobs -n clusterfactory\r')">jobs</div>
-  <div class="cmd-pill" onclick="run('kubectl get secret clusterfactory-wiring-tokens -n clusterfactory -o json | python3 -c \"import json,sys,base64; [print(k,\\\":\\\",base64.b64decode(v).decode()) for k,v in json.load(sys.stdin)[\\\"data\\\"].items()]\"\r')">tokens</div>
   <div class="cmd-pill" onclick="run('kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -15\r')">events</div>
   <div class="cmd-pill" onclick="run('kubectl get applications -n clusterfactory 2>/dev/null || echo \"no argocd apps yet\"\r')">apps</div>
   <div class="cmd-pill" onclick="run('helm list -A\r')">helm</div>
+  <div class="cmd-pill" onclick="run('kubectl get secret clusterfactory-wiring-tokens -n clusterfactory -o json | python3 -c \"import json,sys,base64; [print(k,\\\":\\\",base64.b64decode(v).decode()) for k,v in json.load(sys.stdin)[\\\"data\\\"].items()]\"\r')">tokens</div>
+  <div class="cmd-pill" onclick="run('echo gitea: admin / admin123\r')">gitea pw</div>
+  <div class="cmd-pill" onclick="run('bao kv get -address=http://clusterfactory-openbao.clusterfactory:8200 -token=root secret/argocd\r')">argocd pw</div>
+  <div class="cmd-pill" onclick="run('bao kv get -address=http://clusterfactory-openbao.clusterfactory:8200 -token=root secret/harbor\r')">harbor pw</div>
+  <div class="cmd-pill" onclick="run('echo openbao token: root\r')">openbao token</div>
   <div class="cmd-pill" onclick="run('kubectl create token headlamp-admin -n kube-system --duration=8760h\r')">headlamp token</div>
 </div>
 
@@ -207,7 +214,8 @@ function setStatus(state) {
 }
 
 function connect() {
-  ws = new WebSocket(`ws://${location.host}`);
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${wsProto}//${location.host}`);
   ws.onopen = () => {
     attachAddon = new AttachAddon.AttachAddon(ws);
     term.loadAddon(attachAddon);
@@ -220,6 +228,17 @@ function connect() {
 
 window.addEventListener('resize', () => { fitAddon.fit(); sendResize(); });
 term.onResize(sendResize);
+
+// Rewrite a URL from the server to use the browser's current port.
+// This ensures SSM tunnel port (e.g. :8080) is preserved when the server
+// returns URLs with the remote port (e.g. :80).
+function localUrl(serverUrl) {
+  try {
+    const hostname = new URL(serverUrl).hostname;
+    const port     = location.port ? ':' + location.port : '';
+    return location.protocol + '//' + hostname + port + '/';
+  } catch (_) { return serverUrl; }
+}
 
 // Load config and patch header links
 fetch('/config')
@@ -236,9 +255,10 @@ fetch('/config')
         document.getElementById('header-sep').style.display   = '';
       }
     }
-    if (cfg.giteaUrl)    document.getElementById('gitea-link').href    = cfg.giteaUrl;
-    if (cfg.argoUrl)     document.getElementById('argo-link').href     = cfg.argoUrl;
-    if (cfg.headlampUrl) document.getElementById('headlamp-link').href = cfg.headlampUrl;
+    if (cfg.giteaUrl)    document.getElementById('gitea-link').href    = localUrl(cfg.giteaUrl);
+    if (cfg.argoUrl)     document.getElementById('argo-link').href     = localUrl(cfg.argoUrl);
+    if (cfg.harborUrl)   document.getElementById('harbor-link').href   = localUrl(cfg.harborUrl);
+    if (cfg.headlampUrl) document.getElementById('headlamp-link').href = localUrl(cfg.headlampUrl);
   })
   .catch(() => {});
 

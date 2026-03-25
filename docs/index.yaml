@@ -3,7 +3,7 @@ entries:
   clusterfactory:
   - apiVersion: v2
     appVersion: 0.1.17
-    created: "2026-03-24T06:46:49.087362+02:00"
+    created: "2026-03-25T06:48:10.077647+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -33,7 +33,7 @@ entries:
       Harbor, OpenBao, Crossplane) pre-wired and ready to use as a GitOps management
       platform. All connections live in readable wiring/ YAML files. Includes a browser
       terminal (Cockpit) and cluster UI (Headlamp). '
-    digest: 67e7e81d064683aed1d2b1d104ec0f10a255359f14964a52c01c357d31b82599
+    digest: 79e205e6e283e486d79a2eb406fc8d6fbab9e56ea0b686a590a86f697f01f8db
     home: https://github.com/clusterfactory/clusterfactory
     keywords:
     - gitops
@@ -57,7 +57,7 @@ entries:
     version: 0.1.17
   - apiVersion: v2
     appVersion: 0.1.16
-    created: "2026-03-24T06:46:49.009736+02:00"
+    created: "2026-03-25T06:48:10.023245+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -111,7 +111,7 @@ entries:
     version: 0.1.16
   - apiVersion: v2
     appVersion: 0.1.15
-    created: "2026-03-24T06:46:48.936985+02:00"
+    created: "2026-03-25T06:48:09.970094+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -165,7 +165,7 @@ entries:
     version: 0.1.15
   - apiVersion: v2
     appVersion: 0.1.14
-    created: "2026-03-24T06:46:48.856695+02:00"
+    created: "2026-03-25T06:48:09.916164+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -219,7 +219,7 @@ entries:
     version: 0.1.14
   - apiVersion: v2
     appVersion: 0.1.13
-    created: "2026-03-24T06:46:48.785225+02:00"
+    created: "2026-03-25T06:48:09.863223+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -273,7 +273,7 @@ entries:
     version: 0.1.13
   - apiVersion: v2
     appVersion: 0.1.12
-    created: "2026-03-24T06:46:48.711219+02:00"
+    created: "2026-03-25T06:48:09.807047+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -327,7 +327,7 @@ entries:
     version: 0.1.12
   - apiVersion: v2
     appVersion: 0.1.11
-    created: "2026-03-24T06:46:48.640917+02:00"
+    created: "2026-03-25T06:48:09.75267+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -349,15 +349,11 @@ entries:
       name: argo-cd
       repository: https://argoproj.github.io/argo-helm
       version: 7.8.28
-    - condition: ingress-nginx.enabled
-      name: ingress-nginx
-      repository: https://kubernetes.github.io/ingress-nginx
-      version: 4.12.2
     description: 'One helm install. Five CNCF-upstream components (Gitea, ArgoCD,
       Harbor, OpenBao, Crossplane) pre-wired and ready to use as a GitOps management
       platform. All connections live in readable wiring/ YAML files. Includes a browser
       terminal (Cockpit) and cluster UI (Headlamp). '
-    digest: a2b3193c804db6ba7e640dd9ba3b80051a0a3fd36dc45d5f9eb3b97fdd2fc405
+    digest: 3fb6d71f169660821c033e5e751a799936138c501f5dca51f7773c0ce376123e
     home: https://github.com/clusterfactory/clusterfactory
     keywords:
     - gitops
@@ -381,7 +377,7 @@ entries:
     version: 0.1.11
   - apiVersion: v2
     appVersion: 0.1.10
-    created: "2026-03-24T06:46:48.572852+02:00"
+    created: "2026-03-25T06:48:09.703511+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -431,7 +427,7 @@ entries:
     version: 0.1.10
   - apiVersion: v2
     appVersion: 0.1.9
-    created: "2026-03-24T06:46:49.68167+02:00"
+    created: "2026-03-25T06:48:10.481722+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -481,7 +477,7 @@ entries:
     version: 0.1.9
   - apiVersion: v2
     appVersion: 0.1.8
-    created: "2026-03-24T06:46:49.613309+02:00"
+    created: "2026-03-25T06:48:10.4306+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -531,7 +527,7 @@ entries:
     version: 0.1.8
   - apiVersion: v2
     appVersion: 0.1.7
-    created: "2026-03-24T06:46:49.548471+02:00"
+    created: "2026-03-25T06:48:10.381577+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -581,7 +577,7 @@ entries:
     version: 0.1.7
   - apiVersion: v2
     appVersion: 0.1.6
-    created: "2026-03-24T06:46:49.470297+02:00"
+    created: "2026-03-25T06:48:10.331305+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -631,7 +627,7 @@ entries:
     version: 0.1.6
   - apiVersion: v2
     appVersion: 0.1.5
-    created: "2026-03-24T06:46:49.366284+02:00"
+    created: "2026-03-25T06:48:10.282342+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -681,7 +677,7 @@ entries:
     version: 0.1.5
   - apiVersion: v2
     appVersion: 0.1.4
-    created: "2026-03-24T06:46:49.289289+02:00"
+    created: "2026-03-25T06:48:10.23209+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -731,7 +727,7 @@ entries:
     version: 0.1.4
   - apiVersion: v2
     appVersion: 0.1.3
-    created: "2026-03-24T06:46:49.223991+02:00"
+    created: "2026-03-25T06:48:10.180639+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -781,7 +777,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 0.1.2
-    created: "2026-03-24T06:46:49.159555+02:00"
+    created: "2026-03-25T06:48:10.129717+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -831,7 +827,7 @@ entries:
     version: 0.1.2
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-03-24T06:46:48.502627+02:00"
+    created: "2026-03-25T06:48:09.652879+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -881,7 +877,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-03-24T06:46:48.43549+02:00"
+    created: "2026-03-25T06:48:09.598691+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -929,4 +925,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.1.0.tgz
     version: 0.1.0
-generated: "2026-03-24T06:46:48.354894+02:00"
+generated: "2026-03-25T06:48:09.538736+02:00"

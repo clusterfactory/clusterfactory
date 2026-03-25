@@ -16,10 +16,12 @@ const host         = process.env.CONTROL_PLANE_HOST || 'localhost';
 const giteaPort    = process.env.GITEA_PORT          || '30080';
 const argoPort     = process.env.ARGOCD_PORT         || '8080';
 const headlampPort = process.env.HEADLAMP_PORT       || '4466';
+const harborPort   = process.env.HARBOR_PORT         || '30002';
 // When ingress is enabled, full URLs override the port-based defaults above
 const giteaUrl     = process.env.GITEA_URL    || `http://${host}:${giteaPort}`;
 const argoUrl      = process.env.ARGOCD_URL   || `http://${host}:${argoPort}`;
 const headlampUrl  = process.env.HEADLAMP_URL || `http://${host}:${headlampPort}`;
+const harborUrl    = process.env.HARBOR_URL   || `http://${host}:${harborPort}`;
 const title        = process.env.COCKPIT_TITLE       || 'planectl management cluster';
 const releaseName  = process.env.RELEASE_NAME        || 'clusterfactory';
 const namespace    = process.env.NAMESPACE           || 'clusterfactory';
@@ -82,6 +84,8 @@ app.get('/config', (_req, res) => {
     giteaUrl,
     argoUrl,
     headlampUrl,
+    harborUrl,
+
   });
 });
 

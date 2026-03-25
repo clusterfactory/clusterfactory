@@ -57,6 +57,8 @@ spec:
               value: "http://argocd.{{ .Values.host }}:{{ .Values.accessPort }}"
             - name: HEADLAMP_URL
               value: "http://headlamp.{{ .Values.host }}:{{ .Values.accessPort }}"
+            - name: HARBOR_URL
+              value: "http://harbor.{{ .Values.host }}:{{ .Values.accessPort }}"
             - name: SHELL_CMD
               value: "/bin/sh"
             - name: RELEASE_NAME
