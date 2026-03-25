@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# clusterfactory bootstrap — two-phase install
+# clusterfactory bootstrap — RKE2, two-phase install
 #
-# Phase 1: Installs Gitea + act_runner + Cockpit + Headlamp + Ingress
-# Phase 2: Calls Gitea API to push the install-platform.yaml workflow,
+# Requires: RKE2 cluster with rke2-ingress-nginx already running.
+#
+# Phase 1: Installs Gitea + act_runner + Cockpit + Headlamp + Ingress rules
+# Phase 2: Calls Gitea API to push install-platform.yaml workflow,
 #          which installs ArgoCD, Harbor, OpenBao, and Crossplane via
 #          Gitea Actions running on the act_runner inside the cluster.
 #
@@ -20,14 +22,16 @@ NAMESPACE="${1:-clusterfactory}"
 RELEASE="clusterfactory"
 
 # ── Kubeconfig ─────────────────────────────────────────────────────────────────
-# When running in SSM RunShellScript, HOME may be unset. Fall back to the RKE2
-# kubeconfig so kubectl/helm work regardless of how the script is invoked.
-if [ -z "${KUBECONFIG:-}" ]; then
-  if   [ -f /root/.kube/config ];           then export KUBECONFIG=/root/.kube/config
-  elif [ -f /etc/rancher/rke2/rke2.yaml ];  then export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
-  elif [ -f /etc/rancher/k3s/k3s.yaml ];    then export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-  fi
-fi
+export KUBECONFIG="${KUBECONFIG:-/etc/rancher/rke2/rke2.yaml}"
+
+# ── Auto-install jq if missing ─────────────────────────────────────────────────
+command -v jq > /dev/null 2>&1 || apt-get install -yq jq
+
+# ── Prerequisites ──────────────────────────────────────────────────────────────
+for cmd in helm kubectl curl jq; do
+  command -v "$cmd" > /dev/null 2>&1 || { echo "ERROR: $cmd not found"; exit 1; }
+done
+kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; exit 1; }
 
 # ── Credentials ────────────────────────────────────────────────────────────────
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
@@ -40,55 +44,19 @@ echo "    HARBOR_PASS=$HARBOR_PASS"
 echo "    COCKPIT_TOKEN=$COCKPIT_TOKEN"
 echo ""
 
-# ── Prerequisites ──────────────────────────────────────────────────────────────
-# Auto-install jq if missing (needed for Gitea API calls)
-command -v jq > /dev/null 2>&1 || {
-  apt-get install -yq jq 2>/dev/null || \
-  apk add -q jq 2>/dev/null || \
-  { echo "ERROR: jq not found and could not be installed"; exit 1; }
-}
-for cmd in helm kubectl curl jq; do
-  command -v "$cmd" > /dev/null 2>&1 || { echo "ERROR: $cmd not found"; exit 1; }
-done
-kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; exit 1; }
-
 # ── Namespace ──────────────────────────────────────────────────────────────────
 kubectl create namespace "$NAMESPACE" \
   --dry-run=client -o yaml | kubectl apply -f - > /dev/null
 
-# ── cert-manager ───────────────────────────────────────────────────────────────
-if [ -n "${TLS_EMAIL:-}" ]; then
-  if kubectl get deployment cert-manager -n cert-manager --ignore-not-found 2>/dev/null | grep -q cert-manager; then
-    echo "  Detected cert-manager — skipping installation"
-  else
-    echo "  Installing cert-manager (TLS_EMAIL set)..."
-    helm repo add jetstack https://charts.jetstack.io --force-update > /dev/null
-    helm upgrade --install cert-manager jetstack/cert-manager \
-      --namespace cert-manager --create-namespace \
-      --set crds.enabled=true \
-      --wait --timeout 5m
-  fi
-fi
-
-# ── RKE2 detection ─────────────────────────────────────────────────────────────
-EXTRA_ARGS=""
-if kubectl get daemonset rke2-ingress-nginx-controller -n kube-system \
-     --ignore-not-found 2>/dev/null | grep -q rke2-ingress-nginx-controller; then
-  echo "  Detected rke2-ingress-nginx — skipping bundled ingress-nginx (accessPort=80)"
-  EXTRA_ARGS="--set ingress-nginx.enabled=false --set accessPort=80"
-fi
-
-# TLS flags
-if [ -n "${TLS_EMAIL:-}" ]; then
-  TLS_ISSUER="${TLS_ISSUER:-letsencrypt-staging}"
-  EXTRA_ARGS="$EXTRA_ARGS --set tls.enabled=true --set tls.email=${TLS_EMAIL} --set tls.issuer=${TLS_ISSUER} --set accessPort=443"
+# ── local-path-provisioner (default StorageClass for RKE2) ────────────────────
+if ! kubectl get storageclass 2>/dev/null | grep -q "(default)"; then
+  echo "  Installing local-path-provisioner (no default StorageClass found)..."
+  kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.31/deploy/local-path-storage.yaml
+  kubectl patch storageclass local-path \
+    -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 fi
 
 CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if [ ! -d "${CHART_DIR}/charts" ] || [ -z "$(ls -A "${CHART_DIR}/charts" 2>/dev/null)" ]; then
-  helm dependency update "$CHART_DIR"
-fi
 
 # ── Phase 1a: Gitea ────────────────────────────────────────────────────────────
 echo "  Installing Gitea..."
@@ -111,22 +79,19 @@ helm upgrade --install "${RELEASE}-gitea" gitea/gitea \
   --timeout 15m \
   --wait
 
-# ── Phase 1b: Main chart (cockpit + headlamp + runner + ingress) ───────────────
-echo "  Installing clusterfactory chart (cockpit, headlamp, runner, ingress)..."
-# shellcheck disable=SC2086
+# ── Phase 1b: Main chart (cockpit + headlamp + runner + ingress rules) ─────────
+echo "  Installing clusterfactory chart..."
 helm upgrade --install "$RELEASE" "$CHART_DIR" \
   --namespace "$NAMESPACE" \
   --set "gitea.adminPassword=${GITEA_PASS}" \
   --set "workflow.harborAdminPassword=${HARBOR_PASS}" \
   --set "cockpit.token=${COCKPIT_TOKEN}" \
   --timeout 10m \
-  --wait \
-  $EXTRA_ARGS
+  --wait
 
 # ── Phase 2: Gitea API setup ───────────────────────────────────────────────────
 echo "  Setting up Gitea via API..."
 
-# Port-forward Gitea to localhost for API calls
 kubectl port-forward svc/${RELEASE}-gitea-http -n "$NAMESPACE" 13000:3000 &
 PF_PID=$!
 trap "kill $PF_PID 2>/dev/null || true" EXIT
@@ -151,8 +116,6 @@ ADMIN_TOKEN=$(curl -sf -X POST "${GITEA_API}/users/admin/tokens" \
   | jq -r '.sha1')
 
 [ -z "$ADMIN_TOKEN" ] && { echo "ERROR: could not create Gitea admin token"; exit 1; }
-
-AUTH="-H \"Authorization: token ${ADMIN_TOKEN}\""
 
 # Create org and repo (idempotent — 422 if already exists)
 curl -sf -X POST "${GITEA_API}/orgs" \
@@ -231,11 +194,9 @@ curl -sf -X "${METHOD}" \
 echo ""
 echo "  ✓ Phase 1 complete. Platform installation running via Gitea Actions."
 echo ""
-echo "  Monitor progress:"
-ACCESS_PORT="${accessPort:-30080}"
-HOST="${host:-localhost}"
-echo "    Gitea:   http://gitea.${HOST}:${ACCESS_PORT}"
-echo "    Actions: http://gitea.${HOST}:${ACCESS_PORT}/clusterfactory/platform/actions"
-echo "    Cockpit: http://cockpit.${HOST}:${ACCESS_PORT}"
+echo "  Access (via SSM port-forward to port 80):"
+echo "    Gitea:   http://gitea.localhost"
+echo "    Actions: http://gitea.localhost/clusterfactory/platform/actions"
+echo "    Cockpit: http://cockpit.localhost"
 echo ""
 echo "  Or watch: kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/name=${RELEASE}-runner -f"

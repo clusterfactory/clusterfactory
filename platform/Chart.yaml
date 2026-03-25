@@ -1,9 +1,10 @@
 apiVersion: v2
 name: clusterfactory
 description: >
-  Bootstrap chart. Installs Cockpit, Headlamp, act_runner, and Ingress rules.
-  The platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed
-  automatically by a Gitea Actions workflow triggered after this chart installs.
+  Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner, and
+  Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
+  Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed
+  by a Gitea Actions workflow triggered after this chart installs.
 type: application
 version: 0.2.0
 appVersion: "0.2.0"
@@ -16,25 +17,13 @@ keywords:
   - openbao
   - kubernetes
   - platform-engineering
-  - infrastructure-as-code
 home: https://github.com/clusterfactory/clusterfactory
 sources:
   - https://github.com/clusterfactory/clusterfactory
 maintainers:
   - name: clusterfactory
     url: https://github.com/clusterfactory
-
-dependencies:
-  - name: ingress-nginx
-    version: "4.12.2"
-    repository: "https://kubernetes.github.io/ingress-nginx"
-    condition: ingress-nginx.enabled
-  # Heavy platform components are installed by the Gitea Actions workflow, NOT
-  # here. Embedding them as subcharts would push the Helm release Secret over
-  # Kubernetes' 1MB limit (ArgoCD CRDs alone are 1MB+ of OpenAPI schema).
-  #
-  # The workflow installs (via bootstrap-triggered Gitea Actions):
-  #   - argo-cd    chart: argoproj.github.io/argo-helm
-  #   - harbor     chart: helm.goharbor.io
-  #   - openbao    chart: openbao.github.io/openbao-helm
-  #   - crossplane chart: charts.crossplane.io/stable
+# No subchart dependencies — all kept out to avoid the Kubernetes 1 MB
+# Helm release Secret limit. RKE2 ships rke2-ingress-nginx; everything
+# else is installed via separate Helm releases in bootstrap.sh or by the
+# Gitea Actions workflow.

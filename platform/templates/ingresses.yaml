@@ -1,7 +1,6 @@
 {{- if .Values.ingress.enabled }}
-# All browser-facing services behind a single nginx ingress.
-# Hosts: *.{{ .Values.host }} — on macOS, *.localhost resolves to 127.0.0.1 natively.
-# Access via SSM port-forward to NodePort 30080, then open http://<service>.{{ .Values.host }}
+# All browser-facing services behind a single nginx ingress (rke2-ingress-nginx).
+# Hosts: *.{{ .Values.host }} — access via SSM port-forward to port 80.
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
