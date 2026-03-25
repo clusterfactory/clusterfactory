@@ -80,6 +80,20 @@ if [ ! -d "${CHART_DIR}/charts" ] || [ -z "$(ls -A "${CHART_DIR}/charts" 2>/dev/
   helm dependency update "$CHART_DIR"
 fi
 
+# ── ArgoCD CRDs ────────────────────────────────────────────────────────────────
+# ArgoCD's CRD YAMLs (applicationset alone is 1MB+) push the Helm release
+# secret over K8s's 1MB limit. We install them via kubectl before the main
+# chart and set crds.install=false inside the chart to skip re-rendering them.
+ARGOCD_VERSION="$(helm show chart "${CHART_DIR}/charts/argo-cd-"*.tgz 2>/dev/null | awk '/^appVersion:/{print $2}' | head -1)"
+if [ -n "$ARGOCD_VERSION" ]; then
+  echo "  Installing ArgoCD CRDs (v${ARGOCD_VERSION})..."
+  ARGOCD_CRD_URL="https://raw.githubusercontent.com/argoproj/argo-cd/v${ARGOCD_VERSION}/manifests/crds"
+  for crd in application applicationset appproject; do
+    kubectl apply -f "${ARGOCD_CRD_URL}/${crd}-crd.yaml" --server-side 2>/dev/null || \
+    kubectl apply -f "${ARGOCD_CRD_URL}/${crd}-crd.yaml" 2>/dev/null || true
+  done
+fi
+
 # TLS flags passed through to helm when TLS_EMAIL is set
 if [ -n "${TLS_EMAIL:-}" ]; then
   TLS_ISSUER="${TLS_ISSUER:-letsencrypt-staging}"

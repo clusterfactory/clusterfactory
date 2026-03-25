@@ -130,6 +130,8 @@ gitea:
 
 argo-cd:
   enabled: true
+  crds:
+    install: false   # bootstrap.sh installs ArgoCD CRDs via kubectl (CRD YAML is 1MB+, breaks Helm release secret)
   configs:
     params:
       server.insecure: true
