@@ -1,0 +1,11 @@
+{{- if and .Values.harbor.enabled (eq (.Values.harbor.harborAdminPassword | default "") "") }}
+{{ fail "harbor.harborAdminPassword is required. Set it with --set harbor.harborAdminPassword=..." }}
+{{- end }}
+
+{{- if and .Values.gitea.enabled (eq (.Values.gitea.gitea.admin.password | default "") "") }}
+{{ fail "gitea.gitea.admin.password is required. Set it with --set gitea.gitea.admin.password=..." }}
+{{- end }}
+
+{{- if and .Values.cockpit.enabled (eq (.Values.cockpit.token | default "") "") }}
+{{ fail "cockpit.token is required. Generate with: openssl rand -hex 32" }}
+{{- end }}

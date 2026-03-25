@@ -1,16 +1,10 @@
 ---
-# init-rbac.yaml
-# ServiceAccount + permissions for the init and wiring Jobs.
-# Both Jobs run as this ServiceAccount so they can create Secrets,
-# apply wiring files, and query component health.
+# SA 1: init-job — broad access, only used during helm hook Jobs
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}-init
   namespace: {{ .Values.namespace | default .Release.Namespace }}
-  labels:
-    app.kubernetes.io/name: {{ .Release.Name }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -32,4 +26,70 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-init
+    namespace: {{ .Values.namespace | default .Release.Namespace }}
+---
+# SA 2: cockpit — read-only on deployments, pods, services, jobs in this namespace
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-cockpit
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-cockpit
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-cockpit
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-cockpit
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-cockpit
+    namespace: {{ .Values.namespace | default .Release.Namespace }}
+---
+# SA 3: headlamp — read-only cluster-wide (Headlamp is a cluster viewer)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-headlamp
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-headlamp-{{ .Release.Namespace }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-headlamp-{{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-headlamp-{{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-headlamp
     namespace: {{ .Values.namespace | default .Release.Namespace }}

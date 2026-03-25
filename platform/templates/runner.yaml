@@ -39,32 +39,24 @@ spec:
               TOKEN=$(cat /runner-token/token)
               GITEA_URL=$(cat /runner-token/gitea_url)
               echo "Registering runner with ${GITEA_URL}..."
-              {{- if .Values.runner.dockerSocket }}
-              LABELS="ubuntu-latest:docker://node:20-alpine"
-              {{- else }}
-              LABELS="ubuntu-latest:host"
-              {{- end }}
               act_runner register \
                 --no-interactive \
                 --instance "${GITEA_URL}" \
                 --token "${TOKEN}" \
                 --name "$(hostname)" \
-                --labels "${LABELS}"
+                --labels "ubuntu-latest:host"
               echo "Starting runner..."
               exec act_runner daemon
           env:
-            {{- if .Values.runner.dockerSocket }}
-            - name: DOCKER_HOST
-              value: unix:///var/run/docker.sock
-            {{- end }}
+            - name: CONFIG_FILE
+              value: /etc/act-runner/config.yaml
           volumeMounts:
             - name: runner-token
               mountPath: /runner-token
               readOnly: true
-            {{- if .Values.runner.dockerSocket }}
-            - name: docker-sock
-              mountPath: /var/run/docker.sock
-            {{- end }}
+            - name: runner-config
+              mountPath: /etc/act-runner/config.yaml
+              subPath: config.yaml
           resources:
             requests:
               cpu: 50m
@@ -77,10 +69,7 @@ spec:
           secret:
             secretName: {{ .Release.Name }}-runner-token
             optional: true   # will not exist until wiring Job runs
-        {{- if .Values.runner.dockerSocket }}
-        - name: docker-sock
-          hostPath:
-            path: {{ .Values.runner.dockerSocket }}
-            type: ""
-        {{- end }}
+        - name: runner-config
+          configMap:
+            name: {{ .Release.Name }}-runner-config
 {{- end }}

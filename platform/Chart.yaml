@@ -6,8 +6,8 @@ description: >
   platform. All connections live in readable wiring/ YAML files.
   Includes a browser terminal (Cockpit) and cluster UI (Headlamp).
 type: application
-version: 0.1.17
-appVersion: "0.1.17"
+version: 0.1.18
+appVersion: "0.1.18"
 keywords:
   - gitops
   - gitea
@@ -50,3 +50,15 @@ dependencies:
     version: "4.12.2"
     repository: "https://kubernetes.github.io/ingress-nginx"
     condition: ingress-nginx.enabled
+  - name: authentik
+    version: "2025.4.1"
+    repository: "https://charts.goauthentik.io"
+    condition: authentik.enabled
+  - name: kyverno
+    version: "3.3.4"
+    repository: "https://kyverno.github.io/kyverno/"
+    condition: kyverno.enabled
+  - name: falco
+    version: "4.14.0"
+    repository: "https://falcosecurity.github.io/charts"
+    condition: falco.enabled

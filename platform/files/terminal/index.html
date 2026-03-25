@@ -215,7 +215,9 @@ function setStatus(state) {
 
 function connect() {
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${wsProto}//${location.host}`);
+  const token   = document.cookie.split('; ')
+    .find(r => r.startsWith('cf-token='))?.split('=')[1] ?? '';
+  ws = new WebSocket(`${wsProto}//${location.host}${token ? '?token=' + encodeURIComponent(token) : ''}`);
   ws.onopen = () => {
     attachAddon = new AttachAddon.AttachAddon(ws);
     term.loadAddon(attachAddon);

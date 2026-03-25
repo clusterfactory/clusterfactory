@@ -100,7 +100,6 @@ GITEA_PASSWORD="${GITEA_PASSWORD}"
 HARBOR_URL="http://${RELEASE_NAME}-harbor-core.${NS}.svc.cluster.local"
 HARBOR_PASSWORD="${HARBOR_PASSWORD}"
 OPENBAO_ADDR="http://${RELEASE_NAME}-openbao.${NS}.svc.cluster.local:8200"
-OPENBAO_TOKEN="${OPENBAO_TOKEN}"
 ARGOCD_SERVER="http://${RELEASE_NAME}-argocd-server.${NS}.svc.cluster.local:8080"
 
 # ╔══════════════════════════════════════════════════════════════════════╗
@@ -180,6 +179,42 @@ echo "║                     ALL SYSTEMS READY                                �
 echo "║                                                                      ║"
 echo "╚══════════════════════════════════════════════════════════════════════╝"
 echo ""
+
+# ── OpenBao init + unseal (standalone mode) ───────────────────────────────────
+echo "=== Initializing OpenBao ==="
+OPENBAO_INITIALIZED=$(curl -sf "${OPENBAO_ADDR}/v1/sys/health" 2>/dev/null | jq -r '.initialized // false' || echo "false")
+
+if [ "$OPENBAO_INITIALIZED" = "false" ]; then
+  echo "  Running first-time init..."
+  INIT_RESP=$(curl -sf -X POST "${OPENBAO_ADDR}/v1/sys/init" \
+    -H "Content-Type: application/json" \
+    -d '{"secret_shares":1,"secret_threshold":1}')
+  UNSEAL_KEY=$(echo "$INIT_RESP" | jq -r '.keys[0]')
+  ROOT_TOKEN=$(echo "$INIT_RESP" | jq -r '.root_token')
+  kubectl create secret generic "${RELEASE_NAME}-openbao-init" \
+    --namespace "${NS}" \
+    --from-literal=unseal_key="${UNSEAL_KEY}" \
+    --from-literal=root_token="${ROOT_TOKEN}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  curl -sf -X POST "${OPENBAO_ADDR}/v1/sys/unseal" \
+    -H "Content-Type: application/json" \
+    -d "{\"key\":\"${UNSEAL_KEY}\"}" > /dev/null
+  OPENBAO_TOKEN="${ROOT_TOKEN}"
+  echo "  OpenBao initialized and unsealed."
+else
+  echo "  OpenBao already initialized — reading stored credentials."
+  OPENBAO_TOKEN=$(kubectl get secret "${RELEASE_NAME}-openbao-init" \
+    -n "${NS}" -o jsonpath='{.data.root_token}' 2>/dev/null | base64 -d || echo "")
+  SEALED=$(curl -sf "${OPENBAO_ADDR}/v1/sys/health" 2>/dev/null | jq -r '.sealed // true')
+  if [ "$SEALED" = "true" ] && [ -n "$OPENBAO_TOKEN" ]; then
+    UNSEAL_KEY=$(kubectl get secret "${RELEASE_NAME}-openbao-init" \
+      -n "${NS}" -o jsonpath='{.data.unseal_key}' | base64 -d)
+    curl -sf -X POST "${OPENBAO_ADDR}/v1/sys/unseal" \
+      -H "Content-Type: application/json" \
+      -d "{\"key\":\"${UNSEAL_KEY}\"}" > /dev/null
+    echo "  OpenBao unsealed."
+  fi
+fi
 
 # ── 1. Create demo repo ────────────────────────────────────────────────────
 echo "=== [2] Creating demo repo ==="

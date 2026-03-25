@@ -1,0 +1,18 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-docker-socket
+spec:
+  validationFailureAction: Enforce
+  rules:
+    - name: block-docker-socket
+      match:
+        resources:
+          kinds: [Pod]
+      validate:
+        message: "Mounting the Docker socket is not allowed."
+        deny:
+          conditions:
+            - key: "{{ request.object.spec.volumes[].hostPath.path | contains(@, '/var/run/docker.sock') }}"
+              operator: Equals
+              value: true

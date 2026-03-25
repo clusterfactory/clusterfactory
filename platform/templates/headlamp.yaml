@@ -19,7 +19,7 @@ spec:
       labels:
         app.kubernetes.io/name: {{ .Release.Name }}-headlamp
     spec:
-      serviceAccountName: {{ .Release.Name }}-init   # reuses existing cluster-admin SA
+      serviceAccountName: {{ .Release.Name }}-headlamp
       containers:
         - name: headlamp
           image: ghcr.io/headlamp-k8s/headlamp:latest

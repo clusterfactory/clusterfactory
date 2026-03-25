@@ -15,6 +15,18 @@ set -euo pipefail
 NAMESPACE="${1:-clusterfactory}"
 RELEASE="clusterfactory"
 
+# ── Credentials ────────────────────────────────────────────────────────────────
+# Generate secure credentials if not already provided via environment variables.
+GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
+HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
+COCKPIT_TOKEN="${COCKPIT_TOKEN:-$(openssl rand -hex 32)}"
+
+echo "  Credentials (save these):"
+echo "    GITEA_PASS=$GITEA_PASS"
+echo "    HARBOR_PASS=$HARBOR_PASS"
+echo "    COCKPIT_TOKEN=$COCKPIT_TOKEN"
+echo ""
+
 # ── Prerequisites ──────────────────────────────────────────────────────────────
 for cmd in helm kubectl; do
   command -v "$cmd" > /dev/null 2>&1 || { echo "ERROR: $cmd not found"; exit 1; }
@@ -73,6 +85,8 @@ if [ -n "${TLS_EMAIL:-}" ]; then
   TLS_ISSUER="${TLS_ISSUER:-letsencrypt-staging}"
   EXTRA_ARGS="$EXTRA_ARGS --set tls.enabled=true --set tls.email=${TLS_EMAIL} --set tls.issuer=${TLS_ISSUER} --set accessPort=443"
 fi
+
+EXTRA_ARGS="$EXTRA_ARGS --set gitea.gitea.admin.password=${GITEA_PASS} --set harbor.harborAdminPassword=${HARBOR_PASS} --set cockpit.token=${COCKPIT_TOKEN}"
 
 # shellcheck disable=SC2086
 helm upgrade --install "$RELEASE" "$CHART_DIR" \
