@@ -15,6 +15,16 @@ set -euo pipefail
 NAMESPACE="${1:-clusterfactory}"
 RELEASE="clusterfactory"
 
+# ── Kubeconfig ─────────────────────────────────────────────────────────────────
+# When running in SSM RunShellScript, HOME may be unset. Fall back to the RKE2
+# kubeconfig so kubectl/helm work regardless of how the script is invoked.
+if [ -z "${KUBECONFIG:-}" ]; then
+  if   [ -f /root/.kube/config ];              then export KUBECONFIG=/root/.kube/config
+  elif [ -f /etc/rancher/rke2/rke2.yaml ];     then export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+  elif [ -f /etc/rancher/k3s/k3s.yaml ];       then export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+  fi
+fi
+
 # ── Credentials ────────────────────────────────────────────────────────────────
 # Generate secure credentials if not already provided via environment variables.
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
