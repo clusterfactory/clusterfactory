@@ -2,9 +2,6 @@ dependencies:
 - name: harbor
   repository: https://helm.goharbor.io
   version: 1.16.2
-- name: gitea
-  repository: https://dl.gitea.com/charts/
-  version: 12.5.0
 - name: openbao
   repository: https://openbao.github.io/openbao-helm
   version: 0.5.0
@@ -17,5 +14,5 @@ dependencies:
 - name: ingress-nginx
   repository: https://kubernetes.github.io/ingress-nginx
   version: 4.12.2
-digest: sha256:b0f8e05d79dd64aa36a8976dc3ce860cd8037b0d0f54a1f5459168332f73805f
-generated: "2026-03-25T10:31:04.779154+02:00"
+digest: sha256:7a43613469d1985608c55d0e8645bf2425a4602f8f1537264bdeb34c41c1dfae
+generated: "2026-03-25T13:56:47.604818+02:00"

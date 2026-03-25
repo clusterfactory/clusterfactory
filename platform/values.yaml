@@ -78,55 +78,13 @@ runner:
   image: gitea/act_runner
   imageTag: "0.2.11"
 
+# ── Gitea (separate helm release) ─────────────────────────────────────────────
+# Gitea is installed as a separate "clusterfactory-gitea" Helm release by
+# bootstrap.sh to keep the main chart under K8s's 1MB release-secret limit.
+# The service names produced are identical: clusterfactory-gitea-http, etc.
+# These values are used by ingresses.yaml and runner.yaml for service discovery.
 gitea:
-  enabled: true
-  gitea:
-    admin:
-      username: admin
-      password: ""          # required: --set gitea.gitea.admin.password=...
-      email: admin@example.com
-    config:
-      actions:
-        ENABLED: "true"
-        DEFAULT_ACTIONS_URL: github
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 1000m
-      memory: 512Mi
-  service:
-    http:
-      type: NodePort
-  persistence:
-    size: 5Gi
-  postgresql:
-    enabled: true
-    primary:
-      persistence:
-        size: 2Gi
-      resources:
-        requests:
-          cpu: 100m
-          memory: 128Mi
-        limits:
-          cpu: 500m
-          memory: 256Mi
-  valkey:
-    enabled: true
-    master:
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 128Mi
-  valkey-cluster:
-    enabled: false
-  postgresql-ha:
-    enabled: false
+  enabled: true   # controls Ingress rule + runner; does NOT install the subchart
 
 argo-cd:
   enabled: true

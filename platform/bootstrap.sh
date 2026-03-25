@@ -110,7 +110,32 @@ if [ -n "${TLS_EMAIL:-}" ]; then
   EXTRA_ARGS="$EXTRA_ARGS --set tls.enabled=true --set tls.email=${TLS_EMAIL} --set tls.issuer=${TLS_ISSUER} --set accessPort=443"
 fi
 
-EXTRA_ARGS="$EXTRA_ARGS --set gitea.gitea.admin.password=${GITEA_PASS} --set harbor.harborAdminPassword=${HARBOR_PASS} --set cockpit.token=${COCKPIT_TOKEN}"
+EXTRA_ARGS="$EXTRA_ARGS --set harbor.harborAdminPassword=${HARBOR_PASS} --set cockpit.token=${COCKPIT_TOKEN}"
+
+# ── Gitea ──────────────────────────────────────────────────────────────────────
+# Gitea is installed as its own release so the main chart stays under K8s's
+# 1MB Helm release-secret limit. Service names match the subchart convention
+# (clusterfactory-gitea-http, etc.) so the rest of the chart sees no difference.
+echo "  Installing Gitea..."
+helm repo add gitea https://dl.gitea.com/charts/ --force-update > /dev/null 2>&1
+# shellcheck disable=SC2086
+helm upgrade --install "${RELEASE}-gitea" gitea/gitea \
+  --version 12.5.0 \
+  --namespace "$NAMESPACE" \
+  --set gitea.admin.username=admin \
+  --set "gitea.admin.password=${GITEA_PASS}" \
+  --set gitea.admin.email=admin@example.com \
+  --set "gitea.config.actions.ENABLED=true" \
+  --set "gitea.config.actions.DEFAULT_ACTIONS_URL=github" \
+  --set service.http.type=ClusterIP \
+  --set persistence.size=5Gi \
+  --set postgresql.enabled=true \
+  --set "postgresql.primary.persistence.size=2Gi" \
+  --set valkey.enabled=true \
+  --set "valkey-cluster.enabled=false" \
+  --set "postgresql-ha.enabled=false" \
+  --timeout 15m \
+  --wait
 
 # shellcheck disable=SC2086
 helm upgrade --install "$RELEASE" "$CHART_DIR" \

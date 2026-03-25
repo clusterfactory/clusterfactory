@@ -30,10 +30,10 @@ dependencies:
     version: "1.16.2"
     repository: "https://helm.goharbor.io"
     condition: harbor.enabled
-  - name: gitea
-    version: "12.5.0"
-    repository: "https://dl.gitea.com/charts/"
-    condition: gitea.enabled
+  # gitea is installed as a separate helm release by bootstrap.sh
+  # (the gitea chart alone is 450KB, which pushes the Helm release secret
+  #  over Kubernetes' 1MB Secret limit when combined with the other charts).
+  # Service names are identical: clusterfactory-gitea-http, etc.
   - name: openbao
     version: "0.5.0"
     repository: "https://openbao.github.io/openbao-helm"
