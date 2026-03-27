@@ -370,6 +370,20 @@ jobs:
 
           echo "Harbor credentials stored."
 
+      # ── Enable Authentik forward-auth in ingress ───────────────────────────
+      - name: Enable Authentik SSO on ingress
+        run: |
+          set -euo pipefail
+          # Authentik is now running — flip the ingress annotations on
+          helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory --force-update > /dev/null 2>&1
+          helm repo update > /dev/null 2>&1
+          helm upgrade "${RELEASE}" clusterfactory/clusterfactory \
+            --reuse-values \
+            --set authentik.enabled=true \
+            --namespace "${NAMESPACE}" \
+            --wait --timeout 5m
+          echo "Authentik forward-auth enabled on ingress."
+
       # ── Done ──────────────────────────────────────────────────────────────
       - name: Mark installation complete
         run: |

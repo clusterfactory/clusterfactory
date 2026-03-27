@@ -117,26 +117,10 @@ app.get('/status', async (_req, res) => {
 // Serve static files (index.html, node_modules, etc.)
 app.use(express.static(path.join(__dirname)));
 
-// ── Auth middleware ──────────────────────────────────────────────────────────
-const COCKPIT_TOKEN = process.env.COCKPIT_TOKEN;
-
+// ── WebSocket upgrade ────────────────────────────────────────────────────────
+// Auth is handled at the nginx ingress level (Authentik forward-auth).
+// cockpit trusts that nginx already authenticated the request.
 server.on('upgrade', (req, socket, head) => {
-  if (!COCKPIT_TOKEN) {
-    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  // Accept token via Authorization header OR ?token= query param (browser fallback)
-  const auth = req.headers['authorization'] || '';
-  const [scheme, headerToken] = auth.split(' ');
-  const url = new URL(req.url, 'http://localhost');
-  const queryToken = url.searchParams.get('token') || '';
-  const token = (scheme === 'Bearer' ? headerToken : '') || queryToken;
-  if (token !== COCKPIT_TOKEN) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
   wss.handleUpgrade(req, socket, head, (ws) => {
     wss.emit('connection', ws, req);
   });
