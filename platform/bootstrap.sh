@@ -119,7 +119,15 @@ EOF
 
 # ── Phase 1b: Main chart (cockpit + headlamp + runner + ingress rules) ─────────
 echo "  Installing clusterfactory chart..."
-helm upgrade --install "$RELEASE" "$CHART_DIR" \
+# Use local chart if Chart.yaml present (dev mode), otherwise use published Helm repo
+if [ -f "${CHART_DIR}/Chart.yaml" ]; then
+  CHART_REF="$CHART_DIR"
+else
+  helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory --force-update > /dev/null 2>&1
+  helm repo update > /dev/null 2>&1
+  CHART_REF="clusterfactory/clusterfactory"
+fi
+helm upgrade --install "$RELEASE" "$CHART_REF" \
   --namespace "$NAMESPACE" \
   --set "gitea.adminPassword=${GITEA_PASS}" \
   --set "workflow.harborAdminPassword=${HARBOR_PASS}" \
