@@ -96,19 +96,6 @@ spec:
             port:
               number: 8200
 
-  {{- if and .Values.cockpit.enabled (not (and .Values.cockpit.basicAuth.enabled .Values.cockpit.basicAuth.htpasswd)) }}
-  - host: cockpit.{{ .Values.host }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: {{ .Release.Name }}-cockpit
-            port:
-              number: {{ .Values.cockpit.port }}
-  {{- end }}
-
   {{- if .Values.headlamp.enabled }}
   - host: headlamp.{{ .Values.host }}
     http:
@@ -121,6 +108,39 @@ spec:
             port:
               number: {{ .Values.headlamp.port }}
   {{- end }}
+
+{{- if and .Values.cockpit.enabled (not (and .Values.cockpit.basicAuth.enabled .Values.cockpit.basicAuth.htpasswd)) }}
+---
+# cockpit — separate Ingress so WebSocket upgrade headers can be set
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-cockpit
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: cockpit.{{ .Values.host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-cockpit
+            port:
+              number: {{ .Values.cockpit.port }}
+{{- end }}
 
 {{- if and .Values.cockpit.enabled .Values.cockpit.basicAuth.enabled .Values.cockpit.basicAuth.htpasswd }}
 ---
@@ -135,6 +155,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
     nginx.ingress.kubernetes.io/auth-type: basic
     nginx.ingress.kubernetes.io/auth-secret: {{ .Release.Name }}-cockpit-auth
     nginx.ingress.kubernetes.io/auth-realm: "clusterfactory cockpit"
