@@ -215,6 +215,12 @@ function setStatus(state) {
 
 function connect() {
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // Bootstrap token from URL query param → cookie (survives page reloads)
+  const urlToken = new URLSearchParams(location.search).get('token');
+  if (urlToken) {
+    document.cookie = `cf-token=${encodeURIComponent(urlToken)}; path=/; SameSite=Lax`;
+    history.replaceState(null, '', location.pathname);
+  }
   const token   = document.cookie.split('; ')
     .find(r => r.startsWith('cf-token='))?.split('=')[1] ?? '';
   ws = new WebSocket(`${wsProto}//${location.host}${token ? '?token=' + encodeURIComponent(token) : ''}`);

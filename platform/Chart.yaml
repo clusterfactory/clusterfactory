@@ -6,8 +6,8 @@ description: >
   Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed
   by a Gitea Actions workflow triggered after this chart installs.
 type: application
-version: 0.2.2
-appVersion: "0.2.2"
+version: 0.2.3
+appVersion: "0.2.3"
 keywords:
   - gitops
   - gitea
