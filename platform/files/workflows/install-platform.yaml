@@ -22,9 +22,10 @@ jobs:
       - name: Uninstall previous platform releases
         run: |
           set -euo pipefail
-          for release in argo-cd harbor openbao crossplane; do
+          for release in argo-cd harbor openbao crossplane authentik; do
             helm uninstall "${RELEASE}-${release}" -n "${NAMESPACE}" 2>/dev/null || true
           done
+          helm uninstall cert-manager -n cert-manager 2>/dev/null || true
           # Delete PVCs so OpenBao/Harbor start with fresh storage
           kubectl delete pvc --all -n "${NAMESPACE}" --wait=false 2>/dev/null || true
           # Delete leftover ArgoCD CRDs
@@ -73,11 +74,107 @@ jobs:
       - name: Add Helm repositories
         run: |
           set -euo pipefail
-          helm repo add argo       https://argoproj.github.io/argo-helm   --force-update
-          helm repo add harbor     https://helm.goharbor.io               --force-update
-          helm repo add openbao    https://openbao.github.io/openbao-helm --force-update
-          helm repo add crossplane https://charts.crossplane.io/stable    --force-update
+          helm repo add argo       https://argoproj.github.io/argo-helm      --force-update
+          helm repo add harbor     https://helm.goharbor.io                  --force-update
+          helm repo add openbao    https://openbao.github.io/openbao-helm    --force-update
+          helm repo add crossplane https://charts.crossplane.io/stable       --force-update
+          helm repo add jetstack   https://charts.jetstack.io                --force-update
+          helm repo add authentik  https://charts.goauthentik.io             --force-update
           helm repo update
+
+      # ── cert-manager ──────────────────────────────────────────────────────
+      - name: Install cert-manager
+        run: |
+          set -euo pipefail
+          helm upgrade --install cert-manager jetstack/cert-manager \
+            --version "${{ secrets.CERTMANAGER_CHART_VERSION }}" \
+            --namespace cert-manager --create-namespace \
+            --set crds.enabled=true \
+            --wait --timeout 10m
+          echo "cert-manager ready."
+
+      # ── Authentik (SSO) ───────────────────────────────────────────────────
+      - name: Install Authentik
+        run: |
+          set -euo pipefail
+          helm upgrade --install "${RELEASE}-authentik" authentik/authentik \
+            --version "${{ secrets.AUTHENTIK_CHART_VERSION }}" \
+            --namespace "${NAMESPACE}" --create-namespace \
+            --set authentik.secret_key="${{ secrets.AUTHENTIK_SECRET_KEY }}" \
+            --set authentik.bootstrap_token="${{ secrets.AUTHENTIK_BOOTSTRAP_TOKEN }}" \
+            --set authentik.bootstrap_password="${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}" \
+            --set server.service.type=ClusterIP \
+            --set postgresql.enabled=true \
+            --set redis.enabled=true \
+            --wait --timeout 15m
+          echo "Authentik ready."
+
+      - name: Configure Authentik (forward-auth provider + application + outpost)
+        run: |
+          set -euo pipefail
+
+          AK_URL="http://${RELEASE}-authentik-server.${NAMESPACE}.svc.cluster.local:9000"
+          AK_TOKEN="${{ secrets.AUTHENTIK_BOOTSTRAP_TOKEN }}"
+
+          # Wait for Authentik API to respond
+          for i in $(seq 1 30); do
+            curl -sf "${AK_URL}/api/v3/flows/instances/" \
+              -H "Authorization: Bearer ${AK_TOKEN}" > /dev/null 2>&1 && break
+            [ "$i" -eq 30 ] && { echo "ERROR: Authentik API not reachable after 5 min"; exit 1; }
+            sleep 10
+          done
+
+          # Get default implicit authorization flow
+          FLOW_UUID=$(curl -sf \
+            "${AK_URL}/api/v3/flows/instances/?slug=default-provider-authorization-implicit-consent" \
+            -H "Authorization: Bearer ${AK_TOKEN}" \
+            | jq -r '.results[0].pk')
+
+          [ -z "${FLOW_UUID}" ] || [ "${FLOW_UUID}" = "null" ] && \
+            { echo "ERROR: default authorization flow not found"; exit 1; }
+
+          # Create proxy provider (forward_domain mode) — idempotent
+          PROVIDER_PK=$(curl -sf "${AK_URL}/api/v3/providers/proxy/?name=clusterfactory-forward-auth" \
+            -H "Authorization: Bearer ${AK_TOKEN}" | jq -r '.results[0].pk // empty')
+
+          if [ -z "${PROVIDER_PK}" ]; then
+            PROVIDER_PK=$(curl -sf -X POST "${AK_URL}/api/v3/providers/proxy/" \
+              -H "Authorization: Bearer ${AK_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"name\": \"clusterfactory-forward-auth\",
+                \"authorization_flow\": \"${FLOW_UUID}\",
+                \"mode\": \"forward_domain\",
+                \"cookie_domain\": \"${{ secrets.CF_HOST }}\",
+                \"external_host\": \"https://auth.${{ secrets.CF_HOST }}:${{ secrets.CF_ACCESS_PORT }}\"
+              }" | jq -r '.pk')
+          fi
+
+          [ -z "${PROVIDER_PK}" ] || [ "${PROVIDER_PK}" = "null" ] && \
+            { echo "ERROR: could not create/find Authentik proxy provider"; exit 1; }
+
+          # Create application linked to provider — idempotent
+          curl -sf -X POST "${AK_URL}/api/v3/core/applications/" \
+            -H "Authorization: Bearer ${AK_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"clusterfactory\",\"slug\":\"clusterfactory\",\"provider\":${PROVIDER_PK}}" \
+            > /dev/null 2>&1 || true
+
+          # Add provider to embedded outpost
+          OUTPOST_PK=$(curl -sf "${AK_URL}/api/v3/outposts/instances/?search=embedded" \
+            -H "Authorization: Bearer ${AK_TOKEN}" | jq -r '.results[0].pk')
+
+          EXISTING=$(curl -sf "${AK_URL}/api/v3/outposts/instances/${OUTPOST_PK}/" \
+            -H "Authorization: Bearer ${AK_TOKEN}" | jq '[.providers[]]')
+
+          UPDATED=$(echo "${EXISTING}" | jq ". + [${PROVIDER_PK}] | unique")
+
+          curl -sf -X PATCH "${AK_URL}/api/v3/outposts/instances/${OUTPOST_PK}/" \
+            -H "Authorization: Bearer ${AK_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"providers\": ${UPDATED}}" > /dev/null
+
+          echo "Authentik configured: provider=${PROVIDER_PK}, outpost=${OUTPOST_PK}"
 
       # ── ArgoCD ────────────────────────────────────────────────────────────
       - name: Install ArgoCD CRDs

@@ -2,8 +2,36 @@ apiVersion: v1
 entries:
   clusterfactory:
   - apiVersion: v2
+    appVersion: 0.2.6
+    created: "2026-03-27T08:30:00.820515+02:00"
+    description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
+      and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
+      Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
+      Gitea Actions workflow triggered after this chart installs. '
+    digest: 06f0ecd29e4346e937279ca47e3734ef01c54b346ae9a91d7b5dca12546e6257
+    home: https://github.com/clusterfactory/clusterfactory
+    keywords:
+    - gitops
+    - gitea
+    - argocd
+    - harbor
+    - crossplane
+    - openbao
+    - kubernetes
+    - platform-engineering
+    maintainers:
+    - name: clusterfactory
+      url: https://github.com/clusterfactory
+    name: clusterfactory
+    sources:
+    - https://github.com/clusterfactory/clusterfactory
+    type: application
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.2.6.tgz
+    version: 0.2.6
+  - apiVersion: v2
     appVersion: 0.2.5
-    created: "2026-03-27T08:01:21.665967+02:00"
+    created: "2026-03-27T08:30:00.819349+02:00"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -31,7 +59,7 @@ entries:
     version: 0.2.5
   - apiVersion: v2
     appVersion: 0.2.4
-    created: "2026-03-27T08:01:21.665053+02:00"
+    created: "2026-03-27T08:30:00.81712+02:00"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -59,7 +87,7 @@ entries:
     version: 0.2.4
   - apiVersion: v2
     appVersion: 0.2.3
-    created: "2026-03-27T08:01:21.663437+02:00"
+    created: "2026-03-27T08:30:00.814145+02:00"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -87,7 +115,7 @@ entries:
     version: 0.2.3
   - apiVersion: v2
     appVersion: 0.2.2
-    created: "2026-03-27T08:01:21.661179+02:00"
+    created: "2026-03-27T08:30:00.811219+02:00"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -115,7 +143,7 @@ entries:
     version: 0.2.2
   - apiVersion: v2
     appVersion: 0.2.1
-    created: "2026-03-27T08:01:21.658415+02:00"
+    created: "2026-03-27T08:30:00.808648+02:00"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -143,7 +171,7 @@ entries:
     version: 0.2.1
   - apiVersion: v2
     appVersion: 0.2.0
-    created: "2026-03-27T08:01:21.65589+02:00"
+    created: "2026-03-27T08:30:00.806205+02:00"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -171,7 +199,7 @@ entries:
     version: 0.2.0
   - apiVersion: v2
     appVersion: 0.1.17
-    created: "2026-03-27T08:01:21.226331+02:00"
+    created: "2026-03-27T08:30:00.271214+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -225,7 +253,7 @@ entries:
     version: 0.1.17
   - apiVersion: v2
     appVersion: 0.1.16
-    created: "2026-03-27T08:01:21.167885+02:00"
+    created: "2026-03-27T08:30:00.199451+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -279,7 +307,7 @@ entries:
     version: 0.1.16
   - apiVersion: v2
     appVersion: 0.1.15
-    created: "2026-03-27T08:01:21.109284+02:00"
+    created: "2026-03-27T08:30:00.13032+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -333,7 +361,7 @@ entries:
     version: 0.1.15
   - apiVersion: v2
     appVersion: 0.1.14
-    created: "2026-03-27T08:01:21.055391+02:00"
+    created: "2026-03-27T08:30:00.056395+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -387,7 +415,7 @@ entries:
     version: 0.1.14
   - apiVersion: v2
     appVersion: 0.1.13
-    created: "2026-03-27T08:01:20.998137+02:00"
+    created: "2026-03-27T08:29:59.980248+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -441,7 +469,7 @@ entries:
     version: 0.1.13
   - apiVersion: v2
     appVersion: 0.1.12
-    created: "2026-03-27T08:01:20.941535+02:00"
+    created: "2026-03-27T08:29:59.88914+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -495,7 +523,7 @@ entries:
     version: 0.1.12
   - apiVersion: v2
     appVersion: 0.1.11
-    created: "2026-03-27T08:01:20.884157+02:00"
+    created: "2026-03-27T08:29:59.793827+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -545,7 +573,7 @@ entries:
     version: 0.1.11
   - apiVersion: v2
     appVersion: 0.1.10
-    created: "2026-03-27T08:01:20.831864+02:00"
+    created: "2026-03-27T08:29:59.711585+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -595,7 +623,7 @@ entries:
     version: 0.1.10
   - apiVersion: v2
     appVersion: 0.1.9
-    created: "2026-03-27T08:01:21.653076+02:00"
+    created: "2026-03-27T08:30:00.803123+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -645,7 +673,7 @@ entries:
     version: 0.1.9
   - apiVersion: v2
     appVersion: 0.1.8
-    created: "2026-03-27T08:01:21.592286+02:00"
+    created: "2026-03-27T08:30:00.738742+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -695,7 +723,7 @@ entries:
     version: 0.1.8
   - apiVersion: v2
     appVersion: 0.1.7
-    created: "2026-03-27T08:01:21.52723+02:00"
+    created: "2026-03-27T08:30:00.673941+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -745,7 +773,7 @@ entries:
     version: 0.1.7
   - apiVersion: v2
     appVersion: 0.1.6
-    created: "2026-03-27T08:01:21.476291+02:00"
+    created: "2026-03-27T08:30:00.602414+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -795,7 +823,7 @@ entries:
     version: 0.1.6
   - apiVersion: v2
     appVersion: 0.1.5
-    created: "2026-03-27T08:01:21.426431+02:00"
+    created: "2026-03-27T08:30:00.536619+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -845,7 +873,7 @@ entries:
     version: 0.1.5
   - apiVersion: v2
     appVersion: 0.1.4
-    created: "2026-03-27T08:01:21.376197+02:00"
+    created: "2026-03-27T08:30:00.472442+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -895,7 +923,7 @@ entries:
     version: 0.1.4
   - apiVersion: v2
     appVersion: 0.1.3
-    created: "2026-03-27T08:01:21.326584+02:00"
+    created: "2026-03-27T08:30:00.407478+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -945,7 +973,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 0.1.2
-    created: "2026-03-27T08:01:21.275715+02:00"
+    created: "2026-03-27T08:30:00.343237+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -995,7 +1023,7 @@ entries:
     version: 0.1.2
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-03-27T08:01:20.781787+02:00"
+    created: "2026-03-27T08:29:59.626417+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1045,7 +1073,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-03-27T08:01:20.723807+02:00"
+    created: "2026-03-27T08:29:59.533983+02:00"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1093,4 +1121,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.1.0.tgz
     version: 0.1.0
-generated: "2026-03-27T08:01:20.663438+02:00"
+generated: "2026-03-27T08:29:59.447334+02:00"

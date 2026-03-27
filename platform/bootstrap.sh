@@ -12,9 +12,11 @@
 #   bash bootstrap.sh [namespace]
 #
 # Environment variables (optional overrides):
-#   GITEA_PASS      — Gitea admin password (generated if not set)
-#   HARBOR_PASS     — Harbor admin password (generated if not set)
-#   COCKPIT_TOKEN   — Cockpit WebSocket auth token (generated if not set)
+#   GITEA_PASS                  — Gitea admin password (generated if not set)
+#   HARBOR_PASS                 — Harbor admin password (generated if not set)
+#   AUTHENTIK_SECRET_KEY        — Authentik signing key (generated if not set)
+#   AUTHENTIK_BOOTSTRAP_TOKEN   — Authentik API token (generated if not set)
+#   AUTHENTIK_BOOTSTRAP_PASSWORD — Authentik admin UI password (generated if not set)
 
 set -euo pipefail
 
@@ -36,12 +38,18 @@ kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; e
 # ── Credentials ────────────────────────────────────────────────────────────────
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
-COCKPIT_TOKEN="${COCKPIT_TOKEN:-$(openssl rand -hex 32)}"
+AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -base64 36 | tr -dc 'a-zA-Z0-9' | head -c 50)}"
+AUTHENTIK_BOOTSTRAP_TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-$(openssl rand -hex 32)}"
+AUTHENTIK_BOOTSTRAP_PASSWORD="${AUTHENTIK_BOOTSTRAP_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
+
+# Deployment configuration
+CF_HOST="${CF_HOST:-localhost}"
+CF_ACCESS_PORT="${CF_ACCESS_PORT:-8443}"
 
 echo "  Credentials (save these):"
 echo "    GITEA_PASS=$GITEA_PASS"
 echo "    HARBOR_PASS=$HARBOR_PASS"
-echo "    COCKPIT_TOKEN=$COCKPIT_TOKEN"
+echo "    AUTHENTIK_BOOTSTRAP_PASSWORD=$AUTHENTIK_BOOTSTRAP_PASSWORD"
 echo ""
 
 # ── Namespace ──────────────────────────────────────────────────────────────────
@@ -104,7 +112,8 @@ helm upgrade --install "$RELEASE" "$CHART_DIR" \
   --namespace "$NAMESPACE" \
   --set "gitea.adminPassword=${GITEA_PASS}" \
   --set "workflow.harborAdminPassword=${HARBOR_PASS}" \
-  --set "cockpit.token=${COCKPIT_TOKEN}" \
+  --set "host=${CF_HOST}" \
+  --set "accessPort=${CF_ACCESS_PORT}" \
   --timeout 10m \
   --wait
 
@@ -155,13 +164,20 @@ _org_secret() {
     -H "Content-Type: application/json" \
     -d "{\"data\":\"${2}\"}" > /dev/null
 }
-_org_secret "HARBOR_ADMIN_PASSWORD"     "${HARBOR_PASS}"
-_org_secret "ARGOCD_CHART_VERSION"      "7.8.28"
-_org_secret "HARBOR_CHART_VERSION"      "1.16.2"
-_org_secret "OPENBAO_CHART_VERSION"     "0.5.0"
-_org_secret "CROSSPLANE_CHART_VERSION"  "1.18.5"
-_org_secret "CF_NAMESPACE"              "${NAMESPACE}"
-_org_secret "CF_RELEASE"                "${RELEASE}"
+_org_secret "HARBOR_ADMIN_PASSWORD"          "${HARBOR_PASS}"
+_org_secret "AUTHENTIK_SECRET_KEY"           "${AUTHENTIK_SECRET_KEY}"
+_org_secret "AUTHENTIK_BOOTSTRAP_TOKEN"      "${AUTHENTIK_BOOTSTRAP_TOKEN}"
+_org_secret "AUTHENTIK_BOOTSTRAP_PASSWORD"   "${AUTHENTIK_BOOTSTRAP_PASSWORD}"
+_org_secret "ARGOCD_CHART_VERSION"           "7.8.28"
+_org_secret "HARBOR_CHART_VERSION"           "1.16.2"
+_org_secret "OPENBAO_CHART_VERSION"          "0.5.0"
+_org_secret "CROSSPLANE_CHART_VERSION"       "1.18.5"
+_org_secret "CERTMANAGER_CHART_VERSION"      "1.17.1"
+_org_secret "AUTHENTIK_CHART_VERSION"        "2024.12.3"
+_org_secret "CF_NAMESPACE"                   "${NAMESPACE}"
+_org_secret "CF_RELEASE"                     "${RELEASE}"
+_org_secret "CF_HOST"                        "${CF_HOST}"
+_org_secret "CF_ACCESS_PORT"                 "${CF_ACCESS_PORT}"
 
 echo "  Org secrets stored."
 
@@ -213,9 +229,20 @@ curl -sf -X "${METHOD}" \
 echo ""
 echo "  ✓ Phase 1 complete. Platform installation running via Gitea Actions."
 echo ""
-echo "  Access (via SSM port-forward to port 80):"
-echo "    Gitea:   http://gitea.localhost"
-echo "    Actions: http://gitea.localhost/clusterfactory/platform/actions"
-echo "    Cockpit: http://cockpit.localhost"
+echo "  SSM port-forward (run on your laptop):"
+echo "    aws ssm start-session --target <instance-id> \\"
+echo "      --document-name AWS-StartPortForwardingSession \\"
+echo "      --parameters '{\"portNumber\":[\"443\"],\"localPortNumber\":[\"${CF_ACCESS_PORT}\"]}'"
 echo ""
-echo "  Or watch: kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/name=${RELEASE}-runner -f"
+echo "  Access (after port-forward to :${CF_ACCESS_PORT}, trust the self-signed cert):"
+echo "    Gitea:    https://gitea.${CF_HOST}:${CF_ACCESS_PORT}"
+echo "    Actions:  https://gitea.${CF_HOST}:${CF_ACCESS_PORT}/clusterfactory/platform/actions"
+echo "    Cockpit:  https://cockpit.${CF_HOST}:${CF_ACCESS_PORT}"
+echo "    Headlamp: https://headlamp.${CF_HOST}:${CF_ACCESS_PORT}"
+echo "    Auth:     https://auth.${CF_HOST}:${CF_ACCESS_PORT}  (Authentik SSO)"
+echo ""
+echo "  Authentik admin UI: https://auth.${CF_HOST}:${CF_ACCESS_PORT}"
+echo "    Username: akadmin"
+echo "    Password: ${AUTHENTIK_BOOTSTRAP_PASSWORD}"
+echo ""
+echo "  Or watch workflow: kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/name=${RELEASE}-runner -f"
