@@ -77,6 +77,7 @@ jobs:
           helm repo add argo       https://argoproj.github.io/argo-helm      --force-update
           helm repo add harbor     https://helm.goharbor.io                  --force-update
           helm repo add openbao    https://openbao.github.io/openbao-helm    --force-update
+    
           helm repo add crossplane https://charts.crossplane.io/stable       --force-update
           helm repo add jetstack   https://charts.jetstack.io                --force-update
           helm repo add authentik  https://charts.goauthentik.io             --force-update
@@ -103,6 +104,8 @@ jobs:
             --set authentik.secret_key="${{ secrets.AUTHENTIK_SECRET_KEY }}" \
             --set authentik.bootstrap_token="${{ secrets.AUTHENTIK_BOOTSTRAP_TOKEN }}" \
             --set authentik.bootstrap_password="${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}" \
+            --set postgresql.auth.password="${{ secrets.AUTHENTIK_PG_PASSWORD }}" \
+            --set postgresql.auth.postgresPassword="${{ secrets.AUTHENTIK_PG_PASSWORD }}" \
             --set server.service.type=ClusterIP \
             --set postgresql.enabled=true \
             --set redis.enabled=true \

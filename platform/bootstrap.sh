@@ -41,6 +41,7 @@ HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | hea
 AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -base64 36 | tr -dc 'a-zA-Z0-9' | head -c 50)}"
 AUTHENTIK_BOOTSTRAP_TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-$(openssl rand -hex 32)}"
 AUTHENTIK_BOOTSTRAP_PASSWORD="${AUTHENTIK_BOOTSTRAP_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
+AUTHENTIK_PG_PASSWORD="${AUTHENTIK_PG_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 
 # Deployment configuration
 CF_HOST="${CF_HOST:-localhost}"
@@ -65,6 +66,16 @@ if ! kubectl get storageclass 2>/dev/null | grep -q "(default)"; then
 fi
 
 CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── cert-manager (required before main chart — provides TLS CRDs) ──────────────
+echo "  Installing cert-manager..."
+helm repo add jetstack https://charts.jetstack.io --force-update > /dev/null 2>&1
+helm upgrade --install cert-manager jetstack/cert-manager \
+  --version 1.17.1 \
+  --namespace cert-manager --create-namespace \
+  --set crds.enabled=true \
+  --timeout 10m \
+  --wait
 
 # ── Phase 1a: Gitea ────────────────────────────────────────────────────────────
 echo "  Installing Gitea..."
@@ -168,12 +179,13 @@ _org_secret "HARBOR_ADMIN_PASSWORD"          "${HARBOR_PASS}"
 _org_secret "AUTHENTIK_SECRET_KEY"           "${AUTHENTIK_SECRET_KEY}"
 _org_secret "AUTHENTIK_BOOTSTRAP_TOKEN"      "${AUTHENTIK_BOOTSTRAP_TOKEN}"
 _org_secret "AUTHENTIK_BOOTSTRAP_PASSWORD"   "${AUTHENTIK_BOOTSTRAP_PASSWORD}"
+_org_secret "AUTHENTIK_PG_PASSWORD"          "${AUTHENTIK_PG_PASSWORD}"
 _org_secret "ARGOCD_CHART_VERSION"           "7.8.28"
 _org_secret "HARBOR_CHART_VERSION"           "1.16.2"
 _org_secret "OPENBAO_CHART_VERSION"          "0.5.0"
 _org_secret "CROSSPLANE_CHART_VERSION"       "1.18.5"
 _org_secret "CERTMANAGER_CHART_VERSION"      "1.17.1"
-_org_secret "AUTHENTIK_CHART_VERSION"        "2024.12.3"
+_org_secret "AUTHENTIK_CHART_VERSION"        "2026.2.1"
 _org_secret "CF_NAMESPACE"                   "${NAMESPACE}"
 _org_secret "CF_RELEASE"                     "${RELEASE}"
 _org_secret "CF_HOST"                        "${CF_HOST}"

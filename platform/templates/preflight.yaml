@@ -6,6 +6,3 @@
 {{ fail "gitea.adminPassword is required. Set it with --set gitea.adminPassword=..." }}
 {{- end }}
 
-{{- if and .Values.cockpit.enabled (eq (.Values.cockpit.token | default "") "") }}
-{{ fail "cockpit.token is required. Generate with: openssl rand -hex 32" }}
-{{- end }}

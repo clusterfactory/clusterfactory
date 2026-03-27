@@ -15,20 +15,23 @@ ingress:
 
 # Port browsers use to reach services. RKE2 rke2-ingress-nginx binds hostPort 80.
 # When using SSM port-forward, set this to your localPortNumber.
-accessPort: 80
+accessPort: 8443
 
 # ── TLS ───────────────────────────────────────────────────────────────────────
 tls:
-  enabled: false
+  enabled: true
+  issuer: selfsigned   # selfsigned | letsencrypt-staging | letsencrypt
   email: ""
-  issuer: letsencrypt-staging
+
+# ── Authentik (SSO) ───────────────────────────────────────────────────────────
+authentik:
+  enabled: false   # flipped to true by install-platform.yaml after Authentik is running
 
 # ── Cockpit (browser terminal) ────────────────────────────────────────────────
 cockpit:
   enabled: true
   port: 4000
   title: "clusterfactory"
-  token: ""          # required: --set cockpit.token=$(openssl rand -hex 32)
   basicAuth:
     enabled: false
     htpasswd: ""

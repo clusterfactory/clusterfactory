@@ -65,11 +65,6 @@ spec:
               value: {{ .Release.Name | quote }}
             - name: NAMESPACE
               value: {{ .Values.namespace | default .Release.Namespace | quote }}
-            - name: COCKPIT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Release.Name }}-cockpit-token
-                  key: token
           ports:
             - containerPort: 3000
           volumeMounts:
@@ -114,22 +109,5 @@ spec:
   ports:
     - port: {{ .Values.cockpit.port | default 4000 }}
       targetPort: 3000
-      protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ .Release.Name }}-cockpit-nodeport
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
-  labels:
-    app.kubernetes.io/name: {{ .Release.Name }}-cockpit
-spec:
-  type: NodePort
-  selector:
-    app.kubernetes.io/name: {{ .Release.Name }}-cockpit
-  ports:
-    - port: 3000
-      targetPort: 3000
-      nodePort: 30900
       protocol: TCP
 {{- end }}
