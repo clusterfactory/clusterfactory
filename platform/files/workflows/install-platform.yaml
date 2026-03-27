@@ -106,6 +106,7 @@ jobs:
             --set authentik.bootstrap_password="${{ secrets.AUTHENTIK_BOOTSTRAP_PASSWORD }}" \
             --set postgresql.auth.password="${{ secrets.AUTHENTIK_PG_PASSWORD }}" \
             --set postgresql.auth.postgresPassword="${{ secrets.AUTHENTIK_PG_PASSWORD }}" \
+            --set authentik.postgresql.password="${{ secrets.AUTHENTIK_PG_PASSWORD }}" \
             --set server.service.type=ClusterIP \
             --set postgresql.enabled=true \
             --set redis.enabled=true \
