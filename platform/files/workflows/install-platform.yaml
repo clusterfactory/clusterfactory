@@ -14,53 +14,90 @@ jobs:
 
     env:
       NAMESPACE: ${{ secrets.CF_NAMESPACE }}
-      RELEASE:    ${{ secrets.CF_RELEASE }}
+      RELEASE:   ${{ secrets.CF_RELEASE }}
+      KUBECONFIG: /etc/rancher/rke2/rke2.yaml
 
     steps:
+      # ── Cleanup (idempotent — safe to re-run) ─────────────────────────────
+      - name: Uninstall previous platform releases
+        run: |
+          set -euo pipefail
+          for release in argo-cd harbor openbao crossplane; do
+            helm uninstall "${RELEASE}-${release}" -n "${NAMESPACE}" 2>/dev/null || true
+          done
+          # Delete PVCs so OpenBao/Harbor start with fresh storage
+          kubectl delete pvc --all -n "${NAMESPACE}" --wait=false 2>/dev/null || true
+          # Delete leftover ArgoCD CRDs
+          kubectl delete crd \
+            applications.argoproj.io \
+            applicationsets.argoproj.io \
+            appprojects.argoproj.io 2>/dev/null || true
+          # Delete openbao init secret so re-init is forced
+          kubectl delete secret "${RELEASE}-openbao-init" -n "${NAMESPACE}" 2>/dev/null || true
+          echo "Cleanup done."
+
+      # ── Tools ──────────────────────────────────────────────────────────────
       - name: Install tools (kubectl + helm + jq)
         run: |
-          # kubectl
+          set -euo pipefail
+
+          # Detect package manager
+          if command -v apt-get &>/dev/null; then
+            apt-get update -qq
+            apt-get install -yq curl jq
+          elif command -v apk &>/dev/null; then
+            apk add -q curl jq
+          fi
+
+          # kubectl — use the cluster's own version to avoid skew
           K8S_VER=$(curl -sfL https://dl.k8s.io/release/stable.txt)
           curl -sfLo /usr/local/bin/kubectl \
             "https://dl.k8s.io/release/${K8S_VER}/bin/linux/amd64/kubectl"
           chmod +x /usr/local/bin/kubectl
+
           # helm
-          curl -sf https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          # jq (act_runner base image is Alpine)
-          apk add -q jq 2>/dev/null || apt-get install -yq jq 2>/dev/null || true
-          kubectl version --client --short
+          curl -sf https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+            | VERIFY_CHECKSUM=false bash
+
+          kubectl version --client
           helm version --short
 
+      # ── Cluster sanity check ───────────────────────────────────────────────
       - name: Verify cluster access
         run: |
+          set -euo pipefail
           kubectl cluster-info
-          kubectl get nodes
+          kubectl get nodes -o wide
 
+      # ── Helm repos ────────────────────────────────────────────────────────
       - name: Add Helm repositories
         run: |
-          helm repo add argo        https://argoproj.github.io/argo-helm   --force-update
-          helm repo add harbor      https://helm.goharbor.io               --force-update
-          helm repo add openbao     https://openbao.github.io/openbao-helm --force-update
-          helm repo add crossplane  https://charts.crossplane.io/stable    --force-update
+          set -euo pipefail
+          helm repo add argo       https://argoproj.github.io/argo-helm   --force-update
+          helm repo add harbor     https://helm.goharbor.io               --force-update
+          helm repo add openbao    https://openbao.github.io/openbao-helm --force-update
+          helm repo add crossplane https://charts.crossplane.io/stable    --force-update
           helm repo update
 
-      # ── ArgoCD ─────────────────────────────────────────────────────────────
+      # ── ArgoCD ────────────────────────────────────────────────────────────
       - name: Install ArgoCD CRDs
         run: |
+          set -euo pipefail
           APP_VER=$(helm show chart argo/argo-cd \
             --version "${{ secrets.ARGOCD_CHART_VERSION }}" \
-            | awk '/^appVersion:/{gsub(/"/,"",$2); print $2}')
+            | awk '/^appVersion:/{gsub(/["v]/,"",$2); print $2}')
           CRD_BASE="https://raw.githubusercontent.com/argoproj/argo-cd/v${APP_VER}/manifests/crds"
           for crd in application applicationset appproject; do
-            kubectl apply -f "${CRD_BASE}/${crd}-crd.yaml" --server-side 2>/dev/null || \
-            kubectl apply -f "${CRD_BASE}/${crd}-crd.yaml"
+            kubectl apply -f "${CRD_BASE}/${crd}-crd.yaml" --server-side \
+              || kubectl apply -f "${CRD_BASE}/${crd}-crd.yaml"
           done
 
       - name: Install ArgoCD
         run: |
+          set -euo pipefail
           helm upgrade --install "${RELEASE}-argo-cd" argo/argo-cd \
             --version "${{ secrets.ARGOCD_CHART_VERSION }}" \
-            --namespace "${NAMESPACE}" \
+            --namespace "${NAMESPACE}" --create-namespace \
             --set crds.install=false \
             --set configs.params."server\.insecure"=true \
             --set dex.enabled=false \
@@ -69,143 +106,184 @@ jobs:
             --set server.service.type=ClusterIP \
             --wait --timeout 10m
 
-      # ── Harbor ─────────────────────────────────────────────────────────────
+      # ── Harbor ────────────────────────────────────────────────────────────
       - name: Install Harbor
         run: |
+          set -euo pipefail
           helm upgrade --install "${RELEASE}-harbor" harbor/harbor \
             --version "${{ secrets.HARBOR_CHART_VERSION }}" \
-            --namespace "${NAMESPACE}" \
+            --namespace "${NAMESPACE}" --create-namespace \
             --set expose.type=nodePort \
             --set expose.tls.enabled=false \
-            --set "harborAdminPassword=${{ secrets.HARBOR_ADMIN_PASSWORD }}" \
+            --set harborAdminPassword="${{ secrets.HARBOR_ADMIN_PASSWORD }}" \
             --set persistence.enabled=true \
             --wait --timeout 15m
 
-      # ── OpenBao ────────────────────────────────────────────────────────────
+      # ── OpenBao ───────────────────────────────────────────────────────────
       - name: Install OpenBao
         run: |
+          set -euo pipefail
+
+          # Use chart defaults — default config already has correct listener,
+          # ui=true, and storage path=/vault/data. No custom HCL needed.
           helm upgrade --install "${RELEASE}-openbao" openbao/openbao \
             --version "${{ secrets.OPENBAO_CHART_VERSION }}" \
-            --namespace "${NAMESPACE}" \
+            --namespace "${NAMESPACE}" --create-namespace \
             --set server.dev.enabled=false \
             --set server.standalone.enabled=true \
-            --set "server.standalone.config=ui = true\nlistener \"tcp\" {\n  tls_disable = 1\n  address = \"[::]:8200\"\n  cluster_address = \"[::]:8201\"\n}\nstorage \"file\" {\n  path = \"/vault/data\"\n}\n" \
             --set server.dataStorage.enabled=true \
             --set server.dataStorage.size=1Gi \
             --set server.service.type=ClusterIP \
-            --wait --timeout 10m
+            --timeout 10m
+          # NOTE: no --wait — readiness probe fails until initialized
+
+          echo "Waiting for OpenBao pod to be Running..."
+          kubectl wait pod \
+            -n "${NAMESPACE}" \
+            -l app.kubernetes.io/name=openbao \
+            --for=jsonpath='{.status.phase}'=Running \
+            --timeout=5m
 
       - name: Initialize and unseal OpenBao
         run: |
-          OPENBAO_ADDR="http://${RELEASE}-openbao.${NAMESPACE}.svc.cluster.local:8200"
+          set -euo pipefail
 
-          # Wait for HTTP server (501=uninitialized is fine)
-          for i in $(seq 1 60); do
-            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 \
-              "${OPENBAO_ADDR}/v1/sys/health" 2>/dev/null || echo "000")
-            [ "$HTTP" != "000" ] && break
-            sleep 5
-          done
+          POD="${RELEASE}-openbao-0"
 
-          INITIALIZED=$(curl -sf "${OPENBAO_ADDR}/v1/sys/health" \
-            | jq -r '.initialized // false')
+          echo "Waiting for OpenBao pod to be Running..."
+          kubectl wait pod "${POD}" -n "${NAMESPACE}" \
+            --for=jsonpath='{.status.phase}'=Running --timeout=5m
 
-          if [ "$INITIALIZED" = "false" ]; then
-            INIT_RESP=$(curl -sf -X POST "${OPENBAO_ADDR}/v1/sys/init" \
-              -H "Content-Type: application/json" \
-              -d '{"secret_shares":1,"secret_threshold":1}')
-            UNSEAL_KEY=$(echo "$INIT_RESP" | jq -r '.keys[0]')
-            ROOT_TOKEN=$(echo "$INIT_RESP" | jq -r '.root_token')
+          # bao status exits non-zero when sealed — capture JSON regardless
+          STATUS_JSON=$(kubectl exec "${POD}" -n "${NAMESPACE}" -- \
+            bao status -format=json 2>/dev/null || true)
+          INITIALIZED=$(echo "${STATUS_JSON}" | jq -r '.initialized // "false"')
 
+          if [ "${INITIALIZED}" = "false" ]; then
+            echo "Initializing OpenBao..."
+
+            INIT_JSON=$(kubectl exec "${POD}" -n "${NAMESPACE}" -- \
+              bao operator init -key-shares=1 -key-threshold=1 -format=json)
+
+            UNSEAL_KEY=$(echo "${INIT_JSON}" | jq -r '.unseal_keys_b64[0]')
+            ROOT_TOKEN=$(echo "${INIT_JSON}" | jq -r '.root_token')
+
+            # Persist keys to k8s secret
             kubectl create secret generic "${RELEASE}-openbao-init" \
               --namespace "${NAMESPACE}" \
               --from-literal=unseal_key="${UNSEAL_KEY}" \
               --from-literal=root_token="${ROOT_TOKEN}" \
               --dry-run=client -o yaml | kubectl apply -f -
 
-            curl -sf -X POST "${OPENBAO_ADDR}/v1/sys/unseal" \
-              -H "Content-Type: application/json" \
-              -d "{\"key\":\"${UNSEAL_KEY}\"}" > /dev/null
+            echo "Unsealing..."
+            kubectl exec "${POD}" -n "${NAMESPACE}" -- \
+              bao operator unseal "${UNSEAL_KEY}"
+
             echo "OpenBao initialized and unsealed."
+
           else
-            SEALED=$(curl -sf "${OPENBAO_ADDR}/v1/sys/health" | jq -r '.sealed // true')
-            if [ "$SEALED" = "true" ]; then
+            echo "OpenBao already initialized — checking seal status..."
+
+            SEALED=$(echo "${STATUS_JSON}" | jq -r '.sealed // "true"')
+
+            if [ "${SEALED}" = "true" ]; then
               UNSEAL_KEY=$(kubectl get secret "${RELEASE}-openbao-init" \
-                -n "${NAMESPACE}" -o jsonpath='{.data.unseal_key}' | base64 -d)
-              curl -sf -X POST "${OPENBAO_ADDR}/v1/sys/unseal" \
-                -H "Content-Type: application/json" \
-                -d "{\"key\":\"${UNSEAL_KEY}\"}" > /dev/null
+                -n "${NAMESPACE}" \
+                -o jsonpath='{.data.unseal_key}' | base64 -d)
+
+              kubectl exec "${POD}" -n "${NAMESPACE}" -- \
+                bao operator unseal "${UNSEAL_KEY}"
+
               echo "OpenBao unsealed."
             else
               echo "OpenBao already initialized and unsealed."
+              # Verify the k8s secret exists — if not, a previous run init'd without saving keys
+              kubectl get secret "${RELEASE}-openbao-init" -n "${NAMESPACE}" > /dev/null 2>&1 || {
+                echo "ERROR: OpenBao is initialized but ${RELEASE}-openbao-init secret is missing."
+                echo "Delete the OpenBao PVC and pod to force re-initialization, then re-run."
+                exit 1
+              }
             fi
           fi
 
-      # ── Crossplane ─────────────────────────────────────────────────────────
+      # ── Crossplane ────────────────────────────────────────────────────────
       - name: Install Crossplane
         run: |
+          set -euo pipefail
           helm upgrade --install "${RELEASE}-crossplane" crossplane/crossplane \
             --version "${{ secrets.CROSSPLANE_CHART_VERSION }}" \
-            --namespace "${NAMESPACE}" \
+            --namespace "${NAMESPACE}" --create-namespace \
             --wait --timeout 10m
 
-      # ── Wiring ─────────────────────────────────────────────────────────────
+      # ── Wiring ────────────────────────────────────────────────────────────
       - name: Configure OpenBao (Kubernetes auth + policies)
         run: |
-          OPENBAO_ADDR="http://${RELEASE}-openbao.${NAMESPACE}.svc.cluster.local:8200"
+          set -euo pipefail
+
+          POD="${RELEASE}-openbao-0"
+          OPENBAO_ADDR="http://127.0.0.1:8200"
           OPENBAO_TOKEN=$(kubectl get secret "${RELEASE}-openbao-init" \
-            -n "${NAMESPACE}" -o jsonpath='{.data.root_token}' | base64 -d)
+            -n "${NAMESPACE}" \
+            -o jsonpath='{.data.root_token}' | base64 -d)
 
-          # Enable Kubernetes auth
-          curl -s -X POST "${OPENBAO_ADDR}/v1/sys/auth/kubernetes" \
-            -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"type":"kubernetes"}' > /dev/null 2>&1 || true
+          # Helper: run bao CLI inside the pod
+          _bao() { kubectl exec "${POD}" -n "${NAMESPACE}" -- \
+            env BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN="${OPENBAO_TOKEN}" \
+            bao "$@"; }
 
-          curl -sf -X POST "${OPENBAO_ADDR}/v1/auth/kubernetes/config" \
-            -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"kubernetes_host":"https://kubernetes.default.svc"}' > /dev/null
+          # Enable Kubernetes auth (idempotent)
+          _bao auth enable kubernetes 2>/dev/null || true
+          _bao write auth/kubernetes/config \
+            kubernetes_host="https://kubernetes.default.svc"
 
-          # Read policy
-          curl -sf -X PUT "${OPENBAO_ADDR}/v1/sys/policies/acl/clusterfactory-reader" \
-            -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"policy":"path \"secret/*\" { capabilities = [\"read\"] }"}' > /dev/null
+          # Reader policy — pipe with -i so stdin reaches the container
+          printf 'path "secret/*" { capabilities = ["read"] }\n' | \
+            kubectl exec -i "${POD}" -n "${NAMESPACE}" -- \
+            env BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN="${OPENBAO_TOKEN}" \
+            bao policy write clusterfactory-reader -
 
-          curl -sf -X POST "${OPENBAO_ADDR}/v1/auth/kubernetes/role/clusterfactory-reader" \
-            -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"bound_service_account_names\":[\"*\"],\"bound_service_account_namespaces\":[\"${NAMESPACE}\"],\"policies\":[\"clusterfactory-reader\"],\"ttl\":\"1h\"}" > /dev/null
+          # Kubernetes role
+          _bao write auth/kubernetes/role/clusterfactory-reader \
+            bound_service_account_names="*" \
+            bound_service_account_namespaces="${NAMESPACE}" \
+            policies="clusterfactory-reader" \
+            ttl="1h"
 
           echo "OpenBao configured."
 
       - name: Store Harbor credentials in OpenBao
         run: |
-          OPENBAO_ADDR="http://${RELEASE}-openbao.${NAMESPACE}.svc.cluster.local:8200"
+          set -euo pipefail
+
+          POD="${RELEASE}-openbao-0"
           OPENBAO_TOKEN=$(kubectl get secret "${RELEASE}-openbao-init" \
-            -n "${NAMESPACE}" -o jsonpath='{.data.root_token}' | base64 -d)
+            -n "${NAMESPACE}" \
+            -o jsonpath='{.data.root_token}' | base64 -d)
 
-          # Enable KV secrets engine
-          curl -s -X POST "${OPENBAO_ADDR}/v1/sys/mounts/secret" \
-            -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"type":"kv","options":{"version":"1"}}' > /dev/null 2>&1 || true
+          _bao() { kubectl exec "${POD}" -n "${NAMESPACE}" -- \
+            env BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN="${OPENBAO_TOKEN}" \
+            bao "$@"; }
 
-          curl -sf -X POST "${OPENBAO_ADDR}/v1/secret/harbor" \
-            -H "X-Vault-Token: ${OPENBAO_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "{\"username\":\"admin\",\"password\":\"${{ secrets.HARBOR_ADMIN_PASSWORD }}\"}" > /dev/null
+          # Enable KV v1 (idempotent)
+          _bao secrets enable -path=secret kv 2>/dev/null || true
 
-          echo "Harbor credentials stored in OpenBao."
+          _bao kv put secret/harbor \
+            username="admin" \
+            password="${{ secrets.HARBOR_ADMIN_PASSWORD }}"
 
+          echo "Harbor credentials stored."
+
+      # ── Done ──────────────────────────────────────────────────────────────
       - name: Mark installation complete
         run: |
+          set -euo pipefail
+
           kubectl create configmap "${RELEASE}-platform-installed" \
             --namespace "${NAMESPACE}" \
             --from-literal=status=complete \
             --from-literal=timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --dry-run=client -o yaml | kubectl apply -f -
+
           echo ""
           echo "╔══════════════════════════════════════════════════════════╗"
           echo "║  clusterfactory platform installation complete!          ║"

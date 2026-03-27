@@ -69,6 +69,7 @@ helm upgrade --install "${RELEASE}-gitea" gitea/gitea \
   --set gitea.admin.email=admin@example.com \
   --set "gitea.config.actions.ENABLED=true" \
   --set "gitea.config.actions.DEFAULT_ACTIONS_URL=github" \
+  --set "gitea.config.server.ROOT_URL=http://${RELEASE}-gitea-clusterip.${NAMESPACE}.svc.cluster.local:3000" \
   --set service.http.type=ClusterIP \
   --set persistence.size=5Gi \
   --set postgresql.enabled=true \
@@ -78,6 +79,24 @@ helm upgrade --install "${RELEASE}-gitea" gitea/gitea \
   --set "postgresql-ha.enabled=false" \
   --timeout 15m \
   --wait
+
+# ── Create stable (non-headless) ClusterIP service for Gitea ──────────────────
+# The default gitea-http service is headless (ClusterIP:None) which breaks
+# act_runner streaming; this stable service gives the runner a real ClusterIP.
+kubectl apply -f - > /dev/null <<EOF
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${RELEASE}-gitea-clusterip
+  namespace: ${NAMESPACE}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: gitea
+  ports:
+    - port: 3000
+      targetPort: 3000
+EOF
 
 # ── Phase 1b: Main chart (cockpit + headlamp + runner + ingress rules) ─────────
 echo "  Installing clusterfactory chart..."
@@ -92,7 +111,7 @@ helm upgrade --install "$RELEASE" "$CHART_DIR" \
 # ── Phase 2: Gitea API setup ───────────────────────────────────────────────────
 echo "  Setting up Gitea via API..."
 
-kubectl port-forward svc/${RELEASE}-gitea-http -n "$NAMESPACE" 13000:3000 &
+kubectl port-forward svc/${RELEASE}-gitea-clusterip -n "$NAMESPACE" 13000:3000 &
 PF_PID=$!
 trap "kill $PF_PID 2>/dev/null || true" EXIT
 
@@ -112,7 +131,7 @@ curl -sf -X DELETE "${GITEA_API}/users/admin/tokens/bootstrap" \
 ADMIN_TOKEN=$(curl -sf -X POST "${GITEA_API}/users/admin/tokens" \
   -u "admin:${GITEA_PASS}" \
   -H "Content-Type: application/json" \
-  -d '{"name":"bootstrap","scopes":["write:admin","write:repository","write:organization","write:user","write:actionsVariables"]}' \
+  -d '{"name":"bootstrap","scopes":["write:admin","write:repository","write:organization","write:user"]}' \
   | jq -r '.sha1')
 
 [ -z "$ADMIN_TOKEN" ] && { echo "ERROR: could not create Gitea admin token"; exit 1; }
@@ -121,7 +140,7 @@ ADMIN_TOKEN=$(curl -sf -X POST "${GITEA_API}/users/admin/tokens" \
 curl -sf -X POST "${GITEA_API}/orgs" \
   -H "Authorization: token ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"username":"clusterfactory","visibility":"private"}' > /dev/null 2>&1 || true
+  -d '{"username":"clusterfactory","visibility":"public"}' > /dev/null 2>&1 || true
 
 curl -sf -X POST "${GITEA_API}/orgs/clusterfactory/repos" \
   -H "Authorization: token ${ADMIN_TOKEN}" \
@@ -154,7 +173,7 @@ RUNNER_TOKEN=$(curl -sf "${GITEA_API}/admin/runners/registration-token" \
 kubectl create secret generic "${RELEASE}-runner-token" \
   --namespace "$NAMESPACE" \
   --from-literal=token="${RUNNER_TOKEN}" \
-  --from-literal=gitea_url="http://${RELEASE}-gitea-http.${NAMESPACE}.svc.cluster.local:3000" \
+  --from-literal=gitea_url="http://${RELEASE}-gitea-clusterip.${NAMESPACE}.svc.cluster.local:3000" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "  Runner token stored — waiting for runner to register..."
