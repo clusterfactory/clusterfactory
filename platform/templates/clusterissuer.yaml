@@ -15,12 +15,14 @@ metadata:
 spec:
   selfSigned: {}
 ---
-# Self-signed CA certificate — used to back the selfsigned issuer for ingress TLS
+# Self-signed CA certificate — must live in cert-manager namespace so
+# ClusterIssuer can read the resulting Secret (ClusterIssuers always look
+# for CA secrets in the namespace where cert-manager runs).
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: clusterfactory-ca
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  namespace: cert-manager
 spec:
   isCA: true
   commonName: clusterfactory-ca
