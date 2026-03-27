@@ -20,7 +20,7 @@ subjects:
     name: {{ .Release.Name }}-runner
     namespace: {{ .Values.namespace | default .Release.Namespace }}
 ---
-# SA 2: cockpit — read-only on deployments, pods, services, jobs in this namespace
+# SA 2: cockpit — cluster-admin (management terminal, same trust level as runner)
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -28,30 +28,13 @@ metadata:
   namespace: {{ .Values.namespace | default .Release.Namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-cockpit
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
-rules:
-  - apiGroups: ["apps"]
-    resources: ["deployments", "replicasets"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods", "services", "configmaps", "secrets"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ .Release.Name }}-cockpit
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  name: {{ .Release.Name }}-cockpit-{{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ .Release.Name }}-cockpit
+  kind: ClusterRole
+  name: cluster-admin
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-cockpit
