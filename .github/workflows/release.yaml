@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build bundle but do not publish to release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # needed to upload release assets
+
+jobs:
+  bundle:
+    name: Build airgap bundle
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Source versions
+        id: versions
+        run: |
+          source ./VERSIONS.env
+          echo "cf_version=${CLUSTERFACTORY_CHART_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tarball=clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Install tools
+        run: |
+          source ./VERSIONS.env
+          # helm
+          curl -sf https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
+            | DESIRED_VERSION="${HELM_VERSION}" VERIFY_CHECKSUM=false bash
+          helm version --short
+
+      - name: Build airgap bundle
+        run: |
+          bash hack/bundle.sh
+          ls -lh dist/
+
+      - name: Generate SHA256 checksum
+        run: |
+          source ./VERSIONS.env
+          cd dist
+          sha256sum "clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz" \
+            > "clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz.sha256"
+          cat "clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz.sha256"
+
+      - name: Smoke test bundle structure
+        run: |
+          source ./VERSIONS.env
+          TARBALL="dist/clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz"
+          echo "Checking bundle contents..."
+          tar -tzf "${TARBALL}" | grep "charts/" | head -20
+          tar -tzf "${TARBALL}" | grep "images/" | wc -l | xargs echo "image tarballs:"
+          tar -tzf "${TARBALL}" | grep "VERSIONS.env"
+          tar -tzf "${TARBALL}" | grep "platform/bootstrap.sh"
+          tar -tzf "${TARBALL}" | grep "load.sh"
+          tar -tzf "${TARBALL}" | grep "airgap-overrides.env"
+          echo "Bundle structure OK."
+
+      # ── Publish to GitHub Release (tag trigger only, or manual non-dry-run) ──
+
+      - name: Upload bundle to release
+        if: startsWith(github.ref, 'refs/tags/') && github.event.inputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          source ./VERSIONS.env
+          TAG="${GITHUB_REF_NAME}"
+          TARBALL="dist/clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz"
+          CHECKSUM="dist/clusterfactory-${CLUSTERFACTORY_CHART_VERSION}-airgap.tar.gz.sha256"
+
+          # Create release if it doesn't exist yet (e.g. tag pushed without UI release)
+          gh release view "${TAG}" > /dev/null 2>&1 || \
+            gh release create "${TAG}" \
+              --title "clusterfactory ${CLUSTERFACTORY_CHART_VERSION}" \
+              --notes "See [CHANGELOG](CHANGELOG.md) for details." \
+              --draft
+
+          gh release upload "${TAG}" "${TARBALL}" "${CHECKSUM}" --clobber
+
+          echo ""
+          echo "Published to release ${TAG}:"
+          echo "  ${TARBALL}"
+          echo "  ${CHECKSUM}"
+
+      - name: Upload bundle as workflow artifact (dry run or manual)
+        if: github.event.inputs.dry_run == 'true' || !startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.versions.outputs.tarball }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          retention-days: 7
