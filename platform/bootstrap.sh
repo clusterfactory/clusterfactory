@@ -74,7 +74,7 @@ kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; e
 # ── Credentials ────────────────────────────────────────────────────────────────
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
-AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -base64 36 | tr -dc 'a-zA-Z0-9' | head -c 50)}"
+AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -hex 32)}"
 AUTHENTIK_BOOTSTRAP_TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-$(openssl rand -hex 32)}"
 AUTHENTIK_BOOTSTRAP_PASSWORD="${AUTHENTIK_BOOTSTRAP_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 AUTHENTIK_PG_PASSWORD="${AUTHENTIK_PG_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
@@ -102,6 +102,15 @@ if ! kubectl get storageclass 2>/dev/null | grep -q "(default)"; then
 fi
 
 CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── nginx ingress controller: enable snippet annotations (needed for Authentik) ─
+# server-snippet and configuration-snippet are disabled by default in nginx ingress
+# v1.9+. Required for the custom /_ak-auth auth location to be injected.
+echo "  Enabling nginx ingress snippet annotations..."
+kubectl patch configmap rke2-ingress-nginx-controller -n kube-system \
+  --type merge \
+  -p '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}' \
+  2>/dev/null || true
 
 # ── cert-manager (required before main chart — provides TLS CRDs) ──────────────
 echo "  Installing cert-manager..."
