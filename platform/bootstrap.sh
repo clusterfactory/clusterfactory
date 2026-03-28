@@ -107,10 +107,15 @@ CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # server-snippet and configuration-snippet are disabled by default in nginx ingress
 # v1.9+. Required for the custom /_ak-auth auth location to be injected.
 echo "  Enabling nginx ingress snippet annotations..."
+# Wait for the nginx configmap to exist (RKE2 creates it asynchronously)
+for i in $(seq 1 30); do
+  kubectl get configmap rke2-ingress-nginx-controller -n kube-system > /dev/null 2>&1 && break
+  echo "    Waiting for nginx configmap ($i/30)..."
+  sleep 5
+done
 kubectl patch configmap rke2-ingress-nginx-controller -n kube-system \
   --type merge \
-  -p '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}' \
-  2>/dev/null || true
+  -p '{"data":{"allow-snippet-annotations":"true","annotations-risk-level":"Critical"}}'
 
 # ── cert-manager (required before main chart — provides TLS CRDs) ──────────────
 echo "  Installing cert-manager..."
