@@ -3,12 +3,12 @@ entries:
   clusterfactory:
   - apiVersion: v2
     appVersion: 0.2.14
-    created: "2026-03-28T08:45:30.272653491Z"
+    created: "2026-03-28T15:18:10.3177052Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
       Gitea Actions workflow triggered after this chart installs. '
-    digest: bf625c6efc90ee9d2b211692fb8b4d213b4f98b8e0958835acd05a26ee23dcca
+    digest: c2f6dae737b0ee29ae3cd6e3e2b203a89110c37dff6bd1af3104624497aac417
     home: https://github.com/clusterfactory/clusterfactory
     keywords:
     - gitops
@@ -31,7 +31,7 @@ entries:
     version: 0.2.14
   - apiVersion: v2
     appVersion: 0.2.13
-    created: "2026-03-28T08:45:30.271174851Z"
+    created: "2026-03-28T15:18:10.316913408Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -59,7 +59,7 @@ entries:
     version: 0.2.13
   - apiVersion: v2
     appVersion: 0.2.12
-    created: "2026-03-28T08:45:30.2697865Z"
+    created: "2026-03-28T15:18:10.316147634Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -87,7 +87,7 @@ entries:
     version: 0.2.12
   - apiVersion: v2
     appVersion: 0.2.11
-    created: "2026-03-28T08:45:30.268402669Z"
+    created: "2026-03-28T15:18:10.315364567Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -115,7 +115,7 @@ entries:
     version: 0.2.11
   - apiVersion: v2
     appVersion: 0.2.10
-    created: "2026-03-28T08:45:30.266986751Z"
+    created: "2026-03-28T15:18:10.314592782Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -143,7 +143,7 @@ entries:
     version: 0.2.10
   - apiVersion: v2
     appVersion: 0.2.9
-    created: "2026-03-28T08:45:30.281891328Z"
+    created: "2026-03-28T15:18:10.324868975Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -171,7 +171,7 @@ entries:
     version: 0.2.9
   - apiVersion: v2
     appVersion: 0.2.8
-    created: "2026-03-28T08:45:30.281154413Z"
+    created: "2026-03-28T15:18:10.324119031Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -199,7 +199,7 @@ entries:
     version: 0.2.8
   - apiVersion: v2
     appVersion: 0.2.7
-    created: "2026-03-28T08:45:30.280430581Z"
+    created: "2026-03-28T15:18:10.323357334Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -227,7 +227,7 @@ entries:
     version: 0.2.7
   - apiVersion: v2
     appVersion: 0.2.6
-    created: "2026-03-28T08:45:30.279677177Z"
+    created: "2026-03-28T15:18:10.322578155Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -255,7 +255,7 @@ entries:
     version: 0.2.6
   - apiVersion: v2
     appVersion: 0.2.5
-    created: "2026-03-28T08:45:30.278837635Z"
+    created: "2026-03-28T15:18:10.320685345Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -283,7 +283,7 @@ entries:
     version: 0.2.5
   - apiVersion: v2
     appVersion: 0.2.4
-    created: "2026-03-28T08:45:30.276781525Z"
+    created: "2026-03-28T15:18:10.319902296Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -311,7 +311,7 @@ entries:
     version: 0.2.4
   - apiVersion: v2
     appVersion: 0.2.3
-    created: "2026-03-28T08:45:30.27535044Z"
+    created: "2026-03-28T15:18:10.319156149Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -339,7 +339,7 @@ entries:
     version: 0.2.3
   - apiVersion: v2
     appVersion: 0.2.2
-    created: "2026-03-28T08:45:30.274009814Z"
+    created: "2026-03-28T15:18:10.318424558Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -367,7 +367,7 @@ entries:
     version: 0.2.2
   - apiVersion: v2
     appVersion: 0.2.1
-    created: "2026-03-28T08:45:30.265378718Z"
+    created: "2026-03-28T15:18:10.313849089Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -395,7 +395,7 @@ entries:
     version: 0.2.1
   - apiVersion: v2
     appVersion: 0.2.0
-    created: "2026-03-28T08:45:30.263915906Z"
+    created: "2026-03-28T15:18:10.313100637Z"
     description: 'Bootstrap chart for RKE2. Installs Cockpit, Headlamp, act_runner,
       and Ingress rules. Gitea is installed as a separate Helm release by bootstrap.sh.
       Platform components (ArgoCD, Harbor, OpenBao, Crossplane) are installed by a
@@ -423,7 +423,7 @@ entries:
     version: 0.2.0
   - apiVersion: v2
     appVersion: 0.1.17
-    created: "2026-03-28T08:45:29.915135835Z"
+    created: "2026-03-28T15:18:09.96099643Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -477,7 +477,7 @@ entries:
     version: 0.1.17
   - apiVersion: v2
     appVersion: 0.1.16
-    created: "2026-03-28T08:45:29.869749604Z"
+    created: "2026-03-28T15:18:09.915935531Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -531,7 +531,7 @@ entries:
     version: 0.1.16
   - apiVersion: v2
     appVersion: 0.1.15
-    created: "2026-03-28T08:45:29.815646251Z"
+    created: "2026-03-28T15:18:09.868391245Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -585,7 +585,7 @@ entries:
     version: 0.1.15
   - apiVersion: v2
     appVersion: 0.1.14
-    created: "2026-03-28T08:45:29.771548153Z"
+    created: "2026-03-28T15:18:09.820972421Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -639,7 +639,7 @@ entries:
     version: 0.1.14
   - apiVersion: v2
     appVersion: 0.1.13
-    created: "2026-03-28T08:45:29.726767525Z"
+    created: "2026-03-28T15:18:09.775577871Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -693,7 +693,7 @@ entries:
     version: 0.1.13
   - apiVersion: v2
     appVersion: 0.1.12
-    created: "2026-03-28T08:45:29.680996967Z"
+    created: "2026-03-28T15:18:09.731620444Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -747,7 +747,7 @@ entries:
     version: 0.1.12
   - apiVersion: v2
     appVersion: 0.1.11
-    created: "2026-03-28T08:45:29.637812981Z"
+    created: "2026-03-28T15:18:09.687252666Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -797,7 +797,7 @@ entries:
     version: 0.1.11
   - apiVersion: v2
     appVersion: 0.1.10
-    created: "2026-03-28T08:45:29.587279118Z"
+    created: "2026-03-28T15:18:09.630379302Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -847,7 +847,7 @@ entries:
     version: 0.1.10
   - apiVersion: v2
     appVersion: 0.1.9
-    created: "2026-03-28T08:45:30.263019035Z"
+    created: "2026-03-28T15:18:10.312329904Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -897,7 +897,7 @@ entries:
     version: 0.1.9
   - apiVersion: v2
     appVersion: 0.1.8
-    created: "2026-03-28T08:45:30.216079423Z"
+    created: "2026-03-28T15:18:10.272004113Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -947,7 +947,7 @@ entries:
     version: 0.1.8
   - apiVersion: v2
     appVersion: 0.1.7
-    created: "2026-03-28T08:45:30.168691338Z"
+    created: "2026-03-28T15:18:10.230269091Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -997,7 +997,7 @@ entries:
     version: 0.1.7
   - apiVersion: v2
     appVersion: 0.1.6
-    created: "2026-03-28T08:45:30.128464379Z"
+    created: "2026-03-28T15:18:10.190441753Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1047,7 +1047,7 @@ entries:
     version: 0.1.6
   - apiVersion: v2
     appVersion: 0.1.5
-    created: "2026-03-28T08:45:30.088689084Z"
+    created: "2026-03-28T15:18:10.147177467Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1097,7 +1097,7 @@ entries:
     version: 0.1.5
   - apiVersion: v2
     appVersion: 0.1.4
-    created: "2026-03-28T08:45:30.040105172Z"
+    created: "2026-03-28T15:18:10.097045989Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1147,7 +1147,7 @@ entries:
     version: 0.1.4
   - apiVersion: v2
     appVersion: 0.1.3
-    created: "2026-03-28T08:45:29.997164324Z"
+    created: "2026-03-28T15:18:10.049078833Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1197,7 +1197,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 0.1.2
-    created: "2026-03-28T08:45:29.956112917Z"
+    created: "2026-03-28T15:18:10.005886522Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1247,7 +1247,7 @@ entries:
     version: 0.1.2
   - apiVersion: v2
     appVersion: 0.1.1
-    created: "2026-03-28T08:45:29.545941696Z"
+    created: "2026-03-28T15:18:09.589229275Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1297,7 +1297,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 0.1.0
-    created: "2026-03-28T08:45:29.507367026Z"
+    created: "2026-03-28T15:18:09.550145572Z"
     dependencies:
     - condition: harbor.enabled
       name: harbor
@@ -1345,4 +1345,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.1.0.tgz
     version: 0.1.0
-generated: "2026-03-28T08:45:29.466806993Z"
+generated: "2026-03-28T15:18:09.509512359Z"
