@@ -327,12 +327,25 @@ jobs:
             sleep 10
           done
 
-          # Get default implicit authorization flow
+          # Get default authorization flow — slug changed between Authentik versions:
+          # ≤2024.5: default-provider-authorization-implicit-consent
+          # ≥2024.6: default-provider-authorization-explicit-consent (implicit deprecated)
+          # Fall back to designation query so this works across all versions.
           FLOW_UUID=$(_ak \
             "http://localhost:9000/api/v3/flows/instances/?slug=default-provider-authorization-implicit-consent" \
-            | jq -r '.results[0].pk')
-          [ -z "${FLOW_UUID}" ] || [ "${FLOW_UUID}" = "null" ] && \
-            { echo "ERROR: default authorization flow not found"; exit 1; }
+            | jq -r '.results[0].pk // empty')
+          if [ -z "${FLOW_UUID}" ]; then
+            FLOW_UUID=$(_ak \
+              "http://localhost:9000/api/v3/flows/instances/?slug=default-provider-authorization-explicit-consent" \
+              | jq -r '.results[0].pk // empty')
+          fi
+          if [ -z "${FLOW_UUID}" ]; then
+            FLOW_UUID=$(_ak \
+              "http://localhost:9000/api/v3/flows/instances/?designation=authorization" \
+              | jq -r '.results[0].pk // empty')
+          fi
+          [ -z "${FLOW_UUID}" ] && \
+            { echo "ERROR: no authorization flow found in Authentik"; exit 1; }
 
           # Get default invalidation flow (required by Authentik 2026.x proxy provider)
           INVAL_UUID=$(_ak \
