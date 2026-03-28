@@ -70,9 +70,6 @@ spec:
     {{- if .Values.headlamp.enabled }}
     - headlamp.{{ .Values.host }}
     {{- end }}
-    {{- if (index .Values "authentik" | default dict).enabled }}
-    - auth.{{ .Values.host }}
-    {{- end }}
     secretName: {{ .Release.Name }}-tls
   {{- end }}
   rules:
@@ -209,13 +206,16 @@ metadata:
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    {{- if .Values.tls.enabled }}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
 spec:
   ingressClassName: nginx
   {{- if .Values.tls.enabled }}
   tls:
   - hosts:
     - auth.{{ .Values.host }}
-    secretName: {{ .Release.Name }}-authentik-tls
+    secretName: {{ .Release.Name }}-tls
   {{- end }}
   rules:
   - host: auth.{{ .Values.host }}
