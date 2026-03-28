@@ -371,7 +371,7 @@ jobs:
           # Create application linked to provider — idempotent
           _ak -X POST "http://localhost:9000/api/v3/core/applications/" \
             -H "Content-Type: application/json" \
-            -d "{\"name\":\"clusterfactory\",\"slug\":\"clusterfactory\",\"provider\":${PROVIDER_PK}}" \
+            -d "{\"name\":\"clusterfactory\",\"slug\":\"clusterfactory\",\"provider\":${PROVIDER_PK},\"meta_launch_url\":\"https://cockpit.${{ secrets.CF_HOST }}:${{ secrets.CF_ACCESS_PORT }}\"}" \
             > /dev/null || true
 
           # Add provider to embedded outpost
