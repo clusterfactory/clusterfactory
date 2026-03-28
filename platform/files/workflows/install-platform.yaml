@@ -373,7 +373,7 @@ jobs:
 
           _ak -X PATCH "http://localhost:9000/api/v3/outposts/instances/${OUTPOST_PK}/" \
             -H "Content-Type: application/json" \
-            -d "{\"providers\": ${UPDATED}}" > /dev/null
+            -d "{\"providers\": ${UPDATED}, \"config\": {\"authentik_host\": \"http://${RELEASE}-authentik-server.${NAMESPACE}.svc.cluster.local/\", \"authentik_host_browser\": \"https://auth.${{ secrets.CF_HOST }}:${{ secrets.CF_ACCESS_PORT }}\", \"authentik_host_insecure\": false}}" > /dev/null
 
           echo "Authentik configured: provider=${PROVIDER_PK}, outpost=${OUTPOST_PK}"
 
