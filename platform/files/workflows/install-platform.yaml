@@ -50,15 +50,14 @@ jobs:
             apk add -q curl jq
           fi
 
-          # kubectl — use the cluster's own version to avoid skew
-          K8S_VER=$(curl -sfL https://dl.k8s.io/release/stable.txt)
+          # kubectl — pinned version from VERSIONS.env (via bootstrap.sh secret)
           curl -sfLo /usr/local/bin/kubectl \
-            "https://dl.k8s.io/release/${K8S_VER}/bin/linux/amd64/kubectl"
+            "https://dl.k8s.io/release/${{ secrets.KUBECTL_VERSION }}/bin/linux/amd64/kubectl"
           chmod +x /usr/local/bin/kubectl
 
-          # helm
+          # helm — pinned version
           curl -sf https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 \
-            | VERIFY_CHECKSUM=false bash
+            | DESIRED_VERSION="${{ secrets.HELM_VERSION }}" VERIFY_CHECKSUM=false bash
 
           kubectl version --client
           helm version --short
@@ -74,13 +73,12 @@ jobs:
       - name: Add Helm repositories
         run: |
           set -euo pipefail
-          helm repo add argo       https://argoproj.github.io/argo-helm      --force-update
-          helm repo add harbor     https://helm.goharbor.io                  --force-update
-          helm repo add openbao    https://openbao.github.io/openbao-helm    --force-update
-    
-          helm repo add crossplane https://charts.crossplane.io/stable       --force-update
-          helm repo add jetstack   https://charts.jetstack.io                --force-update
-          helm repo add authentik  https://charts.goauthentik.io             --force-update
+          helm repo add argo       "${{ secrets.REPO_ARGO }}"          --force-update
+          helm repo add harbor     "${{ secrets.REPO_HARBOR }}"        --force-update
+          helm repo add openbao    "${{ secrets.REPO_OPENBAO }}"       --force-update
+          helm repo add crossplane "${{ secrets.REPO_CROSSPLANE }}"    --force-update
+          helm repo add jetstack   "${{ secrets.REPO_JETSTACK }}"      --force-update
+          helm repo add authentik  "${{ secrets.REPO_AUTHENTIK }}"     --force-update
           helm repo update
 
       # ── cert-manager ──────────────────────────────────────────────────────
@@ -379,7 +377,7 @@ jobs:
         run: |
           set -euo pipefail
           # Authentik is now running — flip the ingress annotations on
-          helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory --force-update > /dev/null 2>&1
+          helm repo add clusterfactory "${{ secrets.REPO_CLUSTERFACTORY }}" --force-update > /dev/null 2>&1
           helm repo update > /dev/null 2>&1
           helm upgrade "${RELEASE}" clusterfactory/clusterfactory \
             --reuse-values \

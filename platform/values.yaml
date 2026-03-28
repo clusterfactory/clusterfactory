@@ -54,10 +54,3 @@ gitea:
   adminUsername: admin
   adminPassword: ""    # required: --set gitea.adminPassword=...
 
-# ── Platform component versions (installed by Gitea Actions workflow) ──────────
-workflow:
-  argocdChartVersion: "7.8.28"
-  harborChartVersion: "1.16.2"
-  openbaoChartVersion: "0.5.0"
-  crossplaneChartVersion: "1.18.5"
-  harborAdminPassword: ""   # required: --set workflow.harborAdminPassword=...
