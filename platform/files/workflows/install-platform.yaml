@@ -302,6 +302,7 @@ jobs:
             --set server.service.type=ClusterIP \
             --set postgresql.enabled=true \
             --set redis.enabled=true \
+            --set "authentik.authentik_host=https://auth.${{ secrets.CF_HOST }}:${{ secrets.CF_ACCESS_PORT }}" \
             --wait --timeout 15m
           echo "Authentik ready."
 
