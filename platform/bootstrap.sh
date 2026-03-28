@@ -315,19 +315,20 @@ echo "  Runner token written to k8s Secret."
 # ── Wait for runner to come online ────────────────────────────────────────────
 # The runner pod was already created by helm install but was waiting for the
 # Secret to appear. Now that the Secret exists it will register automatically.
+# Check pod logs directly — avoids dependency on Gitea API endpoint which
+# varies across Gitea versions.
 echo "  Waiting for runner to register (up to 5 min)..."
 for i in $(seq 1 60); do
-  COUNT=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
-    curl -sf \
-    "http://localhost:3000/api/v1/admin/runners" \
-    -H "Authorization: token ${ADMIN_TOKEN}" \
-    2>/dev/null | jq '[.[] | select(.status == "online")] | length' 2>/dev/null || echo "0")
-  if [ "${COUNT:-0}" -gt 0 ]; then
-    echo "  Runner online (${COUNT} registered)."
-    break
+  RUNNER_POD=$(kubectl get pod -n "${NAMESPACE}" --no-headers 2>/dev/null \
+    | awk '/runner/{print $1}' | head -1)
+  if [ -n "${RUNNER_POD}" ]; then
+    if kubectl logs -n "${NAMESPACE}" "${RUNNER_POD}" 2>/dev/null \
+        | grep -q "Runner registered successfully\|declare successfully"; then
+      echo "  Runner online."
+      break
+    fi
   fi
   [ "$i" -eq 60 ] && { echo "ERROR: runner never came online after 5 minutes"; exit 1; }
-  # Print progress every 30s
   [ $((i % 6)) -eq 0 ] && echo "    ...still waiting (${i}/60)"
   sleep 5
 done
