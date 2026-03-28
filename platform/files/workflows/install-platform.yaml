@@ -115,64 +115,62 @@ jobs:
         run: |
           set -euo pipefail
 
-          AK_URL="http://${RELEASE}-authentik-server.${NAMESPACE}.svc.cluster.local:9000"
+          AK_POD=$(kubectl get pod -n "${NAMESPACE}" \
+            -l app.kubernetes.io/name=authentik,app.kubernetes.io/component=server \
+            -o jsonpath='{.items[0].metadata.name}')
           AK_TOKEN="${{ secrets.AUTHENTIK_BOOTSTRAP_TOKEN }}"
+
+          # Helper: curl from inside the Authentik server pod.
+          # localhost:9000 is always reachable regardless of network topology.
+          _ak() { kubectl exec "${AK_POD}" -n "${NAMESPACE}" -- \
+            curl -sf -H "Authorization: Bearer ${AK_TOKEN}" "$@"; }
 
           # Wait for Authentik API to respond
           for i in $(seq 1 30); do
-            curl -sf "${AK_URL}/api/v3/flows/instances/" \
-              -H "Authorization: Bearer ${AK_TOKEN}" > /dev/null 2>&1 && break
+            _ak http://localhost:9000/api/v3/flows/instances/ > /dev/null 2>&1 && break
             [ "$i" -eq 30 ] && { echo "ERROR: Authentik API not reachable after 5 min"; exit 1; }
             sleep 10
           done
 
           # Get default implicit authorization flow
-          FLOW_UUID=$(curl -sf \
-            "${AK_URL}/api/v3/flows/instances/?slug=default-provider-authorization-implicit-consent" \
-            -H "Authorization: Bearer ${AK_TOKEN}" \
+          FLOW_UUID=$(_ak \
+            "http://localhost:9000/api/v3/flows/instances/?slug=default-provider-authorization-implicit-consent" \
             | jq -r '.results[0].pk')
-
           [ -z "${FLOW_UUID}" ] || [ "${FLOW_UUID}" = "null" ] && \
             { echo "ERROR: default authorization flow not found"; exit 1; }
 
           # Create proxy provider (forward_domain mode) — idempotent
-          PROVIDER_PK=$(curl -sf "${AK_URL}/api/v3/providers/proxy/?name=clusterfactory-forward-auth" \
-            -H "Authorization: Bearer ${AK_TOKEN}" | jq -r '.results[0].pk // empty')
+          PROVIDER_PK=$(_ak \
+            "http://localhost:9000/api/v3/providers/proxy/?name=clusterfactory-forward-auth" \
+            | jq -r '.results[0].pk // empty')
 
           if [ -z "${PROVIDER_PK}" ]; then
-            PROVIDER_PK=$(curl -sf -X POST "${AK_URL}/api/v3/providers/proxy/" \
-              -H "Authorization: Bearer ${AK_TOKEN}" \
+            PROVIDER_PK=$(_ak -X POST "http://localhost:9000/api/v3/providers/proxy/" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"name\": \"clusterfactory-forward-auth\",
-                \"authorization_flow\": \"${FLOW_UUID}\",
-                \"mode\": \"forward_domain\",
-                \"cookie_domain\": \"${{ secrets.CF_HOST }}\",
-                \"external_host\": \"https://auth.${{ secrets.CF_HOST }}:${{ secrets.CF_ACCESS_PORT }}\"
-              }" | jq -r '.pk')
+              -d "{\"name\":\"clusterfactory-forward-auth\",\"authorization_flow\":\"${FLOW_UUID}\",\"mode\":\"forward_domain\",\"cookie_domain\":\"${{ secrets.CF_HOST }}\",\"external_host\":\"https://auth.${{ secrets.CF_HOST }}:${{ secrets.CF_ACCESS_PORT }}\"}" \
+              | jq -r '.pk')
           fi
-
           [ -z "${PROVIDER_PK}" ] || [ "${PROVIDER_PK}" = "null" ] && \
             { echo "ERROR: could not create/find Authentik proxy provider"; exit 1; }
 
           # Create application linked to provider — idempotent
-          curl -sf -X POST "${AK_URL}/api/v3/core/applications/" \
-            -H "Authorization: Bearer ${AK_TOKEN}" \
+          _ak -X POST "http://localhost:9000/api/v3/core/applications/" \
             -H "Content-Type: application/json" \
             -d "{\"name\":\"clusterfactory\",\"slug\":\"clusterfactory\",\"provider\":${PROVIDER_PK}}" \
-            > /dev/null 2>&1 || true
+            > /dev/null || true
 
           # Add provider to embedded outpost
-          OUTPOST_PK=$(curl -sf "${AK_URL}/api/v3/outposts/instances/?search=embedded" \
-            -H "Authorization: Bearer ${AK_TOKEN}" | jq -r '.results[0].pk')
+          OUTPOST_PK=$(_ak \
+            "http://localhost:9000/api/v3/outposts/instances/?search=embedded" \
+            | jq -r '.results[0].pk')
 
-          EXISTING=$(curl -sf "${AK_URL}/api/v3/outposts/instances/${OUTPOST_PK}/" \
-            -H "Authorization: Bearer ${AK_TOKEN}" | jq '[.providers[]]')
+          EXISTING=$(_ak \
+            "http://localhost:9000/api/v3/outposts/instances/${OUTPOST_PK}/" \
+            | jq '[.providers[]]')
 
           UPDATED=$(echo "${EXISTING}" | jq ". + [${PROVIDER_PK}] | unique")
 
-          curl -sf -X PATCH "${AK_URL}/api/v3/outposts/instances/${OUTPOST_PK}/" \
-            -H "Authorization: Bearer ${AK_TOKEN}" \
+          _ak -X PATCH "http://localhost:9000/api/v3/outposts/instances/${OUTPOST_PK}/" \
             -H "Content-Type: application/json" \
             -d "{\"providers\": ${UPDATED}}" > /dev/null
 
