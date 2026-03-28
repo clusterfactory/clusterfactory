@@ -387,6 +387,7 @@ jobs:
           helm upgrade "${RELEASE}" clusterfactory/clusterfactory \
             --reuse-values \
             --set authentik.enabled=true \
+            --set workflow.harborAdminPassword=x \
             --namespace "${NAMESPACE}" \
             --wait --timeout 5m
           echo "Authentik forward-auth enabled on ingress."
