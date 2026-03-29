@@ -71,8 +71,6 @@ kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; e
 # ── Credentials ────────────────────────────────────────────────────────────────
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
-AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -hex 32)}"
-AUTHENTIK_PG_PASSWORD="${AUTHENTIK_PG_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 # Deployment configuration
 CF_HOST="${CF_HOST:-localhost}"
 CF_ACCESS_PORT="${CF_ACCESS_PORT:-8443}"
@@ -267,10 +265,6 @@ _org_secret() {
 }
 
 _org_secret "HARBOR_ADMIN_PASSWORD"          "${HARBOR_PASS}"
-_org_secret "AUTHENTIK_SECRET_KEY"           "${AUTHENTIK_SECRET_KEY}"
-_org_secret "AUTHENTIK_PG_PASSWORD"          "${AUTHENTIK_PG_PASSWORD}"
-_org_secret "AUTHENTIK_CHART_VERSION"        "${AUTHENTIK_CHART_VERSION}"
-_org_secret "REPO_AUTHENTIK"                 "${REPO_AUTHENTIK}"
 _org_secret "ARGOCD_CHART_VERSION"           "${ARGOCD_CHART_VERSION}"
 _org_secret "HARBOR_CHART_VERSION"           "${HARBOR_CHART_VERSION}"
 _org_secret "OPENBAO_CHART_VERSION"          "${OPENBAO_CHART_VERSION}"
