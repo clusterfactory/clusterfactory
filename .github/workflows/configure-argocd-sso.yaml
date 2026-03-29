@@ -22,7 +22,7 @@ jobs:
           set -euo pipefail
           # Decode all kubectl/python commands from commands.json.
           # Keeps multi-line and quote-heavy strings out of the workflow YAML.
-          CMD_FILE=".gitea/commands.json"
+          CMD_FILE=".github/commands.json"
 
           decode() {
             python3 -c "
