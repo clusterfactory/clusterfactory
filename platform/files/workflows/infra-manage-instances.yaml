@@ -1,0 +1,57 @@
+name: Infra – Stop All Instances
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  stop-all:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION || 'eu-west-1' }}
+
+    steps:
+      - name: Find all running instances
+        run: |
+          set -euo pipefail
+
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --filters "Name=instance-state-name,Values=running" \
+            --query "Reservations[*].Instances[*].InstanceId" \
+            --output text)
+
+          if [ -z "${INSTANCE_IDS}" ]; then
+            echo "No running instances found. Nothing to do."
+            echo "SKIP=true" >> "$GITHUB_ENV"
+          else
+            echo "Running instances: ${INSTANCE_IDS}"
+            echo "INSTANCE_IDS=${INSTANCE_IDS}" >> "$GITHUB_ENV"
+            echo "SKIP=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Stop instances
+        if: env.SKIP == 'false'
+        run: |
+          set -euo pipefail
+
+          aws ec2 stop-instances --instance-ids ${INSTANCE_IDS} \
+            --query "StoppingInstances[*].{ID:InstanceId,State:CurrentState.Name}" \
+            --output table
+
+          echo "Waiting for instances to stop..."
+          aws ec2 wait instance-stopped --instance-ids ${INSTANCE_IDS}
+
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════════╗"
+          echo "║  All instances stopped                                           ║"
+          echo "╚══════════════════════════════════════════════════════════════════╝"
+          echo ""
+          aws ec2 describe-instances \
+            --instance-ids ${INSTANCE_IDS} \
+            --query "Reservations[*].Instances[*].{ID:InstanceId,State:State.Name,Name:Tags[?Key=='Name']|[0].Value}" \
+            --output table
