@@ -71,6 +71,8 @@ kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; e
 # ── Credentials ────────────────────────────────────────────────────────────────
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
+AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -hex 32)}"
+AUTHENTIK_PG_PASSWORD="${AUTHENTIK_PG_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 # Deployment configuration
 CF_HOST="${CF_HOST:-localhost}"
 CF_ACCESS_PORT="${CF_ACCESS_PORT:-8443}"
@@ -265,6 +267,10 @@ _org_secret() {
 }
 
 _org_secret "HARBOR_ADMIN_PASSWORD"          "${HARBOR_PASS}"
+_org_secret "AUTHENTIK_SECRET_KEY"           "${AUTHENTIK_SECRET_KEY}"
+_org_secret "AUTHENTIK_PG_PASSWORD"          "${AUTHENTIK_PG_PASSWORD}"
+_org_secret "AUTHENTIK_CHART_VERSION"        "${AUTHENTIK_CHART_VERSION}"
+_org_secret "REPO_AUTHENTIK"                 "${REPO_AUTHENTIK}"
 _org_secret "ARGOCD_CHART_VERSION"           "${ARGOCD_CHART_VERSION}"
 _org_secret "HARBOR_CHART_VERSION"           "${HARBOR_CHART_VERSION}"
 _org_secret "OPENBAO_CHART_VERSION"          "${OPENBAO_CHART_VERSION}"
@@ -323,49 +329,61 @@ for i in $(seq 1 60); do
   sleep 5
 done
 
-# ── Push install-platform.yaml to trigger Phase 2 ────────────────────────────
-# Copy the workflow file into the pod then push it via the Gitea contents API.
+# ── Helper: push a workflow file to Gitea repo ───────────────────────────────
+# Usage: _push_workflow <local-file> <commit-message>
+# Copies the file into the pod then pushes it via the Gitea contents API.
 # Using kubectl cp avoids base64/shell escaping issues with large YAML files.
-WORKFLOW_FILE="${CHART_DIR}/files/workflows/install-platform.yaml"
-WORKFLOW_DEST="/tmp/install-platform.yaml"
+_push_workflow() {
+  local src="$1" msg="$2"
+  local name dest repo_path
+  name="$(basename "${src}")"
+  dest="/tmp/${name}"
+  repo_path=".gitea/workflows/${name}"
 
-kubectl cp "${WORKFLOW_FILE}" \
-  "${NAMESPACE}/${GITEA_POD}:${WORKFLOW_DEST}"
+  kubectl cp "${src}" "${NAMESPACE}/${GITEA_POD}:${dest}"
 
-# Get current SHA if file already exists in repo (needed for PUT/update)
-EXISTING_SHA=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
-  curl -sf \
-  "http://localhost:3000/api/v1/repos/clusterfactory/platform/contents/.gitea/workflows/install-platform.yaml" \
-  -H "Authorization: token ${ADMIN_TOKEN}" \
-  2>/dev/null | jq -r '.sha // empty' || true)
+  local sha content method body status
+  sha=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
+    curl -sf \
+    "http://localhost:3000/api/v1/repos/clusterfactory/platform/contents/${repo_path}" \
+    -H "Authorization: token ${ADMIN_TOKEN}" \
+    2>/dev/null | jq -r '.sha // empty' || true)
 
-# Base64-encode the file from inside the pod (avoids local newline/encoding issues)
-CONTENT=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
-  base64 -w 0 "${WORKFLOW_DEST}")
+  content=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
+    base64 -w 0 "${dest}")
 
-if [ -n "${EXISTING_SHA}" ]; then
-  METHOD="PUT"
-  BODY="{\"message\":\"chore: trigger platform installation\",\"content\":\"${CONTENT}\",\"sha\":\"${EXISTING_SHA}\"}"
-else
-  METHOD="POST"
-  BODY="{\"message\":\"chore: trigger platform installation\",\"content\":\"${CONTENT}\"}"
-fi
+  if [ -n "${sha}" ]; then
+    method="PUT"
+    body="{\"message\":\"${msg}\",\"content\":\"${content}\",\"sha\":\"${sha}\"}"
+  else
+    method="POST"
+    body="{\"message\":\"${msg}\",\"content\":\"${content}\"}"
+  fi
 
-HTTP_STATUS=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
-  curl -s -o /dev/null -w "%{http_code}" \
-  -X "${METHOD}" \
-  "http://localhost:3000/api/v1/repos/clusterfactory/platform/contents/.gitea/workflows/install-platform.yaml" \
-  -H "Authorization: token ${ADMIN_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "${BODY}")
+  status=$(kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- \
+    curl -s -o /dev/null -w "%{http_code}" \
+    -X "${method}" \
+    "http://localhost:3000/api/v1/repos/clusterfactory/platform/contents/${repo_path}" \
+    -H "Authorization: token ${ADMIN_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "${body}")
 
-case "${HTTP_STATUS}" in
-  200|201) echo "  Workflow pushed (HTTP ${HTTP_STATUS}) — Phase 2 triggered." ;;
-  *)       echo "ERROR: workflow push failed (HTTP ${HTTP_STATUS})"; exit 1 ;;
-esac
+  case "${status}" in
+    200|201) echo "  Pushed ${name} (HTTP ${status})" ;;
+    *)       echo "ERROR: push failed for ${name} (HTTP ${status})"; exit 1 ;;
+  esac
 
-# ── Cleanup temp file in pod ──────────────────────────────────────────────────
-kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- rm -f "${WORKFLOW_DEST}"
+  kubectl exec "${GITEA_POD}" -n "${NAMESPACE}" -- rm -f "${dest}"
+}
+
+# ── Push workflows ────────────────────────────────────────────────────────────
+_push_workflow "${CHART_DIR}/files/workflows/install-platform.yaml" \
+  "chore: trigger platform installation"
+echo "  Phase 2 triggered via Gitea Actions."
+
+_push_workflow "${CHART_DIR}/files/workflows/install-authentik.yaml" \
+  "chore: add install-authentik workflow"
+echo "  install-authentik workflow available in Gitea Actions."
 
 echo ""
 echo "  ✓ Phase 1 complete. Platform installation running via Gitea Actions."
