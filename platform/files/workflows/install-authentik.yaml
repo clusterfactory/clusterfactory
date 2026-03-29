@@ -10,20 +10,18 @@ jobs:
 
     env:
       KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+      KUBECTL_VERSION: "v1.32.3"
+      HELM_VERSION: "v3.17.1"
+      AUTHENTIK_CHART_VERSION: "2026.2.1"
+      REPO_AUTHENTIK: "https://charts.goauthentik.io"
 
     steps:
-      - name: Checkout repo
-        run: |
-          set -euo pipefail
-          git clone http://clusterfactory-gitea-http.clusterfactory.svc.cluster.local:3000/clusterfactory/platform.git /tmp/cf-repo
-
       - name: Install tools (kubectl + helm)
         run: |
           set -euo pipefail
           if command -v apt-get &>/dev/null; then
             apt-get update -qq && apt-get install -yq curl
           fi
-          source /tmp/cf-repo/VERSIONS.env
           curl -sfLo /usr/local/bin/kubectl \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
           chmod +x /usr/local/bin/kubectl
@@ -50,15 +48,14 @@ jobs:
           set -euo pipefail
           # Generate fresh credentials (idempotent — helm upgrade --install
           # will reuse existing release if already installed)
-          SECRET_KEY=$(openssl rand 60 | base64 -w 0)
-          PG_PASS=$(openssl rand 30 | base64 -w 0)
+          SECRET_KEY=$(dd if=/dev/urandom bs=60 count=1 2>/dev/null | base64 -w 0)
+          PG_PASS=$(dd if=/dev/urandom bs=30 count=1 2>/dev/null | base64 -w 0)
           echo "SECRET_KEY=${SECRET_KEY}" >> "$GITHUB_ENV"
           echo "PG_PASS=${PG_PASS}"       >> "$GITHUB_ENV"
 
       - name: Install authentik
         run: |
           set -euo pipefail
-          source /tmp/cf-repo/VERSIONS.env
 
           helm repo add authentik "${REPO_AUTHENTIK}" --force-update
           helm repo update
