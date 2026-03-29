@@ -5,7 +5,7 @@
 #
 # Phase 1: Installs Gitea + act_runner + Cockpit + Headlamp + Ingress rules
 # Phase 2: Calls Gitea API to push install-platform.yaml workflow,
-#          which installs ArgoCD, Harbor, OpenBao, Crossplane, and Authentik
+#          which installs ArgoCD, Harbor, OpenBao, and Crossplane
 #          via Gitea Actions running on the act_runner inside the cluster.
 #
 # Usage:
@@ -23,9 +23,6 @@
 #   CF_HARBOR_HOST               — internal Harbor host for airgap mode
 #   GITEA_PASS                   — Gitea admin password (generated if not set)
 #   HARBOR_PASS                  — Harbor admin password (generated if not set)
-#   AUTHENTIK_SECRET_KEY         — Authentik signing key (generated if not set)
-#   AUTHENTIK_BOOTSTRAP_TOKEN    — Authentik API token (generated if not set)
-#   AUTHENTIK_BOOTSTRAP_PASSWORD — Authentik admin UI password (generated if not set)
 
 set -euo pipefail
 
@@ -74,11 +71,6 @@ kubectl cluster-info > /dev/null 2>&1 || { echo "ERROR: no cluster reachable"; e
 # ── Credentials ────────────────────────────────────────────────────────────────
 GITEA_PASS="${GITEA_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
 HARBOR_PASS="${HARBOR_PASS:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
-AUTHENTIK_SECRET_KEY="${AUTHENTIK_SECRET_KEY:-$(openssl rand -hex 32)}"
-AUTHENTIK_BOOTSTRAP_TOKEN="${AUTHENTIK_BOOTSTRAP_TOKEN:-$(openssl rand -hex 32)}"
-AUTHENTIK_BOOTSTRAP_PASSWORD="${AUTHENTIK_BOOTSTRAP_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
-AUTHENTIK_PG_PASSWORD="${AUTHENTIK_PG_PASSWORD:-$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 20)}"
-
 # Deployment configuration
 CF_HOST="${CF_HOST:-localhost}"
 CF_ACCESS_PORT="${CF_ACCESS_PORT:-8443}"
@@ -86,7 +78,6 @@ CF_ACCESS_PORT="${CF_ACCESS_PORT:-8443}"
 echo "  Credentials (save these):"
 echo "    GITEA_PASS=$GITEA_PASS"
 echo "    HARBOR_PASS=$HARBOR_PASS"
-echo "    AUTHENTIK_BOOTSTRAP_PASSWORD=$AUTHENTIK_BOOTSTRAP_PASSWORD"
 echo ""
 
 # ── Namespace ──────────────────────────────────────────────────────────────────
@@ -103,7 +94,7 @@ fi
 
 CHART_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── nginx ingress controller: enable snippet annotations (needed for Authentik) ─
+# ── nginx ingress controller ──────────────────────────────────────────────────
 # server-snippet and configuration-snippet are disabled by default in nginx ingress
 # v1.9+. Required for the custom /_ak-auth auth location to be injected.
 echo "  Enabling nginx ingress snippet annotations..."
@@ -274,16 +265,11 @@ _org_secret() {
 }
 
 _org_secret "HARBOR_ADMIN_PASSWORD"          "${HARBOR_PASS}"
-_org_secret "AUTHENTIK_SECRET_KEY"           "${AUTHENTIK_SECRET_KEY}"
-_org_secret "AUTHENTIK_BOOTSTRAP_TOKEN"      "${AUTHENTIK_BOOTSTRAP_TOKEN}"
-_org_secret "AUTHENTIK_BOOTSTRAP_PASSWORD"   "${AUTHENTIK_BOOTSTRAP_PASSWORD}"
-_org_secret "AUTHENTIK_PG_PASSWORD"          "${AUTHENTIK_PG_PASSWORD}"
 _org_secret "ARGOCD_CHART_VERSION"           "${ARGOCD_CHART_VERSION}"
 _org_secret "HARBOR_CHART_VERSION"           "${HARBOR_CHART_VERSION}"
 _org_secret "OPENBAO_CHART_VERSION"          "${OPENBAO_CHART_VERSION}"
 _org_secret "CROSSPLANE_CHART_VERSION"       "${CROSSPLANE_CHART_VERSION}"
 _org_secret "CERTMANAGER_CHART_VERSION"      "${CERTMANAGER_CHART_VERSION}"
-_org_secret "AUTHENTIK_CHART_VERSION"        "${AUTHENTIK_CHART_VERSION}"
 _org_secret "CF_NAMESPACE"                   "${NAMESPACE}"
 _org_secret "CF_RELEASE"                     "${RELEASE}"
 _org_secret "CF_HOST"                        "${CF_HOST}"
@@ -292,7 +278,6 @@ _org_secret "REPO_ARGO"                      "${REPO_ARGO}"
 _org_secret "REPO_HARBOR"                    "${REPO_HARBOR}"
 _org_secret "REPO_OPENBAO"                   "${REPO_OPENBAO}"
 _org_secret "REPO_CROSSPLANE"                "${REPO_CROSSPLANE}"
-_org_secret "REPO_AUTHENTIK"                 "${REPO_AUTHENTIK}"
 _org_secret "REPO_JETSTACK"                  "${REPO_JETSTACK}"
 _org_secret "REPO_CLUSTERFACTORY"            "${REPO_CLUSTERFACTORY}"
 _org_secret "KUBECTL_VERSION"                "${KUBECTL_VERSION}"
@@ -395,10 +380,5 @@ echo "    Gitea:    https://gitea.${CF_HOST}:${CF_ACCESS_PORT}"
 echo "    Actions:  https://gitea.${CF_HOST}:${CF_ACCESS_PORT}/clusterfactory/platform/actions"
 echo "    Cockpit:  https://cockpit.${CF_HOST}:${CF_ACCESS_PORT}"
 echo "    Headlamp: https://headlamp.${CF_HOST}:${CF_ACCESS_PORT}"
-echo "    Auth:     https://auth.${CF_HOST}:${CF_ACCESS_PORT}  (Authentik SSO)"
-echo ""
-echo "  Authentik admin UI: https://auth.${CF_HOST}:${CF_ACCESS_PORT}"
-echo "    Username: akadmin"
-echo "    Password: ${AUTHENTIK_BOOTSTRAP_PASSWORD}"
 echo ""
 echo "  Or watch workflow: kubectl logs -n ${NAMESPACE} -l app.kubernetes.io/name=${RELEASE}-runner -f"

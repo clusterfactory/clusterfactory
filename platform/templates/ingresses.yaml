@@ -21,38 +21,6 @@ metadata:
     {{- end }}
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     {{- end }}
-    {{- if (index .Values "authentik" | default dict).enabled }}
-    # Custom auth approach: server-snippet defines /_ak-auth location with a single
-    # proxy_set_header Host $host (no port). nginx ingress's built-in auth-url would
-    # add a second Host header (service FQDN) causing Go HTTP server to return 400.
-    nginx.ingress.kubernetes.io/server-snippet: |
-      location = /_ak-auth {
-        internal;
-        proxy_pass http://{{ .Release.Name }}-authentik-server.{{ .Values.namespace | default .Release.Namespace }}.svc.cluster.local/outpost.goauthentik.io/auth/nginx;
-        proxy_pass_request_body off;
-        proxy_set_header Host $host;
-        proxy_set_header Content-Length "";
-        proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
-        proxy_set_header X-Auth-Request-Redirect $request_uri;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $pass_access_scheme;
-        proxy_set_header X-Request-ID $req_id;
-        proxy_buffer_size 4k;
-        proxy_buffers 4 4k;
-        proxy_request_buffering on;
-      }
-      location @ak-auth-redirect {
-        set_by_lua_block $escaped_rd {
-          return ngx.escape_uri(ngx.var.request_uri)
-        }
-        return 302 https://auth.{{ .Values.host }}:{{ .Values.accessPort }}/outpost.goauthentik.io/start?rd=$escaped_rd;
-      }
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      auth_request /_ak-auth;
-      auth_request_set $auth_cookie $upstream_http_set_cookie;
-      add_header Set-Cookie $auth_cookie;
-      error_page 401 = @ak-auth-redirect;
-    {{- end }}
 spec:
   ingressClassName: nginx
   {{- if .Values.tls.enabled }}
@@ -100,6 +68,7 @@ spec:
               number: 8080
 
   # Harbor — installed by Gitea Actions workflow as release "clusterfactory-harbor"
+  # Harbor chart names its nginx service "harbor" regardless of release name
   - host: harbor.{{ .Values.host }}
     http:
       paths:
@@ -107,7 +76,7 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: {{ .Release.Name }}-harbor
+            name: harbor
             port:
               number: 80
 
@@ -195,39 +164,6 @@ spec:
             name: {{ .Release.Name }}-cockpit
             port:
               number: {{ .Values.cockpit.port }}
-{{- end }}
-
-{{- if (index .Values "authentik" | default dict).enabled }}
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ .Release.Name }}-authentik
-  namespace: {{ .Values.namespace | default .Release.Namespace }}
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    {{- if .Values.tls.enabled }}
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    {{- end }}
-spec:
-  ingressClassName: nginx
-  {{- if .Values.tls.enabled }}
-  tls:
-  - hosts:
-    - auth.{{ .Values.host }}
-    secretName: {{ .Release.Name }}-tls
-  {{- end }}
-  rules:
-  - host: auth.{{ .Values.host }}
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: {{ .Release.Name }}-authentik-server
-            port:
-              number: 80
 {{- end }}
 
 {{- end }}

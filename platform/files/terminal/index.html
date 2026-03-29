@@ -215,8 +215,7 @@ function setStatus(state) {
 
 function connect() {
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // Auth is handled by Authentik forward-auth at the nginx level.
-  // Session cookie is set by Authentik and validated per-request.
+  // Auth is handled at the nginx level.
   ws = new WebSocket(`${wsProto}//${location.host}/`);
   ws.onopen = () => {
     attachAddon = new AttachAddon.AttachAddon(ws);

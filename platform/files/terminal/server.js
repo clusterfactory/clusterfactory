@@ -118,7 +118,7 @@ app.get('/status', async (_req, res) => {
 app.use(express.static(path.join(__dirname)));
 
 // ── WebSocket upgrade ────────────────────────────────────────────────────────
-// Auth is handled at the nginx ingress level (Authentik forward-auth).
+// Auth is handled at the nginx ingress level.
 // cockpit trusts that nginx already authenticated the request.
 server.on('upgrade', (req, socket, head) => {
   wss.handleUpgrade(req, socket, head, (ws) => {

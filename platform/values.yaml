@@ -23,10 +23,6 @@ tls:
   issuer: selfsigned   # selfsigned | letsencrypt-staging | letsencrypt
   email: ""
 
-# ── Authentik (SSO) ───────────────────────────────────────────────────────────
-authentik:
-  enabled: false   # flipped to true by install-platform.yaml after Authentik is running
-
 # ── Cockpit (browser terminal) ────────────────────────────────────────────────
 cockpit:
   enabled: true

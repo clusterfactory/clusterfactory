@@ -49,7 +49,6 @@ helm repo add argo          "${REPO_ARGO}"          --force-update > /dev/null 2
 helm repo add harbor        "${REPO_HARBOR}"        --force-update > /dev/null 2>&1
 helm repo add openbao       "${REPO_OPENBAO}"       --force-update > /dev/null 2>&1
 helm repo add crossplane    "${REPO_CROSSPLANE}"    --force-update > /dev/null 2>&1
-helm repo add authentik     "${REPO_AUTHENTIK}"     --force-update > /dev/null 2>&1
 helm repo add clusterfactory "${REPO_CLUSTERFACTORY}" --force-update > /dev/null 2>&1
 helm repo update > /dev/null 2>&1
 
@@ -69,7 +68,6 @@ _pull argo          argo-cd       "${ARGOCD_CHART_VERSION}"
 _pull harbor        harbor        "${HARBOR_CHART_VERSION}"
 _pull openbao       openbao       "${OPENBAO_CHART_VERSION}"
 _pull crossplane    crossplane    "${CROSSPLANE_CHART_VERSION}"
-_pull authentik     authentik     "${AUTHENTIK_CHART_VERSION}"
 
 # ── Resolve container images from charts ──────────────────────────────────────
 echo "  Resolving container images..."
@@ -173,7 +171,6 @@ REPO_ARGO="oci://${CF_HARBOR_HOST}/charts"
 REPO_HARBOR="oci://${CF_HARBOR_HOST}/charts"
 REPO_OPENBAO="oci://${CF_HARBOR_HOST}/charts"
 REPO_CROSSPLANE="oci://${CF_HARBOR_HOST}/charts"
-REPO_AUTHENTIK="oci://${CF_HARBOR_HOST}/charts"
 OVERRIDESEOF
 
 # ── Package ───────────────────────────────────────────────────────────────────
