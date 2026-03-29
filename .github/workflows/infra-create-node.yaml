@@ -36,6 +36,7 @@ jobs:
             --instance-type   "${{ github.event.inputs.instance_type }}" \
             --subnet-id       subnet-0f46f66deec1b3d02 \
             --security-group-ids sg-08529eed80e0f0420 \
+            --iam-instance-profile Name=clusterfactory-node \
             --block-device-mappings "[{
               \"DeviceName\": \"/dev/xvda\",
               \"Ebs\": {
