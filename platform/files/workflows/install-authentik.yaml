@@ -12,8 +12,10 @@ jobs:
       KUBECONFIG: /etc/rancher/rke2/rke2.yaml
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout repo
+        run: |
+          set -euo pipefail
+          git clone http://clusterfactory-gitea-http.clusterfactory.svc.cluster.local:3000/clusterfactory/platform.git /tmp/cf-repo
 
       - name: Install tools (kubectl + helm)
         run: |
@@ -21,7 +23,7 @@ jobs:
           if command -v apt-get &>/dev/null; then
             apt-get update -qq && apt-get install -yq curl
           fi
-          source ./VERSIONS.env
+          source /tmp/cf-repo/VERSIONS.env
           curl -sfLo /usr/local/bin/kubectl \
             "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
           chmod +x /usr/local/bin/kubectl
@@ -56,7 +58,7 @@ jobs:
       - name: Install authentik
         run: |
           set -euo pipefail
-          source ./VERSIONS.env
+          source /tmp/cf-repo/VERSIONS.env
 
           helm repo add authentik "${REPO_AUTHENTIK}" --force-update
           helm repo update
