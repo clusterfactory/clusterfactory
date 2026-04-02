@@ -29,14 +29,13 @@ spec:
           args:
             - |
               set -e
-              if [ -f /data/.runner ]; then
-                echo "[runner-init] already registered — skipping"
-                exit 0
-              fi
               echo "[runner-init] waiting for registration token..."
               until [ -s /runner-token/token ]; do
                 sleep 5
               done
+              # Always re-register — ensures stale .runner files from previous
+              # cluster installs (hostPath persists across resets) are overwritten.
+              rm -f /data/.runner
               echo "[runner-init] registering with Gitea at ${GITEA_INSTANCE_URL}..."
               act_runner register \
                 --config /runner-config/config.yaml \

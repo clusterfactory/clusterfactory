@@ -3,7 +3,24 @@ entries:
   gitea-jenkins:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-02T08:57:11.328458+03:00"
+    created: "2026-04-02T09:06:42.646856+03:00"
+    dependencies:
+    - name: gitea
+      repository: https://dl.gitea.com/charts/
+      version: 11.0.1
+    - name: jenkins
+      repository: https://charts.jenkins.io
+      version: 5.9.9
+    description: Self-wiring Gitea + Jenkins platform — installs both and wires credentials
+      automatically
+    digest: 3bf2019ad70c1a1eb4a3d386fa3df7d575dca10d2d9a459f40c8a3caf52d42cc
+    name: gitea-jenkins
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.1.tgz
+    version: 0.1.1
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-02T09:06:42.61759+03:00"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -18,4 +35,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.0.tgz
     version: 0.1.0
-generated: "2026-04-02T08:57:11.292652+03:00"
+generated: "2026-04-02T09:06:42.581918+03:00"
