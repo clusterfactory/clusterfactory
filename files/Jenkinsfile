@@ -1,0 +1,24 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Hello') {
+            steps {
+                echo 'Hello World from Jenkins!'
+            }
+        }
+
+        stage('Build Info') {
+            steps {
+                sh 'echo "Build number : ${BUILD_NUMBER}"'
+                sh 'echo "Branch       : ${GIT_BRANCH}"'
+                sh 'echo "Commit       : ${GIT_COMMIT}"'
+            }
+        }
+    }
+
+    post {
+        success { echo 'Pipeline finished successfully.' }
+        failure { echo 'Pipeline failed.' }
+    }
+}
