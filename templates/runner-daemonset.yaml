@@ -1,0 +1,95 @@
+{{- if .Values.runner.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}-runner
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: gitea-runner
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gitea-runner
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gitea-runner
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      # Init container: waits for registration token, registers once, then exits.
+      # Main container takes over and runs the daemon.
+      # State stored on hostPath so re-registration is skipped on pod restart.
+      initContainers:
+        - name: register
+          image: {{ .Values.runner.image }}
+          command: [sh, -c]
+          args:
+            - |
+              set -e
+              echo "[runner-init] waiting for registration token..."
+              until [ -s /runner-token/token ]; do
+                sleep 5
+              done
+              # Always re-register — ensures stale .runner files from previous
+              # cluster installs (hostPath persists across resets) are overwritten.
+              rm -f /data/.runner
+              echo "[runner-init] registering with Gitea at ${GITEA_INSTANCE_URL}..."
+              act_runner register \
+                --config /runner-config/config.yaml \
+                --instance "${GITEA_INSTANCE_URL}" \
+                --token "$(cat /runner-token/token)" \
+                --name "k8s-runner-$(hostname)" \
+                --labels "${RUNNER_LABELS}" \
+                --no-interactive
+              echo "[runner-init] registration complete"
+          env:
+            - name: GITEA_INSTANCE_URL
+              value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
+            - name: RUNNER_LABELS
+              value: {{ .Values.runner.labels | quote }}
+          volumeMounts:
+            - name: runner-data
+              mountPath: /data
+            - name: runner-token
+              mountPath: /runner-token
+            - name: runner-config
+              mountPath: /runner-config
+
+      containers:
+        - name: runner
+          image: {{ .Values.runner.image }}
+          command: [act_runner, daemon, --config, /runner-config/config.yaml]
+          env:
+            - name: HOME
+              value: /data
+            - name: GITEA_INSTANCE_URL
+              value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: runner-data
+              mountPath: /data
+            - name: runner-config
+              mountPath: /runner-config
+
+      volumes:
+        - name: runner-data
+          hostPath:
+            path: /var/lib/gitea-act-runner/{{ .Release.Name }}
+            type: DirectoryOrCreate
+        - name: runner-token
+          secret:
+            secretName: {{ .Release.Name }}-runner-reg-token
+            optional: true   # pod starts even before wire job creates the secret
+        - name: runner-config
+          configMap:
+            name: {{ .Release.Name }}-runner-config
+{{- end }}
