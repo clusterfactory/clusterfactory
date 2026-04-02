@@ -175,6 +175,54 @@ Automated scans run on every push to `main`, every PR, and weekly:
 
 ---
 
+## Airgap
+
+Run this on an **internet-connected** machine to produce a self-contained bundle:
+
+```bash
+./hack/bundle.sh              # outputs to ./dist/
+./hack/bundle.sh /path/to/output
+```
+
+Produces `dist/clusterfactory-airgap-<version>.tar.gz`:
+
+```
+clusterfactory-airgap-0.1.2/
+├── clusterfactory-0.1.2.tgz   — packaged Helm chart
+├── images.tar                  — all container images (docker save)
+├── images.txt                  — plain list of image references bundled
+├── values-airgap.yaml          — image overrides pointing at local registry
+└── load.sh                     — run this on the airgapped machine
+```
+
+**Transfer to airgapped machine:**
+```bash
+scp dist/clusterfactory-airgap-0.1.2.tar.gz user@airgapped-host:/opt/
+```
+
+**On the airgapped machine — two modes:**
+
+```bash
+tar xzf clusterfactory-airgap-0.1.2.tar.gz
+cd clusterfactory-airgap-0.1.2
+
+# Mode 1: images already visible to your cluster (Docker Desktop / kind)
+./load.sh direct
+
+# Mode 2: push images to a local registry first
+./load.sh registry 192.168.1.10:5000
+```
+
+`load.sh registry` will:
+1. `docker load` all images from `images.tar`
+2. Retag and push each image to `<registry>/<original-name>:<tag>`
+3. Replace `REGISTRY` in `values-airgap.yaml` with your registry address
+4. Run `helm upgrade --install` with the resolved overrides
+
+**Requirements:** `docker`, `helm` on both machines; `kubectl` on the airgapped machine.
+
+---
+
 ## Uninstall
 
 ```bash
