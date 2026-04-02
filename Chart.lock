@@ -1,9 +1,9 @@
 dependencies:
 - name: gitea
   repository: https://dl.gitea.com/charts/
-  version: 11.0.1
+  version: 12.5.0
 - name: jenkins
   repository: https://charts.jenkins.io
   version: 5.9.9
-digest: sha256:9a3739bb23f6b9958ca3eaac6ef3a40339f3c8c9c30efaa2d3f03ae4e51dcbb0
-generated: "2026-04-02T07:22:17.470532+03:00"
+digest: sha256:701f3d7eb6cdf3d4d33fbb521903305ae3ed0450573e3d3437dcfe7c7643f719
+generated: "2026-04-02T06:49:53.981393285Z"
