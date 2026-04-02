@@ -228,6 +228,4 @@ cd clusterfactory-airgap-0.1.2
 ```bash
 helm uninstall cf -n cicd
 kubectl delete namespace cicd
-# Optional: clean runner state from the node
-sudo rm -rf /var/lib/gitea-act-runner/cf
 ```

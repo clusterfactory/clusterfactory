@@ -19,9 +19,9 @@ spec:
         app.kubernetes.io/name: gitea-runner
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
-      # Init container: waits for registration token, registers once, then exits.
+      # Init container: waits for registration token, registers, then exits.
       # Main container takes over and runs the daemon.
-      # State stored on hostPath so re-registration is skipped on pod restart.
+      # emptyDir for state — re-registers on every pod start (clean, no stale state).
       initContainers:
         - name: register
           image: {{ .Values.runner.image }}
@@ -33,8 +33,6 @@ spec:
               until [ -s /runner-token/token ]; do
                 sleep 5
               done
-              # Always re-register — ensures stale .runner files from previous
-              # cluster installs (hostPath persists across resets) are overwritten.
               rm -f /data/.runner
               echo "[runner-init] registering with Gitea at ${GITEA_INSTANCE_URL}..."
               act_runner register \
@@ -82,9 +80,7 @@ spec:
 
       volumes:
         - name: runner-data
-          hostPath:
-            path: /var/lib/gitea-act-runner/{{ .Release.Name }}
-            type: DirectoryOrCreate
+          emptyDir: {}
         - name: runner-token
           secret:
             secretName: {{ .Release.Name }}-runner-reg-token
