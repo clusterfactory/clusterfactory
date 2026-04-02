@@ -1,5 +1,9 @@
 # gitea-jenkins
 
+[![Security Scan](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml/badge.svg)](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/clusterfactory/clusterfactory/badge)](https://securityscorecards.dev/viewer/?uri=github.com/clusterfactory/clusterfactory)
+[![Trivy](https://img.shields.io/badge/trivy-scanned-blue?logo=aquasecurity)](https://github.com/clusterfactory/clusterfactory/security/code-scanning)
+
 One `helm install`. Gitea + Jenkins + Gitea Actions runner — fully wired and ready.
 
 ## What it does
@@ -155,6 +159,18 @@ helm upgrade cf clusterfactory/gitea-jenkins --namespace cicd --atomic --timeout
 ```
 
 The wire job re-runs on every upgrade and upserts all resources idempotently.
+
+---
+
+## Security
+
+Automated scans run on every push to `main`, every PR, and weekly:
+
+| Scanner | What it checks | Results |
+|---------|---------------|---------|
+| [Trivy](https://github.com/aquasecurity/trivy) | Helm/K8s misconfigurations, CVEs | [GitHub Security tab](https://github.com/clusterfactory/clusterfactory/security/code-scanning) |
+| [OSSF Scorecard](https://securityscorecards.dev) | Branch protection, dependency pinning, CI, vulnerability reporting | [scorecard.dev](https://securityscorecards.dev/viewer/?uri=github.com/clusterfactory/clusterfactory) |
+| Helm lint | Chart validity, strict mode | [Actions](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml) |
 
 ---
 
