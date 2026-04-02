@@ -1,0 +1,56 @@
+apiVersion: v1
+entries:
+  clusterfactory:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-02T09:43:29.605129+03:00"
+    dependencies:
+    - name: gitea
+      repository: https://dl.gitea.com/charts/
+      version: 11.0.1
+    - name: jenkins
+      repository: https://charts.jenkins.io
+      version: 5.9.9
+    description: One helm install. Vanilla upstream Gitea + Jenkins — hello-world
+      pipeline and Gitea Actions pre-wired.
+    digest: 3c3708fc477b118c1dfd66d0e6c52014e4308c61692f834db2feb37b501df790
+    name: clusterfactory
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.1.2.tgz
+    version: 0.1.2
+  gitea-jenkins:
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-02T09:43:29.695691+03:00"
+    dependencies:
+    - name: gitea
+      repository: https://dl.gitea.com/charts/
+      version: 11.0.1
+    - name: jenkins
+      repository: https://charts.jenkins.io
+      version: 5.9.9
+    description: Self-wiring Gitea + Jenkins platform — installs both and wires credentials
+      automatically
+    digest: 3bf2019ad70c1a1eb4a3d386fa3df7d575dca10d2d9a459f40c8a3caf52d42cc
+    name: gitea-jenkins
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.1.tgz
+    version: 0.1.1
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-02T09:43:29.653237+03:00"
+    dependencies:
+    - name: gitea
+      repository: https://dl.gitea.com/charts/
+      version: 11.0.1
+    - name: jenkins
+      repository: https://charts.jenkins.io
+      version: 5.9.9
+    description: Self-wiring Gitea + Jenkins platform — installs both and wires credentials
+      automatically
+    digest: aac032ef7d92c3ca6c7696e336320abe204b0aba63ea6035b756c4f4e5b606bf
+    name: gitea-jenkins
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-04-02T09:43:29.563161+03:00"
