@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned SHAs up to date
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+
+  # Keep Helm chart dependencies up to date
+  - package-ecosystem: helm
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
