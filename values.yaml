@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────
+# Wire job settings
+# ─────────────────────────────────────────────
+wire:
+  org: clusterfactory
+  image: alpine:3.19
+  repo:
+    name: hello-world
+
+# ─────────────────────────────────────────────
+# Gitea Actions runner (DaemonSet)
+# ─────────────────────────────────────────────
+runner:
+  enabled: true
+  image: gitea/act_runner:latest
+  # host mode — runs jobs directly in the pod, no Docker socket needed
+  labels: "ubuntu-latest:host,ubuntu-22.04:host"
+
+# ─────────────────────────────────────────────
+# Gitea subchart values
+# ─────────────────────────────────────────────
+gitea:
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  # Recreate prevents LevelDB lock contention during upgrades (SQLite/LevelDB don't support concurrent access)
+  strategy:
+    type: Recreate
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  persistence:
+    size: 5Gi
+
+  ingress:
+    enabled: false
+
+  service:
+    http:
+      type: ClusterIP
+    ssh:
+      type: ClusterIP
+
+  # Disable all external dependencies — run lean with sqlite/memory
+  postgresql-ha:
+    enabled: false
+  postgresql:
+    enabled: false
+  redis-cluster:
+    enabled: false
+  redis:
+    enabled: false
+  memcached:
+    enabled: false
+
+  # Gitea chart's internal 'gitea:' section (nested one level in subchart context)
+  gitea:
+    admin:
+      username: gitea-admin
+      password: changeme123!
+      email: admin@cluster.local
+    config:
+      database:
+        DB_TYPE: sqlite3
+        PATH: /data/gitea/gitea.db
+      cache:
+        ADAPTER: memory
+      queue:
+        TYPE: level
+      session:
+        PROVIDER: memory
+      actions:
+        ENABLED: "true"
+
+# ─────────────────────────────────────────────
+# Jenkins subchart values
+# ─────────────────────────────────────────────
+jenkins:
+  controller:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    javaOpts: "-Xms256m -Xmx768m -XX:+UseContainerSupport"
+    installPlugins:
+      - "kubernetes:latest"
+      - "workflow-aggregator:latest"
+      - "git:latest"
+      - "configuration-as-code:latest"
+    prometheus:
+      enabled: false
+    ingress:
+      enabled: false
+    serviceType: ClusterIP
+    JCasC:
+      defaultConfig: false
+
+  agent:
+    enabled: false
+
+  persistence:
+    size: 5Gi

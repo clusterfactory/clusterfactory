@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hello from Gitea Actions
+        run: |
+          echo "================================"
+          echo "  Hello from Gitea Actions!"
+          echo "================================"
+          echo "Repo   : ${{ gitea.repository }}"
+          echo "Branch : ${{ gitea.ref_name }}"
+          echo "Commit : ${{ gitea.sha }}"
+          echo "Runner : ${{ runner.name }}"
+          echo "OS     : ${{ runner.os }}"
+          echo "================================"
+
+      - name: System info
+        run: |
+          echo "Hostname : $(hostname)"
+          date

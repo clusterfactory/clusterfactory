@@ -1,0 +1,12 @@
+apiVersion: v2
+name: gitea-jenkins
+description: Self-wiring Gitea + Jenkins platform — installs both and wires credentials automatically
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: gitea
+    version: "11.0.1"
+    repository: "https://dl.gitea.com/charts/"
+  - name: jenkins
+    version: "5.9.9"
+    repository: "https://charts.jenkins.io"

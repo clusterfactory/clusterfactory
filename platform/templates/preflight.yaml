@@ -1,4 +1,0 @@
-{{- if and .Values.gitea.enabled (eq (.Values.gitea.adminPassword | default "") "") }}
-{{ fail "gitea.adminPassword is required. Set it with --set gitea.adminPassword=..." }}
-{{- end }}
-

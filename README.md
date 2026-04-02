@@ -1,218 +1,156 @@
-# clusterfactory
+# gitea-jenkins
 
-One `helm install`. Five upstream components. Pre-wired and ready.
+One `helm install`. Gitea + Jenkins + Gitea Actions runner — fully wired and ready.
 
-<br>
+## What it does
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Gitea-609926?style=for-the-badge&logo=gitea&logoColor=white" alt="Gitea"/>
-  <img src="https://img.shields.io/badge/ArgoCD-EF7B4D?style=for-the-badge&logo=argo&logoColor=white" alt="ArgoCD"/>
-  <img src="https://img.shields.io/badge/Harbor-60B932?style=for-the-badge&logo=harbor&logoColor=white" alt="Harbor"/>
-  <img src="https://img.shields.io/badge/OpenBao-FFD814?style=for-the-badge&logo=vault&logoColor=black" alt="OpenBao"/>
-  <img src="https://img.shields.io/badge/Crossplane-EF3B2D?style=for-the-badge&logo=crossplane&logoColor=white" alt="Crossplane"/>
-  <img src="https://img.shields.io/badge/Headlamp-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white" alt="Headlamp"/>
-</p>
+| Component | Details |
+|-----------|---------|
+| **Gitea** | Self-hosted Git, SQLite, Actions enabled |
+| **Jenkins** | Pipeline CI, pre-wired with Gitea credentials |
+| **Gitea Actions runner** | Kubernetes DaemonSet, registered automatically |
+| **hello-world repo** | Pushed to Gitea on install — includes Jenkinsfile + Actions workflow |
 
-<p align="center">
-  <strong>100% upstream. No custom controllers. No operators. No magic.</strong><br>
-  Just the official charts, connected by plain YAML.
-</p>
+A single `helm install` will:
+1. Install Gitea and Jenkins via subcharts
+2. Create a Gitea admin user and API token
+3. Create the `clusterfactory` org
+4. Push the `hello-world` repo (Jenkinsfile + `.gitea/workflows/ci.yaml`)
+5. Create the `clusterfactory-hello-world` Jenkins job pointing at the repo
+6. Register a Gitea Actions runner in the cluster
+7. Store Jenkins credentials (`gitea-userpass`, `gitea-api-token`) ready for pipelines
 
-<br>
+No `kubectl exec`. No port-forwards during install. No manual steps.
 
 ---
 
-## install
+## Requirements
 
-**Prerequisites:** `helm` and `kubectl` in PATH, a running cluster in your kubeconfig.
+- Kubernetes cluster (Docker Desktop, kind, k3s, etc.)
+- `helm` >= 3.x
+- `kubectl` configured
 
-### from the Helm repo (recommended)
+---
+
+## Install
 
 ```bash
-helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory
-helm repo update
-helm pull clusterfactory/clusterfactory --untar
-bash ./clusterfactory/bootstrap.sh
+helm upgrade --install cf . \
+  --namespace cicd --create-namespace \
+  --atomic --timeout 15m
 ```
 
-### from source
+That's it.
+
+---
+
+## Get credentials
+
+**Jenkins password** (randomly generated each install):
+```bash
+kubectl get secret cf-jenkins -n cicd \
+  -o jsonpath='{.data.jenkins-admin-password}' | base64 -d && echo
+```
+
+**Gitea password** is set in `values.yaml` under `gitea.gitea.admin.password` (default: `changeme123!`).
+
+---
+
+## Access via browser
+
+Start port-forwards:
+```bash
+kubectl port-forward -n cicd svc/cf-gitea-http 3000:3000 &
+kubectl port-forward -n cicd svc/cf-jenkins 8080:8080 &
+```
+
+| Service | URL | User |
+|---------|-----|------|
+| Gitea | http://localhost:3000 | `gitea-admin` |
+| Jenkins | http://localhost:8080 | `admin` |
+
+---
+
+## Configuration
+
+All configuration lives in `values.yaml`.
+
+```yaml
+wire:
+  org: clusterfactory        # Gitea org created on install
+  repo:
+    name: hello-world        # Repo pushed on install
+
+runner:
+  enabled: true
+  image: gitea/act_runner:latest
+  labels: "ubuntu-latest:host,ubuntu-22.04:host"
+
+gitea:
+  gitea:
+    admin:
+      username: gitea-admin
+      password: changeme123!
+```
+
+---
+
+## Repo structure
+
+```
+.
+├── Chart.yaml                        # Declares gitea + jenkins as subchart deps
+├── values.yaml                       # All config
+├── charts/
+│   ├── gitea-11.0.1.tgz
+│   └── jenkins-5.9.9.tgz
+├── files/
+│   ├── Jenkinsfile                   # Hello world Jenkins pipeline
+│   └── .gitea/
+│       └── workflows/
+│           └── ci.yaml               # Hello world Gitea Actions workflow
+└── templates/
+    ├── wire-job.yaml                 # post-install Job: wires everything together
+    ├── wire-rbac.yaml                # ServiceAccount + Role for wire job
+    ├── runner-daemonset.yaml         # Gitea Actions runner DaemonSet
+    └── runner-config-cm.yaml         # act_runner config
+```
+
+---
+
+## How the wire job works
+
+The `wire` Job runs as a Helm `post-install,post-upgrade` hook:
+
+1. Waits for Gitea to return HTTP 200
+2. Mints a Gitea API token (`jenkins-wiring` scope)
+3. Creates the org
+4. Waits for Jenkins to return HTTP 200
+5. Creates `gitea-api-token` (secret text) and `gitea-userpass` (username+token) credentials in Jenkins
+6. Creates the Gitea repo via API
+7. Pushes `Jenkinsfile` and `.gitea/workflows/ci.yaml` via Gitea Contents API
+8. Creates the Jenkins pipeline job pointing at the repo with credentials
+9. Fetches the Gitea Actions runner registration token and stores it in a k8s Secret
+
+The runner DaemonSet's init container waits for the Secret, registers once (skips if already registered), then the main container runs `act_runner daemon`.
+
+---
+
+## Upgrade
 
 ```bash
-git clone https://github.com/clusterfactory/clusterfactory
-bash ./clusterfactory/platform/bootstrap.sh
+helm upgrade cf . --namespace cicd --atomic --timeout 10m
 ```
 
-`bootstrap.sh` prompts for namespace, host, and kubectl context — then runs `helm install`.
+The wire job re-runs on every upgrade and upserts all resources idempotently.
 
-### manual helm install
+---
+
+## Uninstall
 
 ```bash
-helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory
-helm repo update
-helm install clusterfactory clusterfactory/clusterfactory \
-  --namespace clusterfactory \
-  --create-namespace \
-  --set host=localhost \
-  --timeout 20m
+helm uninstall cf -n cicd
+kubectl delete namespace cicd
+# Optional: clean runner state from the node
+sudo rm -rf /var/lib/gitea-act-runner/cf
 ```
-
-### follow progress
-
-```bash
-kubectl get jobs -n clusterfactory -w
-kubectl logs job/clusterfactory-init    -n clusterfactory -f
-kubectl logs job/clusterfactory-wiring  -n clusterfactory -f
-kubectl logs job/clusterfactory-summary -n clusterfactory
-```
-
-### upgrade
-
-```bash
-helm repo update
-helm upgrade clusterfactory clusterfactory/clusterfactory \
-  --namespace clusterfactory \
-  --set host=localhost \
-  --timeout 20m
-```
-
-### uninstall
-
-```bash
-helm uninstall clusterfactory -n clusterfactory
-kubectl delete namespace clusterfactory
-```
-
----
-
-## what you get
-
-| component | role | default port |
-|---|---|---|
-| [Gitea](https://gitea.io) | git server + Actions CI | `:30080` |
-| [ArgoCD](https://argoproj.github.io/cd/) | GitOps CD | `:8080` |
-| [Harbor](https://goharbor.io) | container + Helm registry | `:30002` |
-| [OpenBao](https://openbao.org) | secrets management (open-source Vault fork) | `:30820` |
-| [Crossplane](https://crossplane.io) | cloud resources as Kubernetes objects | — |
-| [Headlamp](https://headlamp.dev) | cluster UI | `:4466` |
-| Cockpit | browser terminal + status dashboard | `:4000` |
-
-All official upstream charts. Versions pinned in [`platform/Chart.yaml`](platform/Chart.yaml).
-
----
-
-## the wiring pattern
-
-The components don't know about each other out of the box. **Wiring** is what connects them.
-
-Every connection between components lives in [`wiring/`](platform/wiring/) as a plain YAML file — a Kubernetes Secret, ConfigMap, or CRD that one component needs to talk to another. Nothing more.
-
-```
-wiring/argocd-repo-secret.yaml   — ArgoCD authenticates to Gitea
-wiring/argocd-applications.yaml  — ArgoCD watches deploy/ in Gitea
-wiring/runner-token-secret.yaml  — Gitea Actions runner joins Gitea
-wiring/harbor-pull-secret.yaml   — cluster pulls images from Harbor
-wiring/openbao-k8s-auth.yaml     — pods authenticate to OpenBao
-wiring/crossplane-providers.yaml — Crossplane manages in-cluster resources
-```
-
-Query everything wiring touches:
-
-```bash
-kubectl get all -A -l clusterfactory/wiring
-```
-
----
-
-## how it works — three phases
-
-Install is a single `helm install`. Under the hood, three phases run in order via Helm post-install hooks:
-
-```
-Phase 1 — helm install
-  Installs Gitea, Harbor, ArgoCD, OpenBao, Crossplane, Headlamp, Cockpit.
-
-Phase 2 — init job  (hook weight 0)
-  Waits for components to be ready.
-  Seeds Gitea with a demo repo and CI workflow.
-  Obtains tokens (runner, ArgoCD, Headlamp).
-  Configures OpenBao (Kubernetes auth, policies, credentials).
-  Stores everything in clusterfactory-wiring-tokens Secret.
-
-Phase 3 — wiring job  (hook weight 10)
-  Reads clusterfactory-wiring-tokens.
-  Substitutes $VARIABLES in each wiring/ file.
-  kubectl apply -f each file.
-
-Phase 4 — summary job  (hook weight 20)
-  Reads all credentials from OpenBao.
-  Prints access summary: URLs, passwords, tokens.
-```
-
-The only contract between phases is `clusterfactory-wiring-tokens`. Phase 3 does not care how Phase 2 produced those values.
-
----
-
-## how it's built — standard Helm mechanics
-
-No controllers. No operators. Every mechanism is standard Kubernetes:
-
-| mechanism | used for |
-|---|---|
-| `helm dependency` | pulls upstream charts |
-| `helm post-install hooks` | orders the init → wiring → summary phases |
-| `ConfigMap` + volume mount | delivers scripts and seed files to jobs |
-| `Secret` | passes tokens between phases (`clusterfactory-wiring-tokens`) |
-| `kubectl apply -f` | applies wiring files after variable substitution |
-| `emptyDir` volume | cockpit initContainer installs npm deps, shares with main container |
-
-The init job runs from a ConfigMap (`clusterfactory-init-scripts`) mounted at `/scripts`. The wiring job reads a ConfigMap (`clusterfactory-wiring`) mounted at `/wiring`. Everything is readable, diffable, and replaceable.
-
----
-
-## everything is transparent
-
-- **Scripts**: [`wiring/scripts/gitea-init.sh`](platform/wiring/scripts/gitea-init.sh) and [`wiring/scripts/summary.sh`](platform/wiring/scripts/summary.sh) — plain shell, no framework
-- **Wiring files**: [`wiring/*.yaml`](platform/wiring/) — plain Kubernetes YAML with `$VARIABLE` placeholders
-- **Cockpit**: [`files/terminal/server.js`](platform/files/terminal/server.js) + [`index.html`](platform/files/terminal/index.html) — plain Node.js, embedded in a ConfigMap
-- **Jobs**: [`templates/init-job.yaml`](platform/templates/init-job.yaml), [`templates/wiring-job.yaml`](platform/templates/wiring-job.yaml), [`templates/summary-job.yaml`](platform/templates/summary-job.yaml) — standard batch/v1 Jobs
-
-Nothing happens outside of what you can read in this repo.
-
----
-
-## cloud providers (Crossplane)
-
-After install, connect AWS, Azure, or GCP via the Gitea Actions workflow:
-
-1. Add credentials to Gitea repo secrets (`AWS_ACCESS_KEY_ID`, `AZURE_CREDENTIALS_JSON`, `GCP_CREDENTIALS_JSON`)
-2. Run **Actions → configure-cloud** → choose cloud
-
-The workflow applies a `ProviderConfig` to the cluster. ArgoCD auto-installs the provider controllers from `deploy/crossplane/`.
-
-Provider configs and credential templates are in [`files/crossplane/`](platform/files/crossplane/).
-
----
-
-## adding a connection
-
-1. Create a YAML file in `wiring/` describing the Kubernetes object
-2. Use `$VARIABLE` placeholders for runtime values
-3. Add the sed substitution + `kubectl apply` block in `templates/wiring-job.yaml`
-4. If the variable comes from a component, generate it in `wiring/scripts/gitea-init.sh` and add it to `clusterfactory-wiring-tokens`
-
----
-
-## debug
-
-```bash
-kubectl get jobs -n clusterfactory
-kubectl logs job/clusterfactory-init    -n clusterfactory
-kubectl logs job/clusterfactory-wiring  -n clusterfactory
-kubectl logs job/clusterfactory-summary -n clusterfactory
-```
-
----
-
-## license
-
-Apache 2.0
