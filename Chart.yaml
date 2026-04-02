@@ -1,7 +1,7 @@
 apiVersion: v2
-name: gitea-jenkins
-description: Self-wiring Gitea + Jenkins platform — installs both and wires credentials automatically
-version: 0.1.1
+name: clusterfactory
+description: One helm install. Vanilla upstream Gitea + Jenkins — hello-world pipeline and Gitea Actions pre-wired.
+version: 0.1.2
 appVersion: "1.0.0"
 dependencies:
   - name: gitea

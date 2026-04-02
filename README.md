@@ -41,7 +41,7 @@ No `kubectl exec`. No port-forwards during install. No manual steps.
 ```bash
 helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory/
 helm repo update
-helm upgrade --install cf clusterfactory/gitea-jenkins \
+helm upgrade --install cf clusterfactory/clusterfactory \
   --namespace cicd --create-namespace \
   --atomic --timeout 15m
 ```
@@ -155,7 +155,7 @@ The runner DaemonSet's init container waits for the Secret, registers once (skip
 
 ```bash
 helm repo update
-helm upgrade cf clusterfactory/gitea-jenkins --namespace cicd --atomic --timeout 10m
+helm upgrade cf clusterfactory/clusterfactory --namespace cicd --atomic --timeout 10m
 ```
 
 The wire job re-runs on every upgrade and upserts all resources idempotently.
