@@ -23,6 +23,7 @@ runner:
 gitea:
   replicaCount: 1
   image:
+    # tag: ""  # override Gitea app version, e.g. "1.22.0". Default: chart appVersion.
     pullPolicy: IfNotPresent
   # Recreate prevents LevelDB lock contention during upgrades (SQLite/LevelDB don't support concurrent access)
   strategy:
@@ -84,6 +85,7 @@ gitea:
 # ─────────────────────────────────────────────
 jenkins:
   controller:
+    # To pin a Jenkins version: --set jenkins.controller.image.tag=2.492-jdk21
     resources:
       requests:
         cpu: 100m
