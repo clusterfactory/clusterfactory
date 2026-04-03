@@ -5,14 +5,20 @@ on:
     tags:
       - 'v*'
 
+# workflow-level: minimum possible
+# job-level permissions are declared explicitly per job below
 permissions:
-  contents: write    # create GitHub release, commit docs/index.yaml
-  id-token: write    # cosign OIDC keyless signing (Sigstore)
+  contents: read
 
 jobs:
   release:
     name: Package, sign, and publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create GitHub Release + upload assets
+      id-token: write      # cosign OIDC keyless signing (Sigstore)
+      pull-requests: write # open PR to update docs/index.yaml
+
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -25,17 +31,22 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003  # v4.1.1
 
+      - name: Set up GitHub CLI
+        run: gh --version   # pre-installed on ubuntu-latest, just verify
+
       - name: Resolve chart version from tag
         id: version
         run: |
-          TAG="${GITHUB_REF_NAME}"            # e.g. v0.1.8
-          VERSION="${TAG#v}"                  # strip leading v → 0.1.8
+          TAG="${GITHUB_REF_NAME}"             # e.g. v0.1.9
+          VERSION="${TAG#v}"                   # strip leading v → 0.1.9
           CHART_VERSION="$(grep '^version:' Chart.yaml | awk '{print $2}')"
           if [ "${VERSION}" != "${CHART_VERSION}" ]; then
             echo "ERROR: tag ${TAG} does not match Chart.yaml version ${CHART_VERSION}"
+            echo "Update Chart.yaml version to ${VERSION} before tagging"
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Add Helm repos and build dependencies
         run: |
@@ -55,21 +66,6 @@ jobs:
             --bundle "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle" \
             "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
 
-      - name: Update Helm repo index
-        run: |
-          cp "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz" docs/
-          helm repo index docs/ \
-            --url https://clusterfactory.github.io/clusterfactory/ \
-            --merge docs/index.yaml
-
-      - name: Commit updated index to main
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/index.yaml "docs/clusterfactory-${{ steps.version.outputs.version }}.tgz"
-          git commit -m "release: publish clusterfactory-${{ steps.version.outputs.version }} to Helm repo"
-          git push origin HEAD:main
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2.6.1
         with:
@@ -77,3 +73,47 @@ jobs:
           files: |
             release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz
             release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle
+
+      - name: Update Helm repo index and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          BRANCH="release/helm-index-${VERSION}"
+
+          # copy packaged chart into docs/
+          cp "release-artifacts/clusterfactory-${VERSION}.tgz" docs/
+
+          # regenerate index merging with existing
+          helm repo index docs/ \
+            --url https://clusterfactory.github.io/clusterfactory/ \
+            --merge docs/index.yaml
+
+          # configure git identity for the bot commit
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # clean up stale branch from a previous attempt if it exists
+          git push origin --delete "${BRANCH}" || true
+
+          # create a branch, commit, push, open PR
+          git checkout -b "${BRANCH}"
+          git add docs/index.yaml "docs/clusterfactory-${VERSION}.tgz"
+          git commit -m "release: publish clusterfactory-${VERSION} to Helm repo"
+          git push origin "${BRANCH}"
+
+          gh pr create \
+            --title "release: publish clusterfactory-${VERSION} to Helm repo" \
+            --body "Automated PR from release workflow for tag \`${TAG}\`.
+
+Merging this PR updates the GitHub Pages Helm repository index so that:
+\`\`\`
+helm repo update
+helm upgrade --install cf clusterfactory/clusterfactory
+\`\`\`
+installs version ${VERSION}.
+
+The chart tgz and cosign signature bundle are attached to the [GitHub Release](https://github.com/clusterfactory/clusterfactory/releases/tag/${TAG})." \
+            --base main \
+            --head "${BRANCH}"
