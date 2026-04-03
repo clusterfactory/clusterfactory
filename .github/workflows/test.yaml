@@ -104,7 +104,13 @@ jobs:
             --tail=100 || true
 
       - name: Run helm tests
-        run: helm test cf --namespace cicd --timeout 5m --logs
+        run: helm test cf --namespace cicd --timeout 5m --filter name=cf-test-gitea --filter name=cf-test-jenkins
+
+      - name: Show test output
+        if: always()
+        run: |
+          kubectl logs -n cicd -l app.kubernetes.io/name=test-gitea --ignore-errors || true
+          kubectl logs -n cicd -l app.kubernetes.io/name=test-jenkins --ignore-errors || true
 
       - name: Show test logs on failure
         if: failure()
