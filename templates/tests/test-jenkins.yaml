@@ -1,0 +1,82 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-test-jenkins
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: test-jenkins
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: test
+          image: {{ .Values.wire.image }}
+          command: [sh, -c]
+          args:
+            - |
+              set -eu
+              apk add -q curl jq
+
+              pass() { echo "[test] PASS: $*"; }
+              fail() { echo "[test] FAIL: $*" >&2; exit 1; }
+
+              JENKINS_URL="http://${JENKINS_SVC}:8080"
+              JOB_NAME="${ORG}-${REPO}"
+
+              # Jenkins reachable
+              code=$(curl -o /dev/null -sw "%{http_code}" \
+                -u "${JENKINS_USER}:${JENKINS_PASS}" \
+                "${JENKINS_URL}/api/json")
+              [ "$code" = "200" ] \
+                && pass "Jenkins reachable" \
+                || fail "Jenkins API not reachable (HTTP ${code})"
+
+              # pipeline job exists
+              code=$(curl -o /dev/null -sw "%{http_code}" \
+                -u "${JENKINS_USER}:${JENKINS_PASS}" \
+                "${JENKINS_URL}/job/${JOB_NAME}/api/json")
+              [ "$code" = "200" ] \
+                && pass "Jenkins job '${JOB_NAME}' exists" \
+                || fail "Jenkins job '${JOB_NAME}' not found (HTTP ${code})"
+
+              # gitea-userpass credential exists
+              code=$(curl -o /dev/null -sw "%{http_code}" \
+                -u "${JENKINS_USER}:${JENKINS_PASS}" \
+                "${JENKINS_URL}/credentials/store/system/domain/_/credential/gitea-userpass/api/json")
+              [ "$code" = "200" ] \
+                && pass "credential 'gitea-userpass' exists" \
+                || fail "credential 'gitea-userpass' not found (HTTP ${code})"
+
+              # gitea-api-token credential exists
+              code=$(curl -o /dev/null -sw "%{http_code}" \
+                -u "${JENKINS_USER}:${JENKINS_PASS}" \
+                "${JENKINS_URL}/credentials/store/system/domain/_/credential/gitea-api-token/api/json")
+              [ "$code" = "200" ] \
+                && pass "credential 'gitea-api-token' exists" \
+                || fail "credential 'gitea-api-token' not found (HTTP ${code})"
+
+              echo "[test] all Jenkins checks passed"
+          env:
+            - name: JENKINS_SVC
+              value: "{{ .Release.Name }}-jenkins.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: JENKINS_USER
+              value: "admin"
+            - name: JENKINS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-jenkins
+                  key: jenkins-admin-password
+            - name: ORG
+              value: {{ .Values.wire.org | quote }}
+            - name: REPO
+              value: {{ .Values.wire.repo.name | quote }}
