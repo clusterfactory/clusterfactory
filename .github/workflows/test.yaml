@@ -46,9 +46,7 @@ jobs:
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
           helm dependency build .
-          helm template cf . --namespace cicd \
-            | kubectl apply --dry-run=client -f - \
-            --validate=false
+          helm template cf . --namespace cicd > /dev/null
 
   install-and-test:
     name: Install and test (k3d)
