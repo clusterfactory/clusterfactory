@@ -1,80 +1,43 @@
-# gitea-jenkins
+# clusterfactory
 
+[![Chart Tests](https://github.com/clusterfactory/clusterfactory/actions/workflows/test.yaml/badge.svg)](https://github.com/clusterfactory/clusterfactory/actions/workflows/test.yaml)
 [![Security Scan](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml/badge.svg)](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/clusterfactory/clusterfactory/badge)](https://securityscorecards.dev/viewer/?uri=github.com/clusterfactory/clusterfactory)
 [![Trivy](https://img.shields.io/badge/trivy-scanned-blue?logo=aquasecurity)](https://github.com/clusterfactory/clusterfactory/security/code-scanning)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-One `helm install`. Gitea + Jenkins + Gitea Actions runner — fully wired and ready.
-
-## What it does
-
-| Component | Details |
-|-----------|---------|
-| **Gitea** | Self-hosted Git, SQLite, Actions enabled |
-| **Jenkins** | Pipeline CI, pre-wired with Gitea credentials |
-| **Gitea Actions runner** | Kubernetes DaemonSet, registered automatically |
-| **hello-world repo** | Pushed to Gitea on install — includes Jenkinsfile + Actions workflow |
-
-A single `helm install` will:
-1. Install Gitea and Jenkins via subcharts
-2. Create a Gitea admin user and API token
-3. Create the `clusterfactory` org
-4. Push the `hello-world` repo (Jenkinsfile + `.gitea/workflows/ci.yaml`)
-5. Create the `clusterfactory-hello-world` Jenkins job pointing at the repo
-6. Register a Gitea Actions runner in the cluster
-7. Store Jenkins credentials (`gitea-userpass`, `gitea-api-token`) ready for pipelines
-
-No `kubectl exec`. No port-forwards during install. No manual steps.
+A Helm chart that bootstraps a fully wired Gitea + Jenkins platform in one command — connected or airgapped. Use it as a seed for real CI/CD infrastructure, or as a starting point for more complex platform builds.
 
 ---
 
-## Requirements
+## What it is
 
-- Kubernetes cluster (Docker Desktop, kind, k3s, etc.)
-- `helm` >= 3.x
-- `kubectl` configured
+clusterfactory installs vanilla upstream Gitea and Jenkins, wires them together automatically, and leaves you with a working CI platform ready to use. No manual steps, no kubectl exec, no post-install scripts.
+
+It is designed as a **bootstrap tool** — state lives in emptyDir by default, the wire job re-runs idempotently on every upgrade, and the hello-world pipeline proves the wiring works before you build on top of it.
+
+| Component | What you get |
+|-----------|-------------|
+| Gitea | Self-hosted Git with Actions enabled, SQLite, no external dependencies |
+| Jenkins | Pipeline CI, plugins pinned, credentials pre-wired to Gitea |
+| Gitea Actions runner | DaemonSet, registered automatically, `host` or `dind` mode |
+| hello-world repo | Pushed on install — Jenkinsfile + Actions workflow, both runnable immediately |
+| Wire job | Post-install Job that creates the org, repo, credentials, and Jenkins pipeline job |
 
 ---
 
-## Install
+## Quick start
 
 ```bash
 helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory/
 helm repo update
 helm upgrade --install cf clusterfactory/clusterfactory \
   --namespace cicd --create-namespace \
-  --atomic --timeout 15m
+  --timeout 15m
 ```
 
-That's it.
+Access the services:
 
-**Install from source:**
-```bash
-git clone https://github.com/clusterfactory/clusterfactory.git
-cd clusterfactory
-helm upgrade --install cf . \
-  --namespace cicd --create-namespace \
-  --atomic --timeout 15m
-```
-
----
-
-## Get credentials
-
-**Jenkins password** (randomly generated each install):
-```bash
-kubectl get secret cf-jenkins -n cicd \
-  -o jsonpath='{.data.jenkins-admin-password}' | base64 -d && echo
-```
-
-**Gitea password** is set in `values.yaml` under `gitea.gitea.admin.password` (default: `changeme123!`).
-
----
-
-## Access via browser
-
-Start port-forwards:
 ```bash
 kubectl port-forward -n cicd svc/cf-gitea-http 3000:3000 &
 kubectl port-forward -n cicd svc/cf-jenkins 8080:8080 &
@@ -82,55 +45,138 @@ kubectl port-forward -n cicd svc/cf-jenkins 8080:8080 &
 
 | Service | URL | User |
 |---------|-----|------|
-| Gitea | http://localhost:3000 | `gitea-admin` |
-| Jenkins | http://localhost:8080 | `admin` |
+| Gitea | http://localhost:3000 | `gitea-admin` / `changeme123!` |
+| Jenkins | http://localhost:8080 | `admin` / see below |
+
+Jenkins password:
+
+```bash
+kubectl get secret cf-jenkins -n cicd \
+  -o jsonpath='{.data.jenkins-admin-password}' | base64 -d && echo
+```
+
+**Install from source:**
+
+```bash
+git clone https://github.com/clusterfactory/clusterfactory.git
+cd clusterfactory
+helm upgrade --install cf . \
+  --namespace cicd --create-namespace \
+  --timeout 15m
+```
+
+---
+
+## Compatibility matrix
+
+Each chart version is tested against one specific component pair. The wiring is not adaptive — do not mix versions without testing.
+
+```bash
+helm show values clusterfactory/clusterfactory | grep -A5 "^compatibility:"
+```
+
+| Chart | Gitea | Jenkins | act_runner |
+|-------|-------|---------|------------|
+| 0.1.8 | 1.23.6 | 2.541.3-jdk21 | 0.3.1 |
+
+To pin specific versions at install time:
+
+```bash
+helm upgrade --install cf clusterfactory/clusterfactory \
+  --set gitea.image.tag=1.23.6 \
+  --set jenkins.controller.image.tag=2.541.3-jdk21
+```
+
+---
+
+## Tested platforms
+
+| Platform | Status |
+|----------|--------|
+| Docker Desktop | ✓ tested |
+| kind | ✓ tested (CI) |
+| k3d | ✓ tested (CI) |
+| k3s / RKE2 | ✓ compatible |
+| EKS / GKE / AKS | ✓ compatible |
 
 ---
 
 ## Configuration
 
-All configuration lives in `values.yaml`.
+### Runner mode
+
+The Gitea Actions runner supports two modes controlled by a single value:
+
+```yaml
+runner:
+  mode: host   # default — steps run directly in the runner pod, no Docker needed
+  # mode: dind # opt-in — Docker-in-Docker sidecar, enables docker build/run in workflows
+```
+
+`dind` mode adds a `docker:dind` sidecar with `privileged: true` scoped to that container only. Use it when workflows need to build or run containers. On clusters where privileged pods are blocked, the pod will not schedule — this is intentional.
+
+### Persistence
+
+State does not survive pod restarts by default. This is correct for a bootstrap tool.
+
+```yaml
+persistence:
+  enabled: false   # default — emptyDir, works on any cluster
+  # enabled: true  # opt-in — requires a StorageClass
+  # storageClassName: local-path   # RKE2/k3s
+  # storageClassName: standard     # kind/GKE
+  # storageClassName: gp3          # EKS
+```
+
+When `persistence.enabled=true`, a preflight Job runs before install and fails fast with a human-readable error if no usable StorageClass is found — no silent 15-minute timeout.
+
+### Org and repo
 
 ```yaml
 wire:
-  org: clusterfactory        # Gitea org created on install
+  org: clusterfactory     # Gitea org created on install
   repo:
-    name: hello-world        # Repo pushed on install
-
-runner:
-  enabled: true
-  image: gitea/act_runner:latest
-  labels: "ubuntu-latest:host,ubuntu-22.04:host"
-
-gitea:
-  gitea:
-    admin:
-      username: gitea-admin
-      password: changeme123!
+    name: hello-world     # repo pushed on install
 ```
 
 ---
 
-## Repo structure
+## Airgap
+
+Build a self-contained bundle on an internet-connected machine:
+
+```bash
+./hack/bundle.sh              # outputs to ./dist/
+./hack/bundle.sh /path/to/output
+```
+
+Produces `dist/clusterfactory-airgap-<version>.tar.gz`:
 
 ```
-.
-├── Chart.yaml                        # Declares gitea + jenkins as subchart deps
-├── values.yaml                       # All config
-├── charts/
-│   ├── gitea-11.0.1.tgz
-│   └── jenkins-5.9.9.tgz
-├── files/
-│   ├── Jenkinsfile                   # Hello world Jenkins pipeline
-│   └── .gitea/
-│       └── workflows/
-│           └── ci.yaml               # Hello world Gitea Actions workflow
-└── templates/
-    ├── wire-job.yaml                 # post-install Job: wires everything together
-    ├── wire-rbac.yaml                # ServiceAccount + Role for wire job
-    ├── runner-daemonset.yaml         # Gitea Actions runner DaemonSet
-    └── runner-config-cm.yaml         # act_runner config
+clusterfactory-airgap-0.1.8/
+├── clusterfactory-0.1.8.tgz   — packaged Helm chart
+├── images.tar                  — all container images (docker save)
+├── images.txt                  — list of bundled image references
+├── values-airgap.yaml          — image overrides for a local registry
+└── load.sh                     — run this on the airgapped machine
 ```
+
+Transfer and install:
+
+```bash
+scp dist/clusterfactory-airgap-0.1.8.tar.gz user@airgapped-host:/opt/
+ssh user@airgapped-host
+tar xzf /opt/clusterfactory-airgap-0.1.8.tar.gz
+cd clusterfactory-airgap-0.1.8
+
+# images already visible to your cluster (Docker Desktop / kind / k3d)
+./load.sh direct
+
+# push images to a local registry first, then install
+./load.sh registry 192.168.1.10:5000
+```
+
+The airgap bundle is tested in CI on every push — a dedicated GitHub Actions job builds the bundle, loads all images into k3d containerd with `pullPolicy: Never`, installs the chart, and runs helm tests to confirm no external pulls occurred.
 
 ---
 
@@ -138,28 +184,58 @@ gitea:
 
 The `wire` Job runs as a Helm `post-install,post-upgrade` hook:
 
-1. Waits for Gitea to return HTTP 200
-2. Mints a Gitea API token (`jenkins-wiring` scope)
+1. Waits for Gitea HTTP 200
+2. Mints a Gitea API token
 3. Creates the org
-4. Waits for Jenkins to return HTTP 200
-5. Creates `gitea-api-token` (secret text) and `gitea-userpass` (username+token) credentials in Jenkins
-6. Creates the Gitea repo via API
-7. Pushes `Jenkinsfile` and `.gitea/workflows/ci.yaml` via Gitea Contents API
-8. Creates the Jenkins pipeline job pointing at the repo with credentials
-9. Fetches the Gitea Actions runner registration token and stores it in a k8s Secret
+4. Waits for Jenkins HTTP 200
+5. Creates `gitea-api-token` and `gitea-userpass` credentials in Jenkins
+6. Creates the Gitea repo
+7. Pushes `Jenkinsfile` and `.gitea/workflows/ci.yaml` via the Gitea Contents API
+8. Creates the Jenkins pipeline job pointing at the repo
+9. Fetches the runner registration token and writes it to a Kubernetes Secret
 
-The runner DaemonSet's init container waits for the Secret, registers once (skips if already registered), then the main container runs `act_runner daemon`.
+The runner DaemonSet's init container polls for the Secret, registers, then the main container runs `act_runner daemon`. The whole sequence is idempotent — re-running on upgrade upserts all resources without duplicating them.
 
 ---
 
-## Upgrade
+## Migrating from Jenkins to Gitea Actions
+
+If you have existing Jenkinsfiles you want to migrate, `hack/migrate.sh` helps with the credential mapping — the most manual part of any Jenkins migration.
+
+With Jenkins and Gitea both port-forwarded:
 
 ```bash
-helm repo update
-helm upgrade cf clusterfactory/clusterfactory --namespace cicd --atomic --timeout 10m
+# pull everything from a live Jenkins job
+./hack/migrate.sh --job-name my-pipeline --gitea-org myorg
+
+# or use a local Jenkinsfile
+./hack/migrate.sh --jenkinsfile ./Jenkinsfile --job-name my-pipeline --gitea-org myorg
 ```
 
-The wire job re-runs on every upgrade and upserts all resources idempotently.
+The script extracts credential references from the Jenkinsfile, cross-references them with the live Jenkins credential store to get their types, creates matching empty placeholder secrets in the Gitea org, and produces a migration report with the exact `${{ secrets.* }}` syntax for each one.
+
+Output goes to `./migrate-output/`:
+- `migration-report.md` — credential mapping table, plugin equivalents, syntax reference
+- `Jenkinsfile` — fetched from Jenkins if not provided locally
+- `jenkins-plugins.txt` — installed plugin inventory for the migration report
+
+Use the report alongside the Jenkinsfile as context when converting pipelines.
+
+---
+
+## What to build on top
+
+clusterfactory is designed as a seed. The hello-world pipeline proves the wiring, then you replace it with your own. Some directions:
+
+**Harden with SSO** — add Authentik or Zitadel as an IdP, configure Gitea and Jenkins OIDC, put nginx forward-auth in front. The platform already has all the components that need to be wired.
+
+**Add a registry** — Harbor as a subchart alongside Gitea and Jenkins, wired with credentials the same way Jenkins is wired today. Gives you a complete build, store, and deploy loop.
+
+**Add secrets management** — OpenBao (Vault-compatible) as a subchart, wired to Jenkins credentials via the Vault plugin and to Gitea Actions via environment injection.
+
+**Enterprise substitution** — Jenkins is optional. If your organisation runs Gitea Actions natively, disable Jenkins entirely (`jenkins.enabled=false` equivalent via subchart values) and use the runner DaemonSet alone. Or keep Jenkins as the execution engine and disable the Actions runner.
+
+These are not part of the current chart but are natural extensions. Contributions and examples are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
@@ -170,56 +246,12 @@ Automated scans run on every push to `main`, every PR, and weekly:
 | Scanner | What it checks | Results |
 |---------|---------------|---------|
 | [Trivy](https://github.com/aquasecurity/trivy) | Helm/K8s misconfigurations, CVEs | [GitHub Security tab](https://github.com/clusterfactory/clusterfactory/security/code-scanning) |
-| [OSSF Scorecard](https://securityscorecards.dev) | Branch protection, dependency pinning, CI, vulnerability reporting | [scorecard.dev](https://securityscorecards.dev/viewer/?uri=github.com/clusterfactory/clusterfactory) |
+| [OSSF Scorecard](https://securityscorecards.dev) | Supply chain security posture | [scorecard.dev](https://securityscorecards.dev/viewer/?uri=github.com/clusterfactory/clusterfactory) |
 | Helm lint | Chart validity, strict mode | [Actions](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml) |
 
----
+All actions are pinned to commit SHAs. Dependabot keeps them current weekly.
 
-## Airgap
-
-Run this on an **internet-connected** machine to produce a self-contained bundle:
-
-```bash
-./hack/bundle.sh              # outputs to ./dist/
-./hack/bundle.sh /path/to/output
-```
-
-Produces `dist/clusterfactory-airgap-<version>.tar.gz`:
-
-```
-clusterfactory-airgap-0.1.2/
-├── clusterfactory-0.1.2.tgz   — packaged Helm chart
-├── images.tar                  — all container images (docker save)
-├── images.txt                  — plain list of image references bundled
-├── values-airgap.yaml          — image overrides pointing at local registry
-└── load.sh                     — run this on the airgapped machine
-```
-
-**Transfer to airgapped machine:**
-```bash
-scp dist/clusterfactory-airgap-0.1.2.tar.gz user@airgapped-host:/opt/
-```
-
-**On the airgapped machine — two modes:**
-
-```bash
-tar xzf clusterfactory-airgap-0.1.2.tar.gz
-cd clusterfactory-airgap-0.1.2
-
-# Mode 1: images already visible to your cluster (Docker Desktop / kind)
-./load.sh direct
-
-# Mode 2: push images to a local registry first
-./load.sh registry 192.168.1.10:5000
-```
-
-`load.sh registry` will:
-1. `docker load` all images from `images.tar`
-2. Retag and push each image to `<registry>/<original-name>:<tag>`
-3. Replace `REGISTRY` in `values-airgap.yaml` with your registry address
-4. Run `helm upgrade --install` with the resolved overrides
-
-**Requirements:** `docker`, `helm` on both machines; `kubectl` on the airgapped machine.
+To report a vulnerability, see [SECURITY.md](SECURITY.md). Do not open a public issue.
 
 ---
 
@@ -229,3 +261,9 @@ cd clusterfactory-airgap-0.1.2
 helm uninstall cf -n cicd
 kubectl delete namespace cicd
 ```
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup, testing instructions, and the PR checklist.
