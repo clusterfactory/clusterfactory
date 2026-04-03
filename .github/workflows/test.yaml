@@ -149,7 +149,7 @@ jobs:
 
       - name: Validate bundle structure
         run: |
-          BUNDLE_DIR=$(ls -d /tmp/cf-bundle/clusterfactory-airgap-*)
+          BUNDLE_DIR=$(find /tmp/cf-bundle -maxdepth 1 -type d -name 'clusterfactory-airgap-*')
           echo "Bundle dir: $BUNDLE_DIR"
 
           for f in load.sh images.tar images.txt values-airgap.yaml; do
