@@ -103,17 +103,11 @@ jobs:
           git commit -m "release: publish clusterfactory-${VERSION} to Helm repo"
           git push origin "${BRANCH}"
 
+          printf 'Automated PR from release workflow for tag `%s`.\n\nMerging this PR updates the GitHub Pages Helm repository index so that:\n```\nhelm repo update\nhelm upgrade --install cf clusterfactory/clusterfactory\n```\ninstalls version %s.\n\nThe chart tgz and cosign signature bundle are attached to the [GitHub Release](https://github.com/clusterfactory/clusterfactory/releases/tag/%s).\n' \
+            "${TAG}" "${VERSION}" "${TAG}" > /tmp/pr-body.md
+
           gh pr create \
             --title "release: publish clusterfactory-${VERSION} to Helm repo" \
-            --body "Automated PR from release workflow for tag \`${TAG}\`.
-
-Merging this PR updates the GitHub Pages Helm repository index so that:
-\`\`\`
-helm repo update
-helm upgrade --install cf clusterfactory/clusterfactory
-\`\`\`
-installs version ${VERSION}.
-
-The chart tgz and cosign signature bundle are attached to the [GitHub Release](https://github.com/clusterfactory/clusterfactory/releases/tag/${TAG})." \
+            --body-file /tmp/pr-body.md \
             --base main \
             --head "${BRANCH}"
