@@ -1,4 +1,17 @@
 # ─────────────────────────────────────────────
+# Tested compatibility matrix
+# Each chart version is tested against one specific pair.
+# Override image tags at your own risk — the wiring is not adaptive.
+#
+# Run: helm show values clusterfactory/clusterfactory | grep -A6 "^compatibility:"
+# ─────────────────────────────────────────────
+compatibility:
+  chart: "0.1.7"
+  gitea: "1.23.6"        # gitea subchart appVersion (gitea/gitea:11.0.1)
+  jenkins: "2.541.3"     # jenkins subchart appVersion (jenkins/jenkins:5.9.9)
+  actRunner: "0.3.1"     # gitea/act_runner image tag
+
+# ─────────────────────────────────────────────
 # Wire job settings
 # ─────────────────────────────────────────────
 wire:
@@ -12,7 +25,7 @@ wire:
 # ─────────────────────────────────────────────
 runner:
   enabled: true
-  image: gitea/act_runner:nightly
+  image: gitea/act_runner:0.3.1
   mode: host   # host | dind
   dindImage: docker:27-dind
   # labels are derived from mode — do not set manually
@@ -95,10 +108,11 @@ jenkins:
         memory: 1Gi
     javaOpts: "-Xms256m -Xmx768m -XX:+UseContainerSupport"
     installPlugins:
-      - "kubernetes:latest"
-      - "workflow-aggregator:latest"
-      - "git:latest"
-      - "configuration-as-code:latest"
+      - "kubernetes:4423.vb_59f230b_ce53"
+      - "workflow-aggregator:608.v67378e9d3db_1"
+      - "git:5.10.1"
+      - "configuration-as-code:2061.vc08919f7fc37"
+      - "plain-credentials:199.v9f8e1f741799"
     prometheus:
       enabled: false
     ingress:
