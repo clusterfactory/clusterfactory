@@ -1,0 +1,15 @@
+# blank_issues_enabled: false prevents users from bypassing templates entirely.
+# Do not change this.
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/clusterfactory/clusterfactory/security/advisories/new
+    about: >
+      Do not open a public issue for security vulnerabilities.
+      Use GitHub private security advisories instead.
+  - name: Question or discussion
+    # NOTE: This link requires Discussions to be enabled in repo settings:
+    # Settings → General → Features → Discussions
+    url: https://github.com/clusterfactory/clusterfactory/discussions
+    about: >
+      For general questions, use Discussions rather than Issues.

@@ -1,0 +1,98 @@
+name: Bug report
+description: Something is broken or not working as expected
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. The more detail you provide,
+        the faster it can be diagnosed. Please fill in all sections.
+
+  - type: dropdown
+    id: kubernetes-distro
+    attributes:
+      label: Kubernetes distribution
+      description: Where are you running clusterfactory?
+      options:
+        - Docker Desktop
+        - kind
+        - k3d
+        - k3s (bare metal)
+        - RKE2
+        - EKS
+        - GKE
+        - AKS
+        - Other (describe in additional context)
+    validations:
+      required: true
+
+  - type: input
+    id: helm-version
+    attributes:
+      label: Helm version
+      description: Output of `helm version --short`
+      placeholder: v3.x.x
+    validations:
+      required: true
+
+  - type: input
+    id: chart-version
+    attributes:
+      label: Chart version
+      description: Output of `helm list -n cicd`
+      placeholder: 0.1.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: install-command
+    attributes:
+      label: Exact install command
+      description: The full `helm upgrade --install` command you ran including any --set flags
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What actually happened? Include any error messages.
+    validations:
+      required: true
+
+  - type: textarea
+    id: pod-status
+    attributes:
+      label: Pod status
+      description: Output of `kubectl get pods -n cicd -o wide`
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: wire-logs
+    attributes:
+      label: Wire job logs
+      description: |
+        Output of:
+        `kubectl logs -n cicd -l app.kubernetes.io/name=wire --tail=100`
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Anything else relevant — node specs, network constraints, airgap setup, etc.
+    validations:
+      required: false
