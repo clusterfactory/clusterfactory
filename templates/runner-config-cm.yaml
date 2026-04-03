@@ -20,7 +20,7 @@ data:
     cache:
       enabled: false
     container:
-      network: ""
+      network: {{ if eq .Values.runner.mode "dind" }}"host"{{ else }}""{{ end }}
     host:
       workdir_parent: /tmp/act_runner_work
 {{- end }}

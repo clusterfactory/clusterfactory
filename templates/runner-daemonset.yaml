@@ -47,7 +47,11 @@ spec:
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
             - name: RUNNER_LABELS
-              value: {{ .Values.runner.labels | quote }}
+              {{- if eq .Values.runner.mode "dind" }}
+              value: "ubuntu-latest:docker,ubuntu-22.04:docker"
+              {{- else }}
+              value: "ubuntu-latest:host,ubuntu-22.04:host"
+              {{- end }}
           volumeMounts:
             - name: runner-data
               mountPath: /data
@@ -65,6 +69,10 @@ spec:
               value: /data
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
+            {{- if eq .Values.runner.mode "dind" }}
+            - name: DOCKER_HOST
+              value: "tcp://localhost:2375"
+            {{- end }}
           resources:
             requests:
               cpu: 50m
@@ -77,6 +85,33 @@ spec:
               mountPath: /data
             - name: runner-config
               mountPath: /runner-config
+
+        {{- if eq .Values.runner.mode "dind" }}
+        - name: dind
+          image: {{ .Values.runner.dindImage }}
+          args: ["--tls=false"]
+          securityContext:
+            privileged: true
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          readinessProbe:
+            tcpSocket:
+              port: 2375
+            initialDelaySeconds: 2
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          volumeMounts:
+            - name: runner-data
+              mountPath: /var/lib/docker
+              subPath: docker
+        {{- end }}
 
       volumes:
         - name: runner-data

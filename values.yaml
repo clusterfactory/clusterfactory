@@ -12,9 +12,10 @@ wire:
 # ─────────────────────────────────────────────
 runner:
   enabled: true
-  image: gitea/act_runner:latest
-  # host mode — runs jobs directly in the pod, no Docker socket needed
-  labels: "ubuntu-latest:host,ubuntu-22.04:host"
+  image: gitea/act_runner:nightly
+  mode: host   # host | dind
+  dindImage: docker:27-dind
+  # labels are derived from mode — do not set manually
 
 # ─────────────────────────────────────────────
 # Gitea subchart values
