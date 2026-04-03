@@ -39,13 +39,17 @@ spec:
                 --config /runner-config/config.yaml \
                 --instance "${GITEA_INSTANCE_URL}" \
                 --token "$(cat /runner-token/token)" \
-                --name "k8s-runner-$(hostname)" \
+                --name "k8s-runner-${NODE_NAME}" \
                 --labels "${RUNNER_LABELS}" \
                 --no-interactive
               echo "[runner-init] registration complete"
           env:
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: RUNNER_LABELS
               {{- if eq .Values.runner.mode "dind" }}
               value: "ubuntu-latest:docker,ubuntu-22.04:docker"

@@ -9,6 +9,19 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 <!-- PRs add entries here. Released versions move them to a versioned section. -->
 
+## [0.1.8] - 2026-04-03
+
+### Fixed
+- Runner DaemonSet: use NODE_NAME from downward API instead of hostname to
+  prevent ghost runner accumulation on pod restart
+- load.sh: registry mode now retags only bundled images (images.txt) instead
+  of all images in local Docker daemon
+- load.sh: replace deprecated --atomic with --rollback-on-failure
+
+### Removed
+- Generated chart tarballs from repo root (clusterfactory-0.1.4.tgz through
+  0.1.7.tgz) — build artifacts do not belong in source
+
 ## [0.1.6] - 2026-04-03
 
 ### Added

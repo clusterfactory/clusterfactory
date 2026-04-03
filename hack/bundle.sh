@@ -178,24 +178,25 @@ if [ "${MODE}" = "registry" ]; then
   [ -z "${REGISTRY}" ] && { echo "ERROR: provide registry URL as second argument"; exit 1; }
 
   sep "Retagging and pushing to ${REGISTRY}"
-  docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^<none>" | while read -r img; do
+  while IFS= read -r img; do
+    [ -z "$img" ] && continue
     new="${REGISTRY}/${img}"
     docker tag "${img}" "${new}"
     docker push "${new}"
     ok "Pushed ${new}"
-  done
+  done < "${SCRIPT_DIR}/images.txt"
 
   sep "Installing chart with registry overrides"
   sed "s|REGISTRY|${REGISTRY}|g" "${SCRIPT_DIR}/values-airgap.yaml" > /tmp/values-airgap-resolved.yaml
   helm upgrade --install cf "${CHART}" \
     --namespace cicd --create-namespace \
-    --atomic --timeout 15m \
+    --rollback-on-failure --timeout 15m \
     --values /tmp/values-airgap-resolved.yaml
 else
   sep "Installing chart (images already in Docker)"
   helm upgrade --install cf "${CHART}" \
     --namespace cicd --create-namespace \
-    --atomic --timeout 15m
+    --rollback-on-failure --timeout 15m
 fi
 
 sep "Done"
