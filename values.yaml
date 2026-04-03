@@ -36,7 +36,7 @@ gitea:
       memory: 512Mi
 
   persistence:
-    size: 5Gi
+    enabled: false
 
   ingress:
     enabled: false
@@ -108,4 +108,14 @@ jenkins:
     enabled: false
 
   persistence:
-    size: 5Gi
+    enabled: false
+
+# ─────────────────────────────────────────────
+# Persistence (disabled by default)
+# clusterfactory is a bootstrap tool — emptyDir is the right default.
+# Enable only if you need state to survive pod restarts.
+# ─────────────────────────────────────────────
+persistence:
+  enabled: false
+  storageClassName: ""   # "" = cluster default, "-" = no dynamic provisioning
+  size: 5Gi

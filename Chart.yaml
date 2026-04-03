@@ -1,7 +1,7 @@
 apiVersion: v2
 name: clusterfactory
 description: One helm install. Vanilla upstream Gitea + Jenkins — hello-world pipeline and Gitea Actions pre-wired.
-version: 0.1.3
+version: 0.1.4
 appVersion: "1.0.0"
 dependencies:
   - name: gitea
