@@ -46,10 +46,29 @@ ok "Packaged clusterfactory-${CHART_VERSION}.tgz"
 sep "Collecting images"
 # Images from rendered templates + known init containers
 IMAGES=$(helm template cf "${ROOT_DIR}" 2>/dev/null \
-  | grep -E "^\s+image:" \
-  | sed 's/.*image: //' \
-  | sed 's/"//g' \
-  | sort -u)
+  | python3 -c "
+import sys, yaml
+
+def extract_images(obj):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k == 'image' and isinstance(v, str) and v.strip():
+                yield v.strip()
+            else:
+                yield from extract_images(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from extract_images(item)
+
+images = sorted(set(
+    img
+    for doc in yaml.safe_load_all(sys.stdin)
+    if doc
+    for img in extract_images(doc)
+))
+for img in images:
+    print(img)
+")
 
 log "Images to bundle:"
 echo "$IMAGES" | while read -r img; do echo "    $img"; done
@@ -89,13 +108,18 @@ wire:
   image: REGISTRY/alpine:3.19
 
 runner:
-  image: REGISTRY/gitea/act_runner:latest
+  image: REGISTRY/gitea/act_runner:0.3.1
+  dindImage: REGISTRY/docker:27-dind
 
 gitea:
   image:
     registry: REGISTRY
     repository: gitea/gitea
     tag: "1.23.6-rootless"
+  test:
+    image:
+      name: REGISTRY/busybox
+      tag: "latest"
 
 jenkins:
   controller:
@@ -109,6 +133,12 @@ jenkins:
           registry: REGISTRY
           repository: kiwigrid/k8s-sidecar
           tag: "2.5.0"
+  helmtest:
+    bats:
+      image:
+        registry: REGISTRY
+        repository: bats/bats
+        tag: "1.13.0"
 EOF
 ok "values-airgap.yaml written"
 
