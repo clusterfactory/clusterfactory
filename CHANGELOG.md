@@ -9,6 +9,8 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 <!-- PRs add entries here. Released versions move them to a versioned section. -->
 
+## [0.2.0] - 2026-04-04
+
 ### Added
 - SLSA Level 2 provenance attestation in release workflow — slsa-github-generator
   generic workflow generates an `.intoto.jsonl` attestation for the chart tgz
