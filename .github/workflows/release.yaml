@@ -66,6 +66,25 @@ jobs:
             --bundle "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle" \
             "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a  # v0.9.0
+        with:
+          path: "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
+          format: spdx-json
+          artifact-name: "clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json"
+          output-file: "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json"
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest SBOM to chart with cosign
+        run: |
+          cosign attest-blob \
+            --yes \
+            --predicate "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json" \
+            --type spdxjson \
+            --bundle "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json.bundle" \
+            "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2.6.1
         with:
@@ -73,6 +92,8 @@ jobs:
           files: |
             release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz
             release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle
+            release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json
+            release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json.bundle
 
       - name: Update Helm repo index and open PR
         env:

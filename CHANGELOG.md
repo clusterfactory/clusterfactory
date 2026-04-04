@@ -9,6 +9,17 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 <!-- PRs add entries here. Released versions move them to a versioned section. -->
 
+### Added
+- NetworkPolicy templates (`templates/networkpolicy.yaml`) — allows wire job,
+  runner, and helm test pods to reach Gitea (port 3000) and Jenkins (port 8080)
+  on clusters with default-deny NetworkPolicy (Calico, Cilium). Gated on
+  `networkPolicy.enabled` (default: true). Fixes silent install failure on
+  production clusters with L4 network policy enforcement (CF-101)
+- SBOM generation in release workflow — Syft generates an SPDX JSON SBOM from
+  the packaged chart tgz; cosign attests the SBOM to the chart artifact via
+  the Sigstore transparency log. SBOM and attestation bundle attached to every
+  GitHub Release (CF-102)
+
 ## [0.1.8] - 2026-04-03
 
 ### Fixed
