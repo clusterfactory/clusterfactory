@@ -14,6 +14,9 @@ jobs:
   release:
     name: Package, sign, and publish
     runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+      version: ${{ steps.version.outputs.version }}
     permissions:
       contents: write      # create GitHub Release + upload assets
       id-token: write      # cosign OIDC keyless signing (Sigstore)
@@ -65,6 +68,12 @@ jobs:
             --yes \
             --bundle "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle" \
             "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
+
+      - name: Compute artifact hash for SLSA provenance
+        id: hash
+        run: |
+          HASH=$(sha256sum "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz" | base64 -w0)
+          echo "hashes=${HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Generate SBOM
         uses: anchore/sbom-action@f6c3d0fe42c3cf876e3462574e4c9416b5e0f07a  # v0.9.0
@@ -132,3 +141,16 @@ jobs:
             --body-file /tmp/pr-body.md \
             --base main \
             --head "${BRANCH}"
+
+  provenance:
+    name: Generate SLSA provenance
+    needs: [release]
+    permissions:
+      actions: read     # read workflow run for provenance
+      id-token: write   # OIDC token for Sigstore signing
+      contents: write   # upload provenance to GitHub Release
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a  # v2.1.0
+    with:
+      base64-subjects: ${{ needs.release.outputs.hashes }}
+      provenance-name: "clusterfactory-${{ needs.release.outputs.version }}.intoto.jsonl"
+      upload-assets: true
