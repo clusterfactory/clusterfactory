@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  release:
+    types: [published]
 
 # workflow-level: minimum possible
 # job-level permissions are declared explicitly per job below
