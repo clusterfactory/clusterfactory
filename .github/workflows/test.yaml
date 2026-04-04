@@ -88,6 +88,7 @@ jobs:
             --rollback-on-failure \
             --timeout 15m \
             --set runner.enabled=false \
+            --set networkPolicy.enabled=false \
             --set gitea.resources.requests.memory=128Mi \
             --set gitea.resources.limits.memory=512Mi \
             --set jenkins.controller.resources.requests.memory=256Mi \
@@ -249,6 +250,7 @@ jobs:
             --rollback-on-failure \
             --timeout 15m \
             --set runner.enabled=false \
+            --set networkPolicy.enabled=false \
             --set jenkins.controller.resources.requests.memory=256Mi \
             --set jenkins.controller.resources.limits.memory=768Mi \
             --set jenkins.controller.javaOpts="-Xms128m -Xmx512m -XX:+UseContainerSupport" \
