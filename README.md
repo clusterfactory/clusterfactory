@@ -6,6 +6,7 @@
 [![Trivy](https://img.shields.io/badge/trivy-scanned-blue?logo=aquasecurity)](https://github.com/clusterfactory/clusterfactory/security/code-scanning)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![SLSA 2](https://slsa.dev/images/gh-badge-level2.svg)](https://slsa.dev)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12366/badge)](https://www.bestpractices.dev/projects/12366)
 
 A Helm chart that bootstraps a fully wired Gitea + Jenkins platform in one command — connected or airgapped. Use it as a seed for real CI/CD infrastructure, or as a starting point for more complex platform builds.
 
