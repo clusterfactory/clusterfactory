@@ -136,3 +136,13 @@ persistence:
   enabled: false
   storageClassName: ""   # "" = cluster default, "-" = no dynamic provisioning
   size: 5Gi
+
+# ─────────────────────────────────────────────
+# NetworkPolicy
+# Enable on clusters with a default-deny NetworkPolicy (Calico, Cilium, etc.).
+# Without this, the wire job cannot reach Gitea and Jenkins and will fail
+# silently on first install. Enabled by default — safe to disable if your
+# cluster has no NetworkPolicy enforcement.
+# ─────────────────────────────────────────────
+networkPolicy:
+  enabled: true
