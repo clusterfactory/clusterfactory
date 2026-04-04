@@ -3,7 +3,24 @@ entries:
   clusterfactory:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-03T20:28:34.984959472Z"
+    created: "2026-04-04T05:27:04.436309624Z"
+    dependencies:
+    - name: gitea
+      repository: https://dl.gitea.com/charts/
+      version: 11.0.1
+    - name: jenkins
+      repository: https://charts.jenkins.io
+      version: 5.9.9
+    description: One helm install. Vanilla upstream Gitea + Jenkins — hello-world
+      pipeline and Gitea Actions pre-wired.
+    digest: 6a04120ac67d96ac339f7902937b89bb7d5d2f3dca61fc9a0c3b45cc5ca2a0ce
+    name: clusterfactory
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.2.0.tgz
+    version: 0.2.0
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-04T05:27:04.409031105Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -20,7 +37,7 @@ entries:
     version: 0.1.8
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-03T20:28:34.958820426Z"
+    created: "2026-04-04T05:27:04.383379818Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -37,7 +54,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-03T20:28:34.932450298Z"
+    created: "2026-04-04T05:27:04.357185842Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -55,7 +72,7 @@ entries:
   gitea-jenkins:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-03T20:28:35.044586483Z"
+    created: "2026-04-04T05:27:04.488500104Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -72,7 +89,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-03T20:28:35.012038304Z"
+    created: "2026-04-04T05:27:04.462070136Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -87,4 +104,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.0.tgz
     version: 0.1.0
-generated: "2026-04-03T20:28:34.905776918Z"
+generated: "2026-04-04T05:27:04.330527677Z"
