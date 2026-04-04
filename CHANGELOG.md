@@ -10,6 +10,9 @@ Versioning: [Semantic Versioning](https://semver.org/).
 <!-- PRs add entries here. Released versions move them to a versioned section. -->
 
 ### Added
+- SLSA Level 2 provenance attestation in release workflow — slsa-github-generator
+  generic workflow generates an `.intoto.jsonl` attestation for the chart tgz
+  and attaches it to every GitHub Release; verifiable with slsa-verifier (CF-103)
 - NetworkPolicy templates (`templates/networkpolicy.yaml`) — allows wire job,
   runner, and helm test pods to reach Gitea (port 3000) and Jenkins (port 8080)
   on clusters with default-deny NetworkPolicy (Calico, Cilium). Gated on
