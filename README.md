@@ -22,7 +22,7 @@ It is designed as a **bootstrap tool** — state lives in emptyDir by default, t
 |-----------|-------------|
 | Gitea | Self-hosted Git with Actions enabled, SQLite, no external dependencies |
 | Jenkins | Pipeline CI, plugins pinned, credentials pre-wired to Gitea |
-| Gitea Actions runner | DaemonSet, registered automatically, `host` or `dind` mode |
+| Gitea Actions runner | DaemonSet, registered automatically, uses Kaniko for builds |
 | hello-world repo | Pushed on install — Jenkinsfile + Actions workflow, both runnable immediately |
 | Wire job | Post-install Job that creates the org, repo, credentials, and Jenkins pipeline job |
 
@@ -105,17 +105,28 @@ helm upgrade --install cf clusterfactory/clusterfactory \
 
 ## Configuration
 
-### Runner mode
+### Runner and container builds
 
-The Gitea Actions runner supports two modes controlled by a single value:
+The Gitea Actions runner runs as a DaemonSet and uses **Kaniko** for building container images:
 
 ```yaml
 runner:
-  mode: host   # default — steps run directly in the runner pod, no Docker needed
-  # mode: dind # opt-in — Docker-in-Docker sidecar, enables docker build/run in workflows
+  enabled: true
+  capacity: 2   # max concurrent workflow runs per runner
 ```
 
-`dind` mode adds a `docker:dind` sidecar with `privileged: true` scoped to that container only. Use it when workflows need to build or run containers. On clusters where privileged pods are blocked, the pod will not schedule — this is intentional.
+**Architecture:**
+```
+Gitea Actions → act_runner (DaemonSet) → kubectl create job → Kaniko pod → registry
+```
+
+This approach:
+- ✅ No privileged containers
+- ✅ No Docker daemon required
+- ✅ Compatible with Pod Security Standards (restricted)
+- ✅ Ephemeral build pods with proper resource isolation
+
+For container image builds in workflows, use Kaniko executor. See [docs/kaniko-builds.md](docs/kaniko-builds.md) for examples and migration guide.
 
 ### Persistence
 

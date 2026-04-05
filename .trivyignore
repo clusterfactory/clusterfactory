@@ -1,0 +1,10 @@
+# KSV0053: Jenkins RBAC permissions in vendored subchart (charts/jenkins).
+# Cannot be modified without forking the upstream chart.
+KSV0053
+
+# KSV0125: Runner image from gitea registry (trusted upstream)
+KSV0125
+
+# KSV0113: Wire job needs secret access to create runner registration token
+KSV0113
+
