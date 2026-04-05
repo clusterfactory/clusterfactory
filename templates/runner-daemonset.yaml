@@ -19,46 +19,45 @@ spec:
         app.kubernetes.io/name: gitea-runner
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
-      # Init container: waits for registration token, registers, then exits.
-      # Main container takes over and runs the daemon.
-      # emptyDir for state — re-registers on every pod start (clean, no stale state).
+      serviceAccountName: {{ .Release.Name }}-runner
+
       initContainers:
         - name: register
           image: {{ .Values.runner.image }}
-          command: [sh, -c]
+          command: ["/bin/sh", "-c"]
           args:
             - |
               set -e
+
               echo "[runner-init] waiting for registration token..."
+
               until [ -s /runner-token/token ]; do
                 sleep 5
               done
+
               rm -f /data/.runner
+
               echo "[runner-init] registering with Gitea at ${GITEA_INSTANCE_URL}..."
+
               act_runner register \
                 --config /runner-config/config.yaml \
                 --instance "${GITEA_INSTANCE_URL}" \
                 --token "$(cat /runner-token/token)" \
                 --name "k8s-runner-${NODE_NAME}" \
-                --labels "${RUNNER_LABELS}" \
+                --labels "ubuntu-latest:kubernetes" \
                 --no-interactive
+
               echo "[runner-init] registration complete"
+
           env:
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
+
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: RUNNER_LABELS
-              {{- if eq .Values.runner.mode "dind" }}
-              value: "ubuntu-latest:docker,ubuntu-22.04:docker"
-              {{- else }}
-              value: "ubuntu-latest:host,ubuntu-22.04:host"
-              {{- end }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+
           volumeMounts:
             - name: runner-data
               mountPath: /data
@@ -70,66 +69,50 @@ spec:
       containers:
         - name: runner
           image: {{ .Values.runner.image }}
-          command: [act_runner, daemon, --config, /runner-config/config.yaml]
+
+          command:
+            - act_runner
+            - daemon
+            - --config
+            - /runner-config/config.yaml
+
           env:
             - name: HOME
               value: /data
+
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
-            {{- if eq .Values.runner.mode "dind" }}
-            - name: DOCKER_HOST
-              value: "tcp://localhost:2375"
-            {{- end }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
+              cpu: 100m
+              memory: 128Mi
             limits:
-              cpu: 500m
-              memory: 256Mi
+              cpu: 1000m
+              memory: 512Mi
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+
           volumeMounts:
             - name: runner-data
               mountPath: /data
             - name: runner-config
               mountPath: /runner-config
 
-        {{- if eq .Values.runner.mode "dind" }}
-        - name: dind
-          image: {{ .Values.runner.dindImage }}
-          args: ["--tls=false"]
-          securityContext:
-            privileged: true
-          env:
-            - name: DOCKER_TLS_CERTDIR
-              value: ""
-          readinessProbe:
-            tcpSocket:
-              port: 2375
-            initialDelaySeconds: 2
-            periodSeconds: 2
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 1Gi
-          volumeMounts:
-            - name: runner-data
-              mountPath: /var/lib/docker
-              subPath: docker
-        {{- end }}
-
       volumes:
         - name: runner-data
           emptyDir: {}
+
         - name: runner-token
           secret:
             secretName: {{ .Release.Name }}-runner-reg-token
-            optional: true   # pod starts even before wire job creates the secret
+            optional: true
+
         - name: runner-config
           configMap:
             name: {{ .Release.Name }}-runner-config

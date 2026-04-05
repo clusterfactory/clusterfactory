@@ -22,13 +22,12 @@ wire:
 
 # ─────────────────────────────────────────────
 # Gitea Actions runner (DaemonSet)
+# Uses Kaniko for container builds — no Docker required
 # ─────────────────────────────────────────────
 runner:
   enabled: true
   image: gitea/act_runner:0.3.1
-  mode: host   # host | dind
-  dindImage: docker:27-dind
-  # labels are derived from mode — do not set manually
+  capacity: 2  # max concurrent workflow runs per runner
 
 # ─────────────────────────────────────────────
 # Gitea subchart values
