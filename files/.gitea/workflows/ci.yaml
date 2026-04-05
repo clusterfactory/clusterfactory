@@ -1,22 +1,22 @@
 # This workflow runs on the clusterfactory Gitea Actions runner.
 #
-# runner.mode: host  → runs-on: ubuntu-latest executes steps directly in the runner pod
-# runner.mode: dind  → runs-on: ubuntu-latest executes steps inside Docker containers
+# The runner uses Kaniko for building container images.
+# No Docker daemon or privileged containers required.
 #
-# To use Docker in your workflows (dind mode only):
+# To build container images with Kaniko:
 #   jobs:
 #     build:
 #       runs-on: ubuntu-latest
 #       steps:
-#         - run: docker build -t myimage .
+#         - run: |
+#             kubectl create job kaniko-build \
+#               --image=gcr.io/kaniko-project/executor:latest \
+#               -- \
+#               --context=dir://$(pwd) \
+#               --dockerfile=Dockerfile \
+#               --destination=registry/image:tag
 #
-# To build OCI images without Docker (works in both modes):
-#   jobs:
-#     build:
-#       runs-on: ubuntu-latest
-#       container: gcr.io/kaniko-project/executor:latest
-#       steps:
-#         - run: /kaniko/executor --context=. --destination=registry/image:tag
+# See docs/kaniko-builds.md for more examples
 name: CI
 
 on:

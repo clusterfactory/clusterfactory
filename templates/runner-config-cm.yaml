@@ -5,22 +5,28 @@ metadata:
   name: {{ .Release.Name }}-runner-config
   namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: gitea-runner
     app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
 data:
   config.yaml: |
     log:
       level: info
+
     runner:
       file: /data/.runner
-      capacity: 2
+      capacity: {{ .Values.runner.capacity | default 2 }}
       fetch_interval: 2s
       fetch_timeout: 5s
-      labels: []
+      labels:
+        - "ubuntu-latest:kubernetes"
+
     cache:
       enabled: false
+
     container:
-      network: {{ if eq .Values.runner.mode "dind" }}"host"{{ else }}""{{ end }}
+      network: ""
+
     host:
       workdir_parent: /tmp/act_runner_work
 {{- end }}
