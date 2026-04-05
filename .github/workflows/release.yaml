@@ -78,14 +78,12 @@ jobs:
           echo "hashes=${HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Generate SBOM
-        run: |
-          curl -sSfL \
-            "https://github.com/anchore/syft/releases/download/v1.42.3/syft_1.42.3_linux_amd64.tar.gz" \
-            | tar -xz -C /tmp syft
-          sudo mv /tmp/syft /usr/local/bin/syft
-          syft scan \
-            "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz" \
-            -o "spdx-json=release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json"
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          file: release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz
+          output-file: release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json
+          format: spdx-json
+          upload-artifact: false
 
       - name: Attest SBOM to chart with cosign
         run: |
