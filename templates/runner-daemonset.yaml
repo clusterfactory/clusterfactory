@@ -56,6 +56,9 @@ spec:
               {{- else }}
               value: "ubuntu-latest:host,ubuntu-22.04:host"
               {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           volumeMounts:
             - name: runner-data
               mountPath: /data
@@ -77,6 +80,9 @@ spec:
             - name: DOCKER_HOST
               value: "tcp://localhost:2375"
             {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           resources:
             requests:
               cpu: 50m
