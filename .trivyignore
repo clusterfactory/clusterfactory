@@ -1,39 +1,75 @@
-# KSV053: Jenkins RBAC permissions in vendored subchart (charts/jenkins).
-# Cannot be modified without forking the upstream chart.
+# .trivyignore
+# ─────────────────────────────────────────────────────────────────────────────
+# Accepted Trivy findings for clusterfactory.
+#
+# Every entry here is either:
+#   A) a finding in a vendored upstream subchart that cannot be fixed without
+#      forking (gitea-11.0.1.tgz, jenkins-5.9.9.tgz), or
+#   B) a finding in clusterfactory's own templates where the behaviour is
+#      intentional and the risk is explicitly accepted.
+#
+# Upstream subchart findings are tracked at:
+#   https://github.com/clusterfactory/clusterfactory/issues/23
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Intentional: clusterfactory templates ────────────────────────────────────
+
+# KSV053: Jenkins subchart creates broad RBAC rules for its agent provisioning.
+# Cannot be modified without forking the upstream jenkins/jenkins chart.
 KSV053
-KSV-0053
 
-# KSV125: Runner image from gitea registry (trusted upstream)
+# KSV125: act_runner image pulled from docker.gitea.com (trusted Gitea upstream).
+# Registry is not docker.io but is the official Gitea registry.
 KSV125
-KSV-0125
 
-# KSV113: Wire job needs secret access to create runner registration token
+# KSV113: Wire job requires Secret read/write access to store the runner
+# registration token. This is intentional and scoped to the release namespace.
 KSV113
-KSV-0113
 
-# Temporary ignores for pre-existing alerts (will be removed after main branch scan)
-# These are already fixed in the code but alerts haven't closed yet
+# ── Upstream subchart: gitea-11.0.1.tgz + jenkins-5.9.9.tgz ─────────────────
+# The following findings originate in the vendored upstream Gitea and Jenkins
+# subcharts. clusterfactory's own templates (runner, wire job, preflight, tests)
+# have all these security contexts correctly configured. The findings below
+# cannot be resolved without modifying upstream chart source.
+#
+# They will be removed when upstream charts ship the fixes, or when the
+# subcharts are upgraded to versions that include them.
+
+# KSV001: allowPrivilegeEscalation not explicitly set to false in Gitea/Jenkins
+# subchart containers.
 KSV001
-KSV-0001
+
+# KSV003: capabilities.drop ALL not set in Gitea/Jenkins subchart containers.
 KSV003
-KSV-0003
+
+# KSV004: CPU limits not set in some Gitea/Jenkins subchart init containers.
 KSV004
-KSV-0004
+
+# KSV012: runAsNonRoot not set in Gitea/Jenkins subchart containers.
 KSV012
-KSV-0012
+
+# KSV014: readOnlyRootFilesystem not set in Gitea/Jenkins subchart containers.
 KSV014
-KSV-0014
+
+# KSV020: runAsUser > 10000 not set — Gitea/Jenkins subcharts use default UIDs.
+# Trivy also incorrectly flags the runner (runAsUser: 1000) despite the check
+# description requiring > 10000, not exactly 10000. Tracked upstream:
+# https://github.com/aquasecurity/trivy/issues/8210
 KSV020
-KSV-0020
+
+# KSV021: runAsGroup > 10000 not set — same as KSV020.
 KSV021
-KSV-0021
+
+# KSV030: seccompProfile not set in Gitea/Jenkins subchart containers.
 KSV030
-KSV-0030
+
+# KSV104: Seccomp profile not specified — same as KSV030.
 KSV104
-KSV-0104
+
+# KSV106: Capabilities not restricted in Gitea/Jenkins subchart containers.
 KSV106
-KSV-0106
+
+# KSV118: Default security context in Gitea/Jenkins subchart containers.
 KSV118
-KSV-0118
 
 

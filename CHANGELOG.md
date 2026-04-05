@@ -9,21 +9,45 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 <!-- PRs add entries here. Released versions move them to a versioned section. -->
 
-## [0.2.0] - 2026-04-04
+## [0.2.0] - 2026-04-05
 
 ### Added
-- SLSA Level 2 provenance attestation in release workflow — slsa-github-generator
-  generic workflow generates an `.intoto.jsonl` attestation for the chart tgz
-  and attaches it to every GitHub Release; verifiable with slsa-verifier (CF-103)
-- NetworkPolicy templates (`templates/networkpolicy.yaml`) — allows wire job,
-  runner, and helm test pods to reach Gitea (port 3000) and Jenkins (port 8080)
-  on clusters with default-deny NetworkPolicy (Calico, Cilium). Gated on
-  `networkPolicy.enabled` (default: true). Fixes silent install failure on
-  production clusters with L4 network policy enforcement (CF-101)
-- SBOM generation in release workflow — Syft generates an SPDX JSON SBOM from
-  the packaged chart tgz; cosign attests the SBOM to the chart artifact via
-  the Sigstore transparency log. SBOM and attestation bundle attached to every
-  GitHub Release (CF-102)
+- Kaniko-based container builds — eliminates Docker-in-Docker and privileged
+  containers; runner now spawns ephemeral Kubernetes Jobs for image builds
+- `runner-rbac.yaml` — ServiceAccount, Role, RoleBinding for runner with
+  minimal pod/job permissions for Kaniko job spawning
+- `templates/networkpolicy.yaml` — NetworkPolicy for Gitea and Jenkins ingress;
+  prevents silent wire job failure on default-deny clusters (Calico, Cilium)
+- `networkPolicy.enabled: true` in values.yaml — on by default, safe to disable
+- Release workflow: SBOM generation via Syft (`anchore/sbom-action`), cosign
+  SBOM attestation, SLSA Level 2 provenance via `slsa-github-generator`
+- `on: release: types: [published]` trigger in release.yaml — fixes Scorecard
+  Packaging check
+- `administration: read` permission on Scorecard job — fixes Branch-Protection `?`
+- `docs/kaniko-builds.md` — comprehensive guide for Kaniko usage with Gitea Actions
+- `docs/kaniko-migration.md` — upgrade guide from DinD to Kaniko
+
+### Changed
+- Runner hardened: `runAsNonRoot`, `readOnlyRootFilesystem`, `drop: ALL`
+  capabilities, `seccompProfile: RuntimeDefault` — passes restricted PSA
+- Runner label changed from `ubuntu-latest:host` / `ubuntu-latest:docker` to
+  `ubuntu-latest:kubernetes` — Kaniko mode
+- `runner.mode` and `runner.dindImage` values removed (breaking change)
+- `runner.capacity` added (default: 2) — configures max concurrent workflow runs
+- `.trivyignore` restructured — all suppressions documented with rationale;
+  "temporary" framing removed; subchart findings separated from intentional accepts
+
+### Removed
+- Docker-in-Docker sidecar — no privileged containers in any default mode
+- `runner.mode` value (host | dind) — replaced by Kaniko architecture
+- `runner.dindImage` value — no longer needed
+- `KANIKO_REFACTORING.md` from repo root — content moved to docs/
+
+### Breaking changes
+- Workflows using `runs-on: ubuntu-latest` with Docker commands must migrate
+  to Kaniko. See `docs/kaniko-migration.md`.
+- `runner.mode` and `runner.dindImage` values removed — remove from any
+  overrides before upgrading.
 
 ## [0.1.8] - 2026-04-03
 
