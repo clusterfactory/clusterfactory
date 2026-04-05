@@ -3,7 +3,7 @@ entries:
   clusterfactory:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-04T05:39:12.129698981Z"
+    created: "2026-04-05T12:14:30.37282755Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -13,14 +13,14 @@ entries:
       version: 5.9.9
     description: One helm install. Vanilla upstream Gitea + Jenkins — hello-world
       pipeline and Gitea Actions pre-wired.
-    digest: 4e9dbed90dd886baa6bdf9e73914b9cc1c2047b52901cc1c40ebbef3c4e1eea1
+    digest: 4b1e50a30b452ad599b8c2c8fb5503aacaa598951b23ac91e2244f585f6f65fe
     name: clusterfactory
     urls:
     - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.2.0.tgz
     version: 0.2.0
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-04T05:39:12.103554614Z"
+    created: "2026-04-05T12:14:30.346537261Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -37,7 +37,7 @@ entries:
     version: 0.1.8
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-04T05:39:12.070678707Z"
+    created: "2026-04-05T12:14:30.31992587Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -54,7 +54,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-04T05:39:12.044309471Z"
+    created: "2026-04-05T12:14:30.293155414Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -72,7 +72,7 @@ entries:
   gitea-jenkins:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-04T05:39:12.180794441Z"
+    created: "2026-04-05T12:14:30.426966984Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -89,7 +89,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-04T05:39:12.155527642Z"
+    created: "2026-04-05T12:14:30.399172724Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -104,4 +104,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.0.tgz
     version: 0.1.0
-generated: "2026-04-04T05:39:12.017571771Z"
+generated: "2026-04-05T12:14:30.265758162Z"
