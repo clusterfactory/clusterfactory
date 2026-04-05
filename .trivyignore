@@ -1,12 +1,10 @@
-# KSV0118: dind container requires privileged:true for Docker-in-Docker CI runner.
-# allowPrivilegeEscalation cannot be disabled when privileged is set.
-# The dind sidecar is an intentional, isolated workload — not a general-purpose container.
-KSV0118
-
-# KSV0014: dind container needs a writable root filesystem to run the Docker daemon
-# (writes to /var/lib/docker). readOnlyRootFilesystem cannot be set for this container.
-KSV0014
-
 # KSV0053: Jenkins RBAC permissions in vendored subchart (charts/jenkins).
 # Cannot be modified without forking the upstream chart.
 KSV0053
+
+# KSV0125: Runner image from gitea registry (trusted upstream)
+KSV0125
+
+# KSV0113: Wire job needs secret access to create runner registration token
+KSV0113
+
