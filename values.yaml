@@ -16,7 +16,14 @@ compatibility:
 # ─────────────────────────────────────────────
 wire:
   org: clusterfactory
-  image: alpine:3.19
+  # Engine selection: "bash" (default, stable) or "python" (new, experimental)
+  engine: bash
+  
+  # Image overrides per engine
+  image:
+    bash: alpine:3.19
+    python: ghcr.io/kube-tarian/clusterfactory-wire:0.2.0
+  
   repo:
     name: hello-world
 
