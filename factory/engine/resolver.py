@@ -53,12 +53,26 @@ class Resolver:
         Returns:
             Component class or None if not found
         """
-        # Dynamic import based on name
-        # For now, return None for unimplemented components
-        # TODO: Implement component registry with auto-discovery
-        component_map = {}
+        # Component registry - maps artifact names to component classes
+        component_map = {
+            'gitea': self._import_gitea,
+            'jenkins': self._import_jenkins,
+        }
         
-        return component_map.get(name)
+        importer = component_map.get(name)
+        if importer:
+            return importer()
+        return None
+
+    def _import_gitea(self) -> type[Component]:
+        """Import Gitea component class."""
+        from factory.components.gitea import GiteaComponent
+        return GiteaComponent
+
+    def _import_jenkins(self) -> type[Component]:
+        """Import Jenkins component class."""
+        from factory.components.jenkins import JenkinsComponent
+        return JenkinsComponent
 
     def _get_component_config(self, name: str) -> dict:
         """
@@ -70,8 +84,25 @@ class Resolver:
         Returns:
             Configuration dictionary
         """
-        # Build config from global config + component defaults
+        import os
+        
+        # Build config from global config + component defaults + environment
         config = dict(self.config)
-        config['service'] = f"{name}-service"
         config['namespace'] = self.config.get('namespace', 'default')
+        
+        # Service name mappings
+        service_map = {
+            'gitea': 'gitea-http',
+            'jenkins': 'jenkins',
+        }
+        config['service'] = service_map.get(name, f"{name}-service")
+        
+        # Pull credentials from environment variables (for Kubernetes secrets)
+        if name == 'gitea':
+            config['admin_user'] = os.getenv('GITEA_USER', 'gitea')
+            config['admin_pass'] = os.getenv('GITEA_PASS', 'giteapwd')
+        elif name == 'jenkins':
+            config['admin_user'] = os.getenv('JENKINS_USER', 'admin')
+            config['admin_pass'] = os.getenv('JENKINS_PASS', 'adminpwd')
+        
         return config
