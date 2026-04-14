@@ -90,19 +90,16 @@ class Resolver:
         config = dict(self.config)
         config['namespace'] = self.config.get('namespace', 'default')
         
-        # Service name mappings
-        service_map = {
-            'gitea': 'gitea-http',
-            'jenkins': 'jenkins',
-        }
-        config['service'] = service_map.get(name, f"{name}-service")
-        
-        # Pull credentials from environment variables (for Kubernetes secrets)
+        # Service name from environment or defaults
         if name == 'gitea':
+            config['service'] = os.getenv('GITEA_SVC', 'gitea-http')
             config['admin_user'] = os.getenv('GITEA_USER', 'gitea')
             config['admin_pass'] = os.getenv('GITEA_PASS', 'giteapwd')
         elif name == 'jenkins':
+            config['service'] = os.getenv('JENKINS_SVC', 'jenkins')
             config['admin_user'] = os.getenv('JENKINS_USER', 'admin')
             config['admin_pass'] = os.getenv('JENKINS_PASS', 'adminpwd')
+        else:
+            config['service'] = f"{name}-service"
         
         return config
