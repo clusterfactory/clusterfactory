@@ -1,0 +1,27 @@
+platform:
+  name: gitea-jenkins
+  version: "0.2.0"
+
+artifacts:
+  - name: gitea
+    chart: gitea/gitea
+    version: "11.0.1"
+    image: gitea/gitea:1.23.6-rootless
+
+  - name: jenkins
+    chart: jenkins/jenkins
+    version: "5.9.9"
+    image: jenkins/jenkins:2.541.3-jdk21
+
+wiring:
+  - from: gitea
+    to: jenkins
+    credential: api-token
+
+airgap: true
+
+compatibility:
+  tested: true
+  matrix:
+    gitea: "1.23.6"
+    jenkins: "2.541.3"
