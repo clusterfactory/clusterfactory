@@ -1,0 +1,40 @@
+{{- if eq .Values.wire.engine "python" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-platform
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: wire-config
+data:
+  platform.yaml: |
+    platform:
+      name: {{ .Values.wire.org }}-platform
+      version: {{ .Chart.Version | quote }}
+
+    artifacts:
+      - name: gitea
+        chart: gitea/gitea
+        version: "11.0.1"
+        image: gitea/gitea:1.23.6-rootless
+
+      - name: jenkins
+        chart: jenkins/jenkins  
+        version: "5.9.9"
+        image: jenkins/jenkins:2.541.3-jdk21
+
+    wiring:
+      - from: gitea
+        to: jenkins
+        credential: api-token
+
+    airgap: false
+
+    compatibility:
+      tested: true
+      matrix:
+        gitea: {{ .Values.compatibility.gitea | quote }}
+        jenkins: {{ .Values.compatibility.jenkins | quote }}
+{{- end }}
