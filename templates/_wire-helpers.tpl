@@ -111,6 +111,92 @@ args:
         <password>${GITEA_TOKEN}</password>
       </com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>"
 
+    # ── Create Gitea repo ───────────────────────────────────
+    log "Creating Gitea repo ${ORG}/${REPO}..."
+    repo_http=$(curl -o /dev/null -w "%{http_code}" -fsSL -X POST \
+      -H "Authorization: token ${GITEA_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "{\"name\":\"${REPO}\",\"private\":false,\"auto_init\":false,\"default_branch\":\"main\"}" \
+      "${GITEA_URL}/api/v1/orgs/${ORG}/repos" 2>/dev/null || true)
+    log "Repo: HTTP ${repo_http} (201=created 409=exists)"
+
+    # ── Push files via Contents API (no git needed) ─────────
+    push_file() {
+      local fpath="$1" b64="$2" msg="$3"
+      local sha
+      sha=$(curl -fsSL \
+        -H "Authorization: token ${GITEA_TOKEN}" \
+        "${GITEA_URL}/api/v1/repos/${ORG}/${REPO}/contents/${fpath}" 2>/dev/null \
+        | jq -r '.sha // empty' 2>/dev/null || true)
+      if [ -n "$sha" ]; then
+        http=$(curl -o /dev/null -w "%{http_code}" -fsSL -X PUT \
+          -H "Authorization: token ${GITEA_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"update ${fpath}\",\"content\":\"${b64}\",\"sha\":\"${sha}\"}" \
+          "${GITEA_URL}/api/v1/repos/${ORG}/${REPO}/contents/${fpath}" 2>/dev/null || true)
+        log "${fpath} update: HTTP ${http}"
+      else
+        http=$(curl -o /dev/null -w "%{http_code}" -fsSL -X POST \
+          -H "Authorization: token ${GITEA_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "{\"message\":\"${msg}\",\"content\":\"${b64}\"}" \
+          "${GITEA_URL}/api/v1/repos/${ORG}/${REPO}/contents/${fpath}" 2>/dev/null || true)
+        log "${fpath} create: HTTP ${http}"
+      fi
+    }
+
+    push_file "Jenkinsfile"                    "${JENKINSFILE_B64}"  "initial commit"
+    push_file ".gitea/workflows/ci.yaml"       "${WORKFLOW_B64}"     "add Gitea Actions workflow"
+
+    # ── Create Jenkins job ──────────────────────────────────
+    JOB_NAME="${ORG}-${REPO}"
+    CLONE_URL="http://${GITEA_SVC}:3000/${ORG}/${REPO}.git"
+    log "Creating Jenkins job ${JOB_NAME}..."
+    JOB_XML="<?xml version=\"1.1\" encoding=\"UTF-8\"?>
+    <flow-definition plugin=\"workflow-job\">
+      <description>${JOB_NAME}</description>
+      <keepDependencies>false</keepDependencies>
+      <definition class=\"org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition\" plugin=\"workflow-cps\">
+        <scm class=\"hudson.plugins.git.GitSCM\" plugin=\"git\">
+          <configVersion>2</configVersion>
+          <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+              <url>${CLONE_URL}</url>
+              <credentialsId>gitea-userpass</credentialsId>
+            </hudson.plugins.git.UserRemoteConfig>
+          </userRemoteConfigs>
+          <branches>
+            <hudson.plugins.git.BranchSpec><name>*/main</name></hudson.plugins.git.BranchSpec>
+          </branches>
+          <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+          <extensions/>
+        </scm>
+        <scriptPath>Jenkinsfile</scriptPath>
+        <lightweight>true</lightweight>
+      </definition>
+      <triggers/><disabled>false</disabled>
+    </flow-definition>"
+
+    job_http=$(curl -o /dev/null -w "%{http_code}" -fsSL -X POST \
+      -u "${JENKINS_USER}:${JENKINS_PASS}" \
+      -b /tmp/jk-cookie.txt \
+      -H "${crumb_field}: ${crumb}" \
+      -H "Content-Type: application/xml" \
+      --data-binary "${JOB_XML}" \
+      "${JENKINS_URL}/createItem?name=${JOB_NAME}" 2>/dev/null || true)
+    if [ "$job_http" = "400" ]; then
+      job_http=$(curl -o /dev/null -w "%{http_code}" -fsSL -X POST \
+        -u "${JENKINS_USER}:${JENKINS_PASS}" \
+        -b /tmp/jk-cookie.txt \
+        -H "${crumb_field}: ${crumb}" \
+        -H "Content-Type: application/xml" \
+        --data-binary "${JOB_XML}" \
+        "${JENKINS_URL}/job/${JOB_NAME}/config.xml" 2>/dev/null || true)
+      log "Jenkins job update: HTTP ${job_http}"
+    else
+      log "Jenkins job create: HTTP ${job_http}"
+    fi
+
     log "Wiring complete"
 {{- end }}
 
