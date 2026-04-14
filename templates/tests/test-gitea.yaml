@@ -20,7 +20,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: test
-          image: {{ .Values.wire.image }}
+          image: {{ .Values.wire.image.bash }}
           command: [sh, -c]
           args:
             - |
