@@ -1,0 +1,122 @@
+name: Test - Environment Isolation Between Jobs
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.gitea/workflows/test-env-isolation.yaml'
+
+jobs:
+  # Job A: Sets custom environment variables
+  set-environment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set custom environment variables
+        run: |
+          echo "Setting custom environment variables..."
+          echo "CUSTOM_VAR_1=secret_value_from_job_a" >> $GITHUB_ENV
+          echo "CUSTOM_VAR_2=another_secret" >> $GITHUB_ENV
+          echo "DATABASE_PASSWORD=supersecret123" >> $GITHUB_ENV
+          echo "API_KEY=sk-1234567890abcdef" >> $GITHUB_ENV
+          
+      - name: Verify variables are set
+        run: |
+          echo "Variables set by Job A:"
+          echo "CUSTOM_VAR_1=${CUSTOM_VAR_1}"
+          echo "CUSTOM_VAR_2=${CUSTOM_VAR_2}"
+          echo "DATABASE_PASSWORD=${DATABASE_PASSWORD}"
+          echo "API_KEY=${API_KEY}"
+          
+      - name: Export to shell profile (simulate leakage)
+        run: |
+          # Try to persist variables in ways that might leak
+          export LEAKED_VAR="This should not leak to Job B"
+          echo "export LEAKED_VAR='This should not leak'" >> ~/.bashrc
+          echo "export LEAKED_VAR='This should not leak'" >> ~/.profile
+
+  # Job B: Runs after Job A, should have clean environment
+  verify-clean-environment:
+    runs-on: ubuntu-latest
+    needs: set-environment
+    steps:
+      - name: Check for leaked environment variables
+        run: |
+          echo "Checking for Job A environment variables..."
+          
+          # These should NOT exist
+          if [ -n "${CUSTOM_VAR_1:-}" ]; then
+            echo "❌ FAIL: CUSTOM_VAR_1 leaked from Job A: ${CUSTOM_VAR_1}"
+            exit 1
+          else
+            echo "✅ PASS: CUSTOM_VAR_1 not found"
+          fi
+          
+          if [ -n "${CUSTOM_VAR_2:-}" ]; then
+            echo "❌ FAIL: CUSTOM_VAR_2 leaked from Job A: ${CUSTOM_VAR_2}"
+            exit 1
+          else
+            echo "✅ PASS: CUSTOM_VAR_2 not found"
+          fi
+          
+          if [ -n "${DATABASE_PASSWORD:-}" ]; then
+            echo "❌ FAIL: DATABASE_PASSWORD leaked from Job A: ${DATABASE_PASSWORD}"
+            exit 1
+          else
+            echo "✅ PASS: DATABASE_PASSWORD not found"
+          fi
+          
+          if [ -n "${API_KEY:-}" ]; then
+            echo "❌ FAIL: API_KEY leaked from Job A: ${API_KEY}"
+            exit 1
+          else
+            echo "✅ PASS: API_KEY not found"
+          fi
+          
+          if [ -n "${LEAKED_VAR:-}" ]; then
+            echo "❌ FAIL: LEAKED_VAR leaked from Job A: ${LEAKED_VAR}"
+            exit 1
+          else
+            echo "✅ PASS: LEAKED_VAR not found"
+          fi
+          
+      - name: Check shell profiles
+        run: |
+          echo "Checking for modified shell profiles..."
+          
+          if grep -q "LEAKED_VAR" ~/.bashrc 2>/dev/null; then
+            echo "❌ FAIL: Found LEAKED_VAR in ~/.bashrc"
+            cat ~/.bashrc
+            exit 1
+          else
+            echo "✅ PASS: ~/.bashrc is clean"
+          fi
+          
+          if grep -q "LEAKED_VAR" ~/.profile 2>/dev/null; then
+            echo "❌ FAIL: Found LEAKED_VAR in ~/.profile"
+            cat ~/.profile
+            exit 1
+          else
+            echo "✅ PASS: ~/.profile is clean"
+          fi
+          
+      - name: Verify standard environment only
+        run: |
+          echo "Current environment variables:"
+          echo "(Should only see standard GitHub Actions vars)"
+          env | sort | grep -E "^(GITHUB|RUNNER|CI)" | head -20
+          
+          echo ""
+          echo "Custom variables from Job A:"
+          env | sort | grep -E "^(CUSTOM|DATABASE|API|LEAKED)" || echo "✅ None found (correct)"
+          
+      - name: Success summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Environment Isolation Test PASSED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Job B has a clean environment"
+          echo "No environment variables leaked from Job A"
+          echo "Jobs are properly isolated (fresh pod per job)"
+          echo ""
+          echo "This test would FAIL with the old DaemonSet approach"
+          echo "where jobs ran as threads in the same pod"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -1,0 +1,125 @@
+name: Test - Process Isolation Between Jobs
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.gitea/workflows/test-process-isolation.yaml'
+
+jobs:
+  # Job A: Starts background processes
+  start-processes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start long-running background processes
+        run: |
+          echo "Starting background processes..."
+          
+          # Start some background processes that would normally persist
+          sleep 3600 &
+          echo "Started sleep process: $!"
+          
+          python3 -m http.server 8888 &
+          echo "Started HTTP server: $!"
+          
+          # Start a process with a marker
+          (while true; do echo "Job A marker" > /tmp/marker; sleep 1; done) &
+          echo "Started marker process: $!"
+          
+      - name: Verify processes are running
+        run: |
+          echo "Processes started by Job A:"
+          ps aux | grep -E "(sleep 3600|http.server|Job A marker)" | grep -v grep
+          
+          echo ""
+          echo "Total process count: $(ps aux | wc -l)"
+
+  # Job B: Runs after Job A, should NOT see Job A's processes
+  verify-clean-processes:
+    runs-on: ubuntu-latest
+    needs: start-processes
+    steps:
+      - name: Check for Job A processes
+        run: |
+          echo "Checking for Job A processes..."
+          
+          # Check for sleep process
+          if ps aux | grep "sleep 3600" | grep -v grep; then
+            echo "❌ FAIL: Found 'sleep 3600' process from Job A"
+            echo "Process leakage detected!"
+            ps aux | grep sleep | grep -v grep
+            exit 1
+          else
+            echo "✅ PASS: No 'sleep 3600' process found"
+          fi
+          
+          # Check for HTTP server
+          if ps aux | grep "http.server 8888" | grep -v grep; then
+            echo "❌ FAIL: Found 'http.server' process from Job A"
+            echo "Process leakage detected!"
+            ps aux | grep http.server | grep -v grep
+            exit 1
+          else
+            echo "✅ PASS: No 'http.server' process found"
+          fi
+          
+          # Check for marker process
+          if ps aux | grep "Job A marker" | grep -v grep; then
+            echo "❌ FAIL: Found marker process from Job A"
+            echo "Process leakage detected!"
+            ps aux | grep marker | grep -v grep
+            exit 1
+          else
+            echo "✅ PASS: No marker process found"
+          fi
+          
+      - name: Check for marker file
+        run: |
+          echo "Checking for marker file from Job A..."
+          
+          if [ -f /tmp/marker ]; then
+            echo "❌ FAIL: Found /tmp/marker file from Job A"
+            cat /tmp/marker
+            exit 1
+          else
+            echo "✅ PASS: No marker file found"
+          fi
+          
+      - name: List current processes
+        run: |
+          echo "Current processes in Job B:"
+          ps aux | head -20
+          
+          echo ""
+          echo "Total process count: $(ps aux | wc -l)"
+          echo "(Should be minimal - only Job B processes)"
+          
+      - name: Check port availability
+        run: |
+          echo "Checking if port 8888 is available..."
+          
+          # Port 8888 should be available (not in use by Job A's server)
+          if command -v nc &> /dev/null; then
+            if nc -z localhost 8888 2>/dev/null; then
+              echo "❌ FAIL: Port 8888 is in use (Job A's server still running?)"
+              netstat -tuln | grep 8888 || ss -tuln | grep 8888
+              exit 1
+            else
+              echo "✅ PASS: Port 8888 is available"
+            fi
+          else
+            echo "⚠️  netcat not available, skipping port check"
+          fi
+          
+      - name: Success summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Process Isolation Test PASSED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Job B has a clean process table"
+          echo "No processes leaked from Job A"
+          echo "Jobs are properly isolated (fresh pod per job)"
+          echo ""
+          echo "This test would FAIL with the old DaemonSet approach"
+          echo "where background processes from one job could persist"
+          echo "and interfere with subsequent jobs"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

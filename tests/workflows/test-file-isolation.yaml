@@ -1,0 +1,98 @@
+name: Test - File Isolation Between Jobs
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.gitea/workflows/test-file-isolation.yaml'
+
+jobs:
+  # Job A: Creates files and artifacts
+  pollute:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create test files
+        run: |
+          echo "Job A was here" > /tmp/job-a-marker.txt
+          echo "Secret data from Job A" > /workspace/secret.txt
+          mkdir -p /workspace/artifacts
+          echo "Artifact from Job A" > /workspace/artifacts/data.txt
+          
+      - name: List files created
+        run: |
+          echo "Files created by Job A:"
+          ls -la /tmp/job-*.txt || echo "No markers in /tmp"
+          ls -la /workspace/ || echo "No workspace files"
+          ls -la /workspace/artifacts/ || echo "No artifacts"
+          
+      - name: Store markers
+        run: |
+          echo "JOB_A_RAN=true" >> $GITHUB_ENV
+          echo "Job A environment:"
+          env | grep JOB_A || true
+
+  # Job B: Runs after Job A, should NOT see Job A's files
+  verify-clean:
+    runs-on: ubuntu-latest
+    needs: pollute
+    steps:
+      - name: Check for Job A artifacts
+        run: |
+          echo "Checking for Job A artifacts..."
+          
+          # These should NOT exist if jobs are isolated
+          if [ -f /tmp/job-a-marker.txt ]; then
+            echo "❌ FAIL: Found /tmp/job-a-marker.txt from Job A"
+            echo "State bleed detected! Jobs are NOT isolated!"
+            exit 1
+          else
+            echo "✅ PASS: /tmp/job-a-marker.txt not found (correct)"
+          fi
+          
+          if [ -f /workspace/secret.txt ]; then
+            echo "❌ FAIL: Found /workspace/secret.txt from Job A"
+            echo "State bleed detected! Jobs are NOT isolated!"
+            exit 1
+          else
+            echo "✅ PASS: /workspace/secret.txt not found (correct)"
+          fi
+          
+          if [ -d /workspace/artifacts ]; then
+            echo "❌ FAIL: Found /workspace/artifacts from Job A"
+            echo "State bleed detected! Jobs are NOT isolated!"
+            exit 1
+          else
+            echo "✅ PASS: /workspace/artifacts not found (correct)"
+          fi
+          
+      - name: Check environment variables
+        run: |
+          echo "Checking for Job A environment variables..."
+          
+          if [ -n "${JOB_A_RAN:-}" ]; then
+            echo "❌ FAIL: Found JOB_A_RAN environment variable from Job A"
+            echo "State bleed detected! Jobs are NOT isolated!"
+            exit 1
+          else
+            echo "✅ PASS: JOB_A_RAN not found (correct)"
+          fi
+          
+      - name: Verify clean workspace
+        run: |
+          echo "Workspace contents:"
+          ls -la /workspace/ || echo "Workspace is empty (correct)"
+          
+          echo ""
+          echo "Temp directory contents:"
+          ls -la /tmp/job-*.txt 2>/dev/null && echo "❌ Found job markers!" || echo "✅ No job markers found (correct)"
+          
+      - name: Success summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ File Isolation Test PASSED"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Job B did not see any files from Job A"
+          echo "Jobs are properly isolated (fresh pod per job)"
+          echo ""
+          echo "This test would FAIL with the old DaemonSet approach"
+          echo "where jobs shared the same persistent pod filesystem"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
