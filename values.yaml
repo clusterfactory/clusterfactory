@@ -28,13 +28,23 @@ wire:
     name: hello-world
 
 # ─────────────────────────────────────────────
-# Gitea Actions runner (DaemonSet)
-# Uses Kaniko for container builds — no Docker required
+# Gitea Actions runner (Scheduler + Ephemeral Job Pods)
+# Scheduler polls for jobs and spawns fresh pods per job
+# Pre-pull DaemonSet keeps runner image cached on all nodes
 # ─────────────────────────────────────────────
 runner:
   enabled: true
   image: gitea/act_runner:0.3.1
-  capacity: 2  # max concurrent workflow runs per runner
+  capacity: 10        # Max concurrent ephemeral job pods (not threads)
+  jobTTL: 300         # Seconds before completed job pod is auto-deleted
+  job:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 2000m
+        memory: 1Gi
 
 # ─────────────────────────────────────────────
 # Gitea subchart values
