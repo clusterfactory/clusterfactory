@@ -56,6 +56,7 @@ jobs:
             --create-namespace \
             --rollback-on-failure \
             --timeout 20m \
+            --wait=false \
             --set runner.enabled=true \
             --set runner.capacity=5 \
             --set networkPolicy.enabled=false \
@@ -64,32 +65,66 @@ jobs:
             --set jenkins.controller.resources.requests.memory=256Mi \
             --set jenkins.controller.resources.limits.memory=768Mi \
             --set jenkins.controller.javaOpts="-Xms128m -Xmx512m -XX:+UseContainerSupport"
+          
+          echo "Chart installed, waiting manually for pods..."
 
       - name: Wait for pods to be ready
         run: |
+          echo "Checking pod status..."
+          kubectl get pods -n cicd
+          
+          echo ""
           echo "Waiting for Gitea to be ready..."
           kubectl wait --for=condition=ready pod \
             -l app.kubernetes.io/name=gitea \
             -n cicd \
-            --timeout=300s
+            --timeout=600s || {
+              echo "Gitea failed to become ready"
+              kubectl get pods -n cicd
+              kubectl describe pod -n cicd -l app.kubernetes.io/name=gitea
+              exit 1
+            }
           
+          echo ""
           echo "Waiting for Jenkins to be ready..."
           kubectl wait --for=condition=ready pod \
             -l app.kubernetes.io/component=jenkins-controller \
             -n cicd \
-            --timeout=300s
+            --timeout=600s || {
+              echo "Jenkins failed to become ready"
+              kubectl get pods -n cicd
+              kubectl describe pod -n cicd -l app.kubernetes.io/component=jenkins-controller
+              exit 1
+            }
           
-          echo "Waiting for runner scheduler to be ready..."
-          kubectl wait --for=condition=ready pod \
-            -l app.kubernetes.io/name=gitea-runner-scheduler \
-            -n cicd \
-            --timeout=300s
-          
+          echo ""
           echo "Waiting for wire job to complete..."
           kubectl wait --for=condition=complete job \
             -l app.kubernetes.io/name=wire \
             -n cicd \
-            --timeout=300s
+            --timeout=600s || {
+              echo "Wire job failed to complete"
+              kubectl get pods -n cicd
+              kubectl logs -n cicd -l app.kubernetes.io/name=wire --tail=100 || true
+              exit 1
+            }
+          
+          echo ""
+          echo "Waiting for runner scheduler to be ready..."
+          kubectl wait --for=condition=ready pod \
+            -l app.kubernetes.io/name=gitea-runner-scheduler \
+            -n cicd \
+            --timeout=600s || {
+              echo "Runner scheduler failed to become ready"
+              kubectl get pods -n cicd
+              kubectl describe pod -n cicd -l app.kubernetes.io/name=gitea-runner-scheduler
+              kubectl logs -n cicd -l app.kubernetes.io/name=gitea-runner-scheduler --all-containers=true --tail=100 || true
+              exit 1
+            }
+          
+          echo ""
+          echo "All pods ready!"
+          kubectl get pods -n cicd -o wide
 
       - name: Show pod status
         run: kubectl get pods -n cicd -o wide
