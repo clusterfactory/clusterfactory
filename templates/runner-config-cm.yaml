@@ -15,7 +15,7 @@ data:
 
     runner:
       file: /data/.runner
-      capacity: {{ .Values.runner.capacity | default 10 }}
+      capacity: {{ .Values.runner.capacity | default 2 }}
       fetch_interval: 2s
       fetch_timeout: 5s
       labels:
@@ -26,9 +26,6 @@ data:
 
     container:
       network: ""
-      # Each job gets its own ephemeral pod.
-      # The scheduler pod itself never executes job steps.
-      workdir_parent: /workspace
 
     host:
       workdir_parent: /tmp/act_runner_work
