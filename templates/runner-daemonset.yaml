@@ -1,23 +1,22 @@
 {{- if .Values.runner.enabled }}
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
-  name: {{ .Release.Name }}-runner-scheduler
+  name: {{ .Release.Name }}-runner
   namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: gitea-runner-scheduler
+    app.kubernetes.io/name: gitea-runner
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: gitea-runner-scheduler
+      app.kubernetes.io/name: gitea-runner
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: gitea-runner-scheduler
+        app.kubernetes.io/name: gitea-runner
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
       serviceAccountName: {{ .Release.Name }}-runner
@@ -37,29 +36,44 @@ spec:
           args:
             - |
               set -e
+
               echo "[runner-init] waiting for registration token..."
+
               until [ -s /runner-token/token ]; do
                 sleep 5
               done
+
               rm -f /data/.runner
-              echo "[runner-init] registering with Gitea..."
+
+              echo "[runner-init] registering with Gitea at ${GITEA_INSTANCE_URL}..."
+
               act_runner register \
                 --config /runner-config/config.yaml \
                 --instance "${GITEA_INSTANCE_URL}" \
                 --token "$(cat /runner-token/token)" \
-                --name "k8s-scheduler" \
+                --name "k8s-runner-${NODE_NAME}" \
                 --labels "ubuntu-latest:kubernetes" \
                 --no-interactive
+
               echo "[runner-init] registration complete"
+
           env:
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
+
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             capabilities:
-              drop: [ALL]
+              drop:
+                - ALL
+
           volumeMounts:
             - name: runner-data
               mountPath: /data
@@ -69,32 +83,38 @@ spec:
               mountPath: /runner-config
 
       containers:
-        - name: scheduler
+        - name: runner
           image: {{ .Values.runner.image }}
+
           command:
             - act_runner
             - daemon
             - --config
             - /runner-config/config.yaml
+
           env:
             - name: HOME
               value: /data
+
             - name: GITEA_INSTANCE_URL
               value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
-          # Scheduler is lightweight — it only polls and spawns, never runs steps
+
           resources:
             requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
+              cpu: 100m
               memory: 128Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             capabilities:
-              drop: [ALL]
+              drop:
+                - ALL
+
           volumeMounts:
             - name: runner-data
               mountPath: /data
@@ -104,10 +124,12 @@ spec:
       volumes:
         - name: runner-data
           emptyDir: {}
+
         - name: runner-token
           secret:
             secretName: {{ .Release.Name }}-runner-reg-token
             optional: true
+
         - name: runner-config
           configMap:
             name: {{ .Release.Name }}-runner-config

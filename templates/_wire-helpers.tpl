@@ -197,52 +197,6 @@ args:
       log "Jenkins job create: HTTP ${job_http}"
     fi
 
-    log "Done."
-    log "  Gitea repo : ${GITEA_URL}/${ORG}/${REPO}"
-    log "  Jenkins job: ${JENKINS_URL}/job/${JOB_NAME}"
-
-    # ── Runner registration token → k8s Secret ──────────────
-    log "Fetching runner registration token..."
-    reg_json=$(curl -fsSL -X GET \
-      -u "${GITEA_USER}:${GITEA_PASS}" \
-      "${GITEA_URL}/api/v1/admin/runners/registration-token" 2>/dev/null || true)
-    reg_token=$(echo "$reg_json" | jq -r ".token // empty")
-    if [ -z "$reg_token" ]; then
-      log "WARN: could not get runner registration token"
-    else
-      reg_token_b64=$(printf '%s' "${reg_token}" | base64 | tr -d '\n')
-      K8S="https://kubernetes.default.svc"
-      SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-      CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-      # Try PATCH first (update); fall back to POST (create)
-      patch_status=$(curl -o /dev/null -w "%{http_code}" -fsSL -X PATCH \
-        -H "Authorization: Bearer ${SA_TOKEN}" \
-        -H "Content-Type: application/merge-patch+json" \
-        --cacert "${CACERT}" \
-        "${K8S}/api/v1/namespaces/${NAMESPACE}/secrets/${RUNNER_SECRET_NAME}" \
-        -d "{\"data\":{\"token\":\"${reg_token_b64}\"}}" 2>/dev/null || true)
-      if [ "$patch_status" = "404" ]; then
-        curl -fsSL -X POST \
-          -H "Authorization: Bearer ${SA_TOKEN}" \
-          -H "Content-Type: application/json" \
-          --cacert "${CACERT}" \
-          "${K8S}/api/v1/namespaces/${NAMESPACE}/secrets" \
-          -d "{\"apiVersion\":\"v1\",\"kind\":\"Secret\",\"metadata\":{\"name\":\"${RUNNER_SECRET_NAME}\",\"namespace\":\"${NAMESPACE}\"},\"data\":{\"token\":\"${reg_token_b64}\"}}" > /dev/null
-        log "Runner token secret created"
-      else
-        log "Runner token secret updated"
-      fi
-      
-      log ""
-      log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      log "NEXT: Install Runner on Kubernetes Host"
-      log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      log ""
-      log "Get token: kubectl get secret ${RUNNER_SECRET_NAME} -n ${NAMESPACE} -o jsonpath='{.data.token}' | base64 -d"
-      log "Install: See docs/runner-host-install.md"
-      log ""
-    fi
-
     log "Wiring complete"
 {{- end }}
 
