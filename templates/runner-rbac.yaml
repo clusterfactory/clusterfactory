@@ -22,11 +22,11 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log", "pods/exec"]
+    resources: ["pods", "pods/log"]
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
-    verbs: ["get", "list", "watch", "create", "delete", "patch"]
+    verbs: ["get", "list", "watch", "create", "delete"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
