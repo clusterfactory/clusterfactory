@@ -31,6 +31,7 @@ class GiteaComponent(Component):
         self.port = config.get('port', 3000)
         self.admin_user = config.get('admin_user', 'gitea')
         self.admin_pass = config.get('admin_pass', 'giteapwd')
+        self.timeout = config.get('timeout', 30)  # Default 30s timeout
         self._session = None
 
     @property
@@ -144,14 +145,16 @@ class GiteaComponent(Component):
         # Delete existing token if present
         try:
             existing_tokens = self.session.get(
-                f"{self.url}/api/v1/users/{self.admin_user}/tokens"
+                f"{self.url}/api/v1/users/{self.admin_user}/tokens",
+                timeout=self.timeout
             ).json()
             
             for token_data in existing_tokens:
                 if token_data.get('name') == token_name:
                     token_id = token_data.get('id')
                     self.session.delete(
-                        f"{self.url}/api/v1/users/{self.admin_user}/tokens/{token_id}"
+                        f"{self.url}/api/v1/users/{self.admin_user}/tokens/{token_id}",
+                        timeout=self.timeout
                     )
                     log.debug(f"Deleted existing token: {token_name}")
                     break
@@ -171,7 +174,8 @@ class GiteaComponent(Component):
         
         resp = self.session.post(
             f"{self.url}/api/v1/users/{self.admin_user}/tokens",
-            json=token_request
+            json=token_request,
+            timeout=self.timeout
         )
         resp.raise_for_status()
         
@@ -179,7 +183,9 @@ class GiteaComponent(Component):
         token_value = token_data.get('sha1')
         
         if not token_value:
-            raise ValueError(f"Token mint failed: {token_data}")
+            # Redact sensitive fields before logging
+            safe_data = {k: v for k, v in token_data.items() if k not in ['sha1', 'token']}
+            raise ValueError(f"Token mint failed: {safe_data}")
         
         log.info(f"API token minted: {token_name}")
         
@@ -233,7 +239,8 @@ class GiteaComponent(Component):
         
         try:
             tokens = self.session.get(
-                f"{self.url}/api/v1/users/{self.admin_user}/tokens"
+                f"{self.url}/api/v1/users/{self.admin_user}/tokens",
+                timeout=self.timeout
             ).json()
             
             for token_data in tokens:
@@ -281,7 +288,8 @@ class GiteaComponent(Component):
         try:
             resp = self.session.post(
                 f"{self.url}/api/v1/orgs",
-                json=org_data
+                json=org_data,
+                timeout=self.timeout
             )
             
             if resp.status_code in [201, 422]:  # 422 = already exists
@@ -319,7 +327,8 @@ class GiteaComponent(Component):
         try:
             resp = self.session.post(
                 f"{self.url}/api/v1/orgs/{org}/repos",
-                json=repo_data
+                json=repo_data,
+                timeout=self.timeout
             )
             
             if resp.status_code in [201, 409]:  # 409 = already exists
@@ -357,7 +366,8 @@ class GiteaComponent(Component):
         # Check if file exists (to get SHA for update)
         try:
             resp = self.session.get(
-                f"{self.url}/api/v1/repos/{org}/{repo}/contents/{path}"
+                f"{self.url}/api/v1/repos/{org}/{repo}/contents/{path}",
+                timeout=self.timeout
             )
             
             if resp.status_code == 200:
@@ -371,7 +381,8 @@ class GiteaComponent(Component):
                 
                 resp = self.session.put(
                     f"{self.url}/api/v1/repos/{org}/{repo}/contents/{path}",
-                    json=update_data
+                    json=update_data,
+                    timeout=self.timeout
                 )
             else:
                 # File doesn't exist, create it
@@ -382,7 +393,8 @@ class GiteaComponent(Component):
                 
                 resp = self.session.post(
                     f"{self.url}/api/v1/repos/{org}/{repo}/contents/{path}",
-                    json=create_data
+                    json=create_data,
+                    timeout=self.timeout
                 )
             
             if resp.status_code in [200, 201]:

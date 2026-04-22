@@ -75,9 +75,15 @@ spec:
             - name: GITEA_SVC
               value: "{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local"
             - name: GITEA_USER
-              value: {{ .Values.gitea.gitea.admin.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: clusterfactory-gitea-admin
+                  key: username
             - name: GITEA_PASS
-              value: {{ .Values.gitea.gitea.admin.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: clusterfactory-gitea-admin
+                  key: password
             - name: ORG
               value: {{ .Values.wire.org | quote }}
             - name: REPO

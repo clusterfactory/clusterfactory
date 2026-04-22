@@ -32,9 +32,15 @@ spec:
             - name: JENKINS_SVC
               value: "{{ .Release.Name }}-jenkins.{{ .Release.Namespace }}.svc.cluster.local"
             - name: GITEA_USER
-              value: {{ .Values.gitea.gitea.admin.username | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: clusterfactory-gitea-admin
+                  key: username
             - name: GITEA_PASS
-              value: {{ .Values.gitea.gitea.admin.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: clusterfactory-gitea-admin
+                  key: password
             - name: JENKINS_USER
               value: "admin"
             - name: JENKINS_PASS
