@@ -35,8 +35,11 @@ helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory/
 helm repo update
 helm upgrade --install cf clusterfactory/clusterfactory \
   --namespace cicd --create-namespace \
+  --set gitea.gitea.admin.password=<your-secure-password> \
   --timeout 15m
 ```
+
+**Security Note:** The Gitea admin password is **required** and must be provided at install time. Never commit passwords to source control.
 
 Access the services:
 
@@ -47,7 +50,7 @@ kubectl port-forward -n cicd svc/cf-jenkins 8080:8080 &
 
 | Service | URL | User |
 |---------|-----|------|
-| Gitea | http://localhost:3000 | `gitea-admin` / `changeme123!` |
+| Gitea | http://localhost:3000 | `gitea-admin` / password you set at install |
 | Jenkins | http://localhost:8080 | `admin` / see below |
 
 Jenkins password:
@@ -64,6 +67,7 @@ git clone https://github.com/clusterfactory/clusterfactory.git
 cd clusterfactory
 helm upgrade --install cf . \
   --namespace cicd --create-namespace \
+  --set gitea.gitea.admin.password=<your-secure-password> \
   --timeout 15m
 ```
 
@@ -263,6 +267,15 @@ Automated scans run on every push to `main`, every PR, and weekly:
 | Helm lint | Chart validity, strict mode | [Actions](https://github.com/clusterfactory/clusterfactory/actions/workflows/scan.yaml) |
 
 All actions are pinned to commit SHAs. Dependabot keeps them current weekly.
+
+### Known Limitations
+
+**Gitea API Token Hashing**: Gitea uses SHA-1 for API token storage. While this is an upstream limitation, we recommend:
+- Regular token rotation (30-day cycles)
+- Network isolation for Gitea services
+- Monitoring [Gitea upstream](https://github.com/go-gitea/gitea) for SHA-256 migration
+
+See [SECURITY.md](SECURITY.md) for detailed mitigation strategies.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md). Do not open a public issue.
 

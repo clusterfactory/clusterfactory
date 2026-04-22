@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "wire": {
+      "type": "object",
+      "properties": {
+        "org": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "Organization name - lowercase alphanumeric and hyphens only"
+        },
+        "repo": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$",
+              "minLength": 1,
+              "maxLength": 63,
+              "description": "Repository name - lowercase alphanumeric and hyphens only"
+            }
+          },
+          "required": ["name"]
+        }
+      },
+      "required": ["org", "repo"]
+    },
+    "gitea": {
+      "type": "object",
+      "properties": {
+        "gitea": {
+          "type": "object",
+          "properties": {
+            "admin": {
+              "type": "object",
+              "properties": {
+                "username": {
+                  "type": "string",
+                  "pattern": "^[a-zA-Z0-9]([a-zA-Z0-9-_]*[a-zA-Z0-9])?$",
+                  "minLength": 1,
+                  "maxLength": 39,
+                  "description": "Gitea admin username"
+                },
+                "password": {
+                  "type": "string",
+                  "minLength": 8,
+                  "description": "Gitea admin password - minimum 8 characters"
+                }
+              },
+              "required": ["username", "password"]
+            }
+          }
+        }
+      }
+    }
+  }
+}
