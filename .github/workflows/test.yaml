@@ -90,6 +90,7 @@ jobs:
             --create-namespace \
             --rollback-on-failure \
             --timeout 15m \
+            --set gitea.gitea.admin.password=test-password-for-ci \
             --set runner.enabled=false \
             --set networkPolicy.enabled=false \
             --set gitea.resources.requests.memory=128Mi \
@@ -255,6 +256,7 @@ jobs:
             --create-namespace \
             --rollback-on-failure \
             --timeout 15m \
+            --set gitea.gitea.admin.password=test-password-for-ci \
             --set runner.enabled=false \
             --set networkPolicy.enabled=false \
             --set jenkins.controller.resources.requests.memory=256Mi \
