@@ -48,7 +48,7 @@ jobs:
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
           helm dependency build .
-          helm template cf . --namespace cicd > /dev/null
+          helm template cf . --namespace cicd --set gitea.gitea.admin.password=test-password-for-ci > /dev/null
 
   install-and-test:
     name: Install and test (k3d)
@@ -184,7 +184,7 @@ jobs:
 
       - name: Validate image coverage
         run: |
-          RENDERED=$(helm template cf . --namespace cicd 2>/dev/null \
+          RENDERED=$(helm template cf . --namespace cicd --set gitea.gitea.admin.password=test-password-for-ci 2>/dev/null \
             | python3 -c "
           import sys, yaml
 
