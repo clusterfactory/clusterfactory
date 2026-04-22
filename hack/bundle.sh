@@ -45,7 +45,9 @@ ok "Packaged clusterfactory-${CHART_VERSION}.tgz"
 
 sep "Collecting images"
 # Images from rendered templates + known init containers
-IMAGES=$(helm template cf "${ROOT_DIR}" 2>/dev/null \
+IMAGES=$(helm template cf "${ROOT_DIR}" \
+  --set gitea.gitea.admin.password=bundle-build-password \
+  2>/dev/null \
   | python3 -c "
 import sys, yaml
 

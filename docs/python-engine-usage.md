@@ -241,7 +241,7 @@ gitea:
   gitea:
     admin:
       username: gitea
-      password: changeme123!
+      # password: ""  # Auto-generated if not specified
 
 jenkins:
   controller:

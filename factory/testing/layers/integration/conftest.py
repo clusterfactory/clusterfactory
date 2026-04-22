@@ -19,7 +19,7 @@ def live_cluster():
         'gitea_service': os.getenv('GITEA_SERVICE', 'gitea-http'),
         'jenkins_service': os.getenv('JENKINS_SERVICE', 'jenkins'),
         'gitea_user': os.getenv('GITEA_USER', 'gitea'),
-        'gitea_pass': os.getenv('GITEA_PASS', 'changeme123!'),
+        'gitea_pass': os.getenv('GITEA_PASS'),  # Must be provided via env var or Secret
         'jenkins_user': os.getenv('JENKINS_USER', 'admin'),
         'jenkins_pass': os.getenv('JENKINS_PASS', 'adminpwd'),
     }

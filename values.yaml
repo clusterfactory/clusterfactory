@@ -84,7 +84,7 @@ gitea:
   gitea:
     admin:
       username: gitea-admin
-      password: changeme123!
+      password: ""  # REQUIRED: Must be set via --set gitea.gitea.admin.password=<your-secure-password>
       email: admin@cluster.local
     config:
       database:
