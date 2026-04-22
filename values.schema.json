@@ -46,8 +46,7 @@
                 },
                 "password": {
                   "type": "string",
-                  "minLength": 8,
-                  "description": "Gitea admin password - minimum 8 characters"
+                  "description": "Gitea admin password - required at install time, leave empty in values.yaml"
                 }
               },
               "required": ["username", "password"]
