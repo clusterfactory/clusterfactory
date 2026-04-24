@@ -1,4 +1,5 @@
-{{- if .Values.runner.enabled }}
+{{- $runnerEnabled := and .Values.runner.enabled (or (eq .Values.mode "gitea-actions") (eq .Values.mode "both")) }}
+{{- if $runnerEnabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,6 +9,7 @@ metadata:
     app.kubernetes.io/name: gitea-runner
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
+    clusterfactory.io/mode: {{ .Values.mode | quote }}
 data:
   config.yaml: |
     log:

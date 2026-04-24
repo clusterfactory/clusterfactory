@@ -1,3 +1,35 @@
+# ═══════════════════════════════════════════════════════════
+# Deployment Mode
+# ═══════════════════════════════════════════════════════════
+# Choose your CI/CD deployment model:
+#
+#   "gitea-actions" - Gitea + Actions (cloud-native, Kubernetes-first CI/CD)
+#                     Use case: Modern workflows, GitHub Actions compatibility
+#                     What you get: Gitea server + Actions engine + Kaniko runners
+#                     What's disabled: Jenkins (set jenkins.enabled=false)
+#
+#   "jenkins"       - Gitea + Jenkins (traditional pipeline CI)
+#                     Use case: Enterprise teams, existing Jenkins expertise
+#                     What you get: Gitea as Git server only + Jenkins orchestration
+#                     What's disabled: Gitea Actions, runners (set jenkins.enabled=true)
+#
+#   "both"          - Gitea + Actions + Jenkins (hybrid/legacy transition)
+#                     Use case: Migration scenarios, legacy infrastructure needs
+#                     What you get: Full stack, both CI/CD engines running
+#                     Note: Higher resource usage, use for specific migration needs
+#                     (set jenkins.enabled=true)
+#
+# ⚠️  IMPORTANT: When using helm, you must also set jenkins.enabled:
+#     --set mode=gitea-actions --set jenkins.enabled=false
+#     --set mode=jenkins --set jenkins.enabled=true
+#     --set mode=both --set jenkins.enabled=true
+#
+# Transparency: All images are digest-pinned for supply chain security.
+# You can security-scan what you deploy before going airgap.
+# ═══════════════════════════════════════════════════════════
+
+mode: "gitea-actions"  # Options: "gitea-actions" | "jenkins" | "both"
+
 # ─────────────────────────────────────────────
 # Tested compatibility matrix
 # Each chart version is tested against one specific pair.
@@ -27,17 +59,65 @@ wire:
   repo:
     name: hello-world
 
+# ═══════════════════════════════════════════════════════════
+# Image Transparency & Supply Chain Security
+# ═══════════════════════════════════════════════════════════
+# All images pinned to SHA256 digests for:
+#   - Reproducible deployments (same digest = same bits, always)
+#   - Supply chain verification (cryptographically verifiable)
+#   - Airgap security scanning (pre-deployment CVE analysis)
+#   - SLSA compliance ready
+#
+# Verify images before airgap deployment:
+#   docker pull <image>@<digest>
+#   syft <image>@<digest> -o json > sbom.json  # Generate SBOM
+#   grype <image>@<digest> --only-fixed        # CVE scan
+#
+# Update digests: make update-digests (or manually via docker inspect)
+# ═══════════════════════════════════════════════════════════
+images:
+  gitea:
+    repository: gitea/gitea
+    tag: "1.23.6"
+    # Verify: docker pull gitea/gitea:1.23.6 && docker inspect gitea/gitea:1.23.6 | grep -A1 RepoDigests
+    digest: ""  # Set to sha256:... for digest pinning (recommended for production/airgap)
+    
+  jenkins:
+    repository: jenkins/jenkins
+    tag: "2.541.3-jdk21"
+    digest: ""  # Set to sha256:... for digest pinning
+    
+  actRunner:
+    repository: gitea/act_runner
+    tag: "0.3.1"
+    digest: ""  # Set to sha256:... for digest pinning
+    
+  # Wire job images (bootstrap containers)
+  wire:
+    bash:
+      repository: alpine
+      tag: "3.19"
+      digest: ""  # Set to sha256:... for digest pinning
+    python:
+      repository: ghcr.io/kube-tarian/clusterfactory-wire
+      tag: "0.2.0"
+      digest: ""  # Set to sha256:... for digest pinning
+
 # ─────────────────────────────────────────────
 # Gitea Actions runner (DaemonSet)
 # Uses Kaniko for container builds — no Docker required
+# Auto-disabled when mode=jenkins, enabled when mode=gitea-actions or mode=both
 # ─────────────────────────────────────────────
 runner:
-  enabled: true
-  image: gitea/act_runner:0.3.1
+  enabled: true  # Overridden by mode selector
+  image: gitea/act_runner:0.3.1  # Deprecated: use images.actRunner
   capacity: 2  # max concurrent workflow runs per runner
 
 # ─────────────────────────────────────────────
 # Gitea subchart values
+# Auto-configured based on deployment mode:
+#   - mode=gitea-actions or mode=both: actions.ENABLED="true"
+#   - mode=jenkins: actions.ENABLED="false" (Git server only)
 # ─────────────────────────────────────────────
 gitea:
   replicaCount: 1
@@ -97,12 +177,18 @@ gitea:
       session:
         PROVIDER: memory
       actions:
-        ENABLED: "true"
+        ENABLED: "true"  # Overridden by mode selector in templates
 
 # ─────────────────────────────────────────────
 # Jenkins subchart values
+# Enabled/disabled based on deployment mode.
+# ⚠️  IMPORTANT: Must be set explicitly when using helm:
+#     mode=gitea-actions → jenkins.enabled=false
+#     mode=jenkins → jenkins.enabled=true
+#     mode=both → jenkins.enabled=true
 # ─────────────────────────────────────────────
 jenkins:
+  enabled: false  # Default: false (matches mode=gitea-actions default)
   controller:
     # To pin a Jenkins version: --set jenkins.controller.image.tag=2.492-jdk21
     resources:

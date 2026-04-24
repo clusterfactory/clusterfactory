@@ -2,6 +2,11 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["gitea-actions", "jenkins", "both"],
+      "description": "Deployment mode: gitea-actions (Gitea + Actions), jenkins (Gitea + Jenkins), or both (hybrid)"
+    },
     "wire": {
       "type": "object",
       "properties": {
@@ -27,6 +32,20 @@
         }
       },
       "required": ["org", "repo"]
+    },
+    "images": {
+      "type": "object",
+      "properties": {
+        "gitea": {
+          "$ref": "#/definitions/imageSpec"
+        },
+        "jenkins": {
+          "$ref": "#/definitions/imageSpec"
+        },
+        "actRunner": {
+          "$ref": "#/definitions/imageSpec"
+        }
+      }
     },
     "gitea": {
       "type": "object",
@@ -54,6 +73,27 @@
           }
         }
       }
+    }
+  },
+  "definitions": {
+    "imageSpec": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "description": "Image repository"
+        },
+        "tag": {
+          "type": "string",
+          "description": "Image tag"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^(sha256:[a-f0-9]{64})?$",
+          "description": "Optional SHA256 digest for immutable image pinning (format: sha256:...)"
+        }
+      },
+      "required": ["repository", "tag"]
     }
   }
 }

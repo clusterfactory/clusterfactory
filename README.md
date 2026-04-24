@@ -14,47 +14,86 @@ A Helm chart that bootstraps a fully wired Gitea + Jenkins platform in one comma
 
 ## What it is
 
-clusterfactory installs vanilla upstream Gitea and Jenkins, wires them together automatically, and leaves you with a working CI platform ready to use. No manual steps, no kubectl exec, no post-install scripts.
+clusterfactory installs vanilla upstream Gitea and Jenkins (or just Gitea), wires them together automatically, and leaves you with a working CI platform ready to use. No manual steps, no kubectl exec, no post-install scripts.
 
 It is designed as a **bootstrap tool** — state lives in emptyDir by default, the wire job re-runs idempotently on every upgrade, and the hello-world pipeline proves the wiring works before you build on top of it.
 
-| Component | What you get |
-|-----------|-------------|
-| Gitea | Self-hosted Git with Actions enabled, SQLite, no external dependencies |
-| Jenkins | Pipeline CI, plugins pinned, credentials pre-wired to Gitea |
-| Gitea Actions runner | DaemonSet, registered automatically, uses Kaniko for builds |
-| hello-world repo | Pushed on install — Jenkinsfile + Actions workflow, both runnable immediately |
-| Wire job | Post-install Job that creates the org, repo, credentials, and Jenkins pipeline job |
+**Three deployment modes:**
+- **gitea-actions**: Gitea + Actions runners (cloud-native CI/CD)
+- **jenkins**: Gitea (git only) + Jenkins (traditional CI/CD)
+- **both**: Everything enabled (for migration scenarios)
+
+| Component | gitea-actions | jenkins | both |
+|-----------|---------------|---------|------|
+| Gitea | ✅ + Actions | ✅ Git only | ✅ + Actions |
+| Jenkins | ❌ | ✅ | ✅ |
+| Gitea Actions runner | ✅ DaemonSet | ❌ | ✅ DaemonSet |
+| hello-world repo | ✅ Workflow | ✅ Jenkinsfile | ✅ Both |
+| Wire job | ✅ Actions setup | ✅ Jenkins setup | ✅ Both |
 
 ---
 
 ## Quick start
 
+### Choose your deployment mode
+
+clusterfactory supports three modes:
+
+**1. Gitea Actions (default)** — Modern, cloud-native CI/CD
 ```bash
 helm repo add clusterfactory https://clusterfactory.github.io/clusterfactory/
 helm repo update
 helm upgrade --install cf clusterfactory/clusterfactory \
   --namespace cicd --create-namespace \
+  --set mode=gitea-actions \
+  --set jenkins.enabled=false \
+  --set gitea.gitea.admin.password=<your-secure-password> \
+  --timeout 15m
+```
+
+**2. Jenkins** — Traditional enterprise CI/CD
+```bash
+helm upgrade --install cf clusterfactory/clusterfactory \
+  --namespace cicd --create-namespace \
+  --set mode=jenkins \
+  --set jenkins.enabled=true \
+  --set gitea.gitea.admin.password=<your-secure-password> \
+  --timeout 15m
+```
+
+**3. Both** — Hybrid mode for migration scenarios
+```bash
+helm upgrade --install cf clusterfactory/clusterfactory \
+  --namespace cicd --create-namespace \
+  --set mode=both \
+  --set jenkins.enabled=true \
   --set gitea.gitea.admin.password=<your-secure-password> \
   --timeout 15m
 ```
 
 **Security Note:** The Gitea admin password is **required** and must be provided at install time. Never commit passwords to source control.
 
-Access the services:
+See [Deployment Modes Guide](docs/deployment-modes.md) for detailed mode comparison and use cases.
 
+### Access the services
+
+**Gitea Actions mode:**
+```bash
+kubectl port-forward -n cicd svc/cf-gitea-http 3000:3000
+```
+
+**Jenkins or Both modes:**
 ```bash
 kubectl port-forward -n cicd svc/cf-gitea-http 3000:3000 &
 kubectl port-forward -n cicd svc/cf-jenkins 8080:8080 &
 ```
 
-| Service | URL | User |
-|---------|-----|------|
-| Gitea | http://localhost:3000 | `gitea-admin` / password you set at install |
-| Jenkins | http://localhost:8080 | `admin` / see below |
+| Service | URL | User | Mode |
+|---------|-----|------|------|
+| Gitea | http://localhost:3000 | `gitea-admin` / password you set | All |
+| Jenkins | http://localhost:8080 | `admin` / see below | jenkins, both |
 
 Jenkins password:
-
 ```bash
 kubectl get secret cf-jenkins -n cicd \
   -o jsonpath='{.data.jenkins-admin-password}' | base64 -d && echo
@@ -67,6 +106,8 @@ git clone https://github.com/clusterfactory/clusterfactory.git
 cd clusterfactory
 helm upgrade --install cf . \
   --namespace cicd --create-namespace \
+  --set mode=gitea-actions \
+  --set jenkins.enabled=false \
   --set gitea.gitea.admin.password=<your-secure-password> \
   --timeout 15m
 ```
