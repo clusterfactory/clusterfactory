@@ -33,3 +33,31 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
+
+{{/*
+Image reference with optional digest pinning
+Usage: {{ include "clusterfactory.image" (dict "Values" .Values "name" "gitea") }}
+Returns: repository@digest if digest is set, otherwise repository:tag
+*/}}
+{{- define "clusterfactory.image" -}}
+{{- $img := index .Values.images .name }}
+{{- if $img.digest }}
+{{- printf "%s@%s" $img.repository $img.digest }}
+{{- else }}
+{{- printf "%s:%s" $img.repository $img.tag }}
+{{- end }}
+{{- end }}
+
+{{/*
+Wire image reference based on engine
+Returns: repository@digest if digest is set, otherwise repository:tag
+*/}}
+{{- define "clusterfactory.wire.image" -}}
+{{- $engine := .Values.wire.engine }}
+{{- $img := index .Values.images.wire $engine }}
+{{- if $img.digest }}
+{{- printf "%s@%s" $img.repository $img.digest }}
+{{- else }}
+{{- printf "%s:%s" $img.repository $img.tag }}
+{{- end }}
+{{- end }}
