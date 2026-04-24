@@ -1,4 +1,5 @@
-{{- if .Values.runner.enabled }}
+{{- $runnerEnabled := and .Values.runner.enabled (or (eq .Values.mode "gitea-actions") (eq .Values.mode "both")) }}
+{{- if $runnerEnabled }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -8,6 +9,7 @@ metadata:
     app.kubernetes.io/name: gitea-runner
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
+    clusterfactory.io/mode: {{ .Values.mode | quote }}
 spec:
   selector:
     matchLabels:
@@ -31,7 +33,7 @@ spec:
 
       initContainers:
         - name: register
-          image: {{ .Values.runner.image }}
+          image: {{ include "clusterfactory.image" (dict "Values" .Values "name" "actRunner") }}
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -84,7 +86,7 @@ spec:
 
       containers:
         - name: runner
-          image: {{ .Values.runner.image }}
+          image: {{ include "clusterfactory.image" (dict "Values" .Values "name" "actRunner") }}
 
           command:
             - act_runner

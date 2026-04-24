@@ -1,4 +1,5 @@
-{{- if .Values.runner.enabled }}
+{{- $runnerEnabled := and .Values.runner.enabled (or (eq .Values.mode "gitea-actions") (eq .Values.mode "both")) }}
+{{- if $runnerEnabled }}
 ---
 apiVersion: v1
 kind: ServiceAccount

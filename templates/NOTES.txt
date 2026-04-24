@@ -1,0 +1,101 @@
+╔════════════════════════════════════════════════════════════════╗
+║              ClusterFactory Deployed Successfully!              ║
+╚════════════════════════════════════════════════════════════════╝
+
+Deployment Mode: {{ .Values.mode }}
+
+{{- if eq .Values.mode "gitea-actions" }}
+═══════════════════════════════════════════════════════════════════
+  Mode: Gitea Actions (Cloud-Native CI/CD)
+═══════════════════════════════════════════════════════════════════
+  ✓ Gitea server with Actions enabled
+  ✓ Gitea Actions runners (DaemonSet)
+  ✓ Kaniko-based container builds
+  ✗ Jenkins (disabled in this mode)
+
+{{- else if eq .Values.mode "jenkins" }}
+═══════════════════════════════════════════════════════════════════
+  Mode: Jenkins (Traditional CI/CD)
+═══════════════════════════════════════════════════════════════════
+  ✓ Gitea server (Git-only, Actions disabled)
+  ✓ Jenkins controller
+  ✓ Pre-wired credentials
+  ✗ Gitea Actions runners (disabled in this mode)
+
+{{- else if eq .Values.mode "both" }}
+═══════════════════════════════════════════════════════════════════
+  Mode: Both (Hybrid/Migration Setup)
+═══════════════════════════════════════════════════════════════════
+  ✓ Gitea server with Actions enabled
+  ✓ Gitea Actions runners (DaemonSet)
+  ✓ Jenkins controller
+  ✓ Both CI/CD engines running
+  ⚠ Higher resource usage - recommended for migration scenarios only
+
+{{- end }}
+
+─────────────────────────────────────────────────────────────────
+Access Gitea:
+─────────────────────────────────────────────────────────────────
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-gitea-http 3000:3000
+
+  URL:  http://localhost:3000
+  User: {{ .Values.gitea.gitea.admin.username }}
+  Pass: kubectl get secret {{ .Release.Name }}-gitea-admin -n {{ .Release.Namespace }} -o jsonpath='{.data.password}' | base64 -d
+
+  Repository: http://localhost:3000/{{ .Values.wire.org }}/{{ .Values.wire.repo.name }}
+
+{{- if or (eq .Values.mode "jenkins") (eq .Values.mode "both") }}
+
+─────────────────────────────────────────────────────────────────
+Access Jenkins:
+─────────────────────────────────────────────────────────────────
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ .Release.Name }}-jenkins 8080:8080
+
+  URL:  http://localhost:8080
+  User: admin
+  Pass: kubectl get secret {{ .Release.Name }}-jenkins -n {{ .Release.Namespace }} -o jsonpath='{.data.jenkins-admin-password}' | base64 -d
+
+  Job:  http://localhost:8080/job/{{ .Values.wire.org }}-{{ .Values.wire.repo.name }}
+{{- end }}
+
+═══════════════════════════════════════════════════════════════════
+Supply Chain Transparency
+═══════════════════════════════════════════════════════════════════
+{{- $hasDigests := false }}
+{{- if .Values.images.gitea.digest }}{{ $hasDigests = true }}{{- end }}
+{{- if .Values.images.actRunner.digest }}{{ $hasDigests = true }}{{- end }}
+{{- if .Values.images.jenkins.digest }}{{ $hasDigests = true }}{{- end }}
+
+{{- if $hasDigests }}
+✓ Images are digest-pinned for reproducible deployments
+✓ Cryptographically verifiable supply chain
+✓ Ready for airgap security scanning
+
+Verify deployed images:
+  helm get values {{ .Release.Name }} -n {{ .Release.Namespace }} | grep -A3 "images:"
+{{- else }}
+⚠ Images are using tags (mutable)
+  
+For production/airgap deployments, consider digest pinning:
+  1. Pull images and get digests:
+     docker pull gitea/gitea:{{ .Values.images.gitea.tag }}
+     docker inspect gitea/gitea:{{ .Values.images.gitea.tag }} | grep RepoDigests
+  
+  2. Set digests in values.yaml or upgrade command:
+     --set images.gitea.digest=sha256:...
+  
+  3. Generate SBOM and scan for CVEs:
+     syft gitea/gitea@sha256:... -o json > gitea-sbom.json
+     grype gitea/gitea@sha256:... --only-fixed
+
+  See: https://github.com/kube-tarian/clusterfactory#image-transparency
+{{- end }}
+
+─────────────────────────────────────────────────────────────────
+Need help?
+─────────────────────────────────────────────────────────────────
+  Docs:   https://github.com/kube-tarian/clusterfactory
+  Issues: https://github.com/kube-tarian/clusterfactory/issues
+
+═══════════════════════════════════════════════════════════════════

@@ -2,7 +2,7 @@
 Wire container specification - bash engine
 */}}
 {{- define "clusterfactory.wire.bash" -}}
-image: {{ .Values.wire.image.bash }}
+image: {{ include "clusterfactory.wire.image" . }}
 command: [sh, -c]
 args:
   - |
@@ -54,6 +54,7 @@ args:
       -d "{\"username\":\"${ORG}\",\"visibility\":\"private\"}" \
       "${GITEA_URL}/api/v1/orgs" 2>/dev/null || true
 
+    {{- if include "clusterfactory.mode.jenkinsEnabled" . }}
     # ── Wait for Jenkins ────────────────────────────────────
     log "Waiting for Jenkins..."
     i=0
@@ -110,6 +111,7 @@ args:
         <username>${GITEA_USER}</username>
         <password>${GITEA_TOKEN}</password>
       </com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl>"
+    {{- end }}
 
     # ── Create Gitea repo ───────────────────────────────────
     log "Creating Gitea repo ${ORG}/${REPO}..."
@@ -145,9 +147,14 @@ args:
       fi
     }
 
+    {{- if include "clusterfactory.mode.jenkinsEnabled" . }}
     push_file "Jenkinsfile"                    "${JENKINSFILE_B64}"  "initial commit"
+    {{- end }}
+    {{- if include "clusterfactory.mode.giteaActionsEnabled" . }}
     push_file ".gitea/workflows/ci.yaml"       "${WORKFLOW_B64}"     "add Gitea Actions workflow"
+    {{- end }}
 
+    {{- if include "clusterfactory.mode.jenkinsEnabled" . }}
     # ── Create Jenkins job ──────────────────────────────────
     JOB_NAME="${ORG}-${REPO}"
     CLONE_URL="http://${GITEA_SVC}:3000/${ORG}/${REPO}.git"
@@ -196,8 +203,9 @@ args:
     else
       log "Jenkins job create: HTTP ${job_http}"
     fi
+    {{- end }}
 
-    log "Wiring complete"
+    log "Wiring complete (mode={{ .Values.mode }})"
 {{- end }}
 
 {{/*

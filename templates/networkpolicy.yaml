@@ -34,6 +34,7 @@ spec:
       ports:
         - port: 3000
           protocol: TCP
+{{- if .Values.jenkins.enabled }}
 ---
 # ── Jenkins: allow ingress on port 8080 ──────────────────────────────────────
 # Permits the wire job and helm test pod to reach Jenkins HTTP.
@@ -66,4 +67,5 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+{{- end }}
 {{- end }}
