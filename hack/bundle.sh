@@ -45,7 +45,10 @@ ok "Packaged clusterfactory-${CHART_VERSION}.tgz"
 
 sep "Collecting images"
 # Images from rendered templates + known init containers
+# Render with mode=both to capture all possible images
 IMAGES=$(helm template cf "${ROOT_DIR}" \
+  --set mode=both \
+  --set jenkins.enabled=true \
   --set gitea.gitea.admin.password=bundle-build-password \
   2>/dev/null \
   | python3 -c "
