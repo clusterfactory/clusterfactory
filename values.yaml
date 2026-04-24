@@ -6,17 +6,23 @@
 #   "gitea-actions" - Gitea + Actions (cloud-native, Kubernetes-first CI/CD)
 #                     Use case: Modern workflows, GitHub Actions compatibility
 #                     What you get: Gitea server + Actions engine + Kaniko runners
-#                     What's disabled: Jenkins
+#                     What's disabled: Jenkins (set jenkins.enabled=false)
 #
 #   "jenkins"       - Gitea + Jenkins (traditional pipeline CI)
 #                     Use case: Enterprise teams, existing Jenkins expertise
 #                     What you get: Gitea as Git server only + Jenkins orchestration
-#                     What's disabled: Gitea Actions, runners
+#                     What's disabled: Gitea Actions, runners (set jenkins.enabled=true)
 #
 #   "both"          - Gitea + Actions + Jenkins (hybrid/legacy transition)
 #                     Use case: Migration scenarios, legacy infrastructure needs
 #                     What you get: Full stack, both CI/CD engines running
 #                     Note: Higher resource usage, use for specific migration needs
+#                     (set jenkins.enabled=true)
+#
+# ⚠️  IMPORTANT: When using helm, you must also set jenkins.enabled:
+#     --set mode=gitea-actions --set jenkins.enabled=false
+#     --set mode=jenkins --set jenkins.enabled=true
+#     --set mode=both --set jenkins.enabled=true
 #
 # Transparency: All images are digest-pinned for supply chain security.
 # You can security-scan what you deploy before going airgap.
@@ -175,10 +181,14 @@ gitea:
 
 # ─────────────────────────────────────────────
 # Jenkins subchart values
-# Auto-disabled when mode=gitea-actions, enabled when mode=jenkins or mode=both
+# Enabled/disabled based on deployment mode.
+# ⚠️  IMPORTANT: Must be set explicitly when using helm:
+#     mode=gitea-actions → jenkins.enabled=false
+#     mode=jenkins → jenkins.enabled=true
+#     mode=both → jenkins.enabled=true
 # ─────────────────────────────────────────────
 jenkins:
-  enabled: true  # Overridden by mode selector in Chart.yaml conditions
+  enabled: false  # Default: false (matches mode=gitea-actions default)
   controller:
     # To pin a Jenkins version: --set jenkins.controller.image.tag=2.492-jdk21
     resources:

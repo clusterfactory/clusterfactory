@@ -74,9 +74,17 @@ jobs:
       - name: Validate mode=${{ matrix.mode }} templates
         run: |
           echo "Testing mode: ${{ matrix.mode }}"
+          
+          # Set jenkins.enabled based on mode
+          JENKINS_ENABLED="false"
+          if [ "${{ matrix.mode }}" = "jenkins" ] || [ "${{ matrix.mode }}" = "both" ]; then
+            JENKINS_ENABLED="true"
+          fi
+          
           helm template cf . \
             --namespace cicd \
             --set mode=${{ matrix.mode }} \
+            --set jenkins.enabled=${JENKINS_ENABLED} \
             --set gitea.gitea.admin.password=test-password-for-ci \
             > /tmp/rendered.yaml
           
