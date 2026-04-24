@@ -145,6 +145,7 @@ jobs:
             --rollback-on-failure \
             --timeout 15m \
             --set mode=both \
+            --set jenkins.enabled=true \
             --set gitea.gitea.admin.password=test-password-for-ci \
             --set runner.enabled=false \
             --set networkPolicy.enabled=false \
@@ -312,6 +313,7 @@ jobs:
             --rollback-on-failure \
             --timeout 15m \
             --set mode=both \
+            --set jenkins.enabled=true \
             --set gitea.gitea.admin.password=test-password-for-ci \
             --set runner.enabled=false \
             --set networkPolicy.enabled=false \
