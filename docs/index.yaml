@@ -3,7 +3,26 @@ entries:
   clusterfactory:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-05T12:14:30.37282755Z"
+    created: "2026-04-25T00:56:23.893138147Z"
+    dependencies:
+    - condition: gitea.enabled
+      name: gitea
+      repository: https://dl.gitea.com/charts/
+      version: 11.0.1
+    - condition: jenkins.enabled
+      name: jenkins
+      repository: https://charts.jenkins.io
+      version: 5.9.9
+    description: One helm install. Vanilla upstream Gitea + Jenkins — hello-world
+      pipeline and Gitea Actions pre-wired.
+    digest: f05fefb9d5ee3054136d19adc537413deed176142450f9b84f1883a27c2a09df
+    name: clusterfactory
+    urls:
+    - https://clusterfactory.github.io/clusterfactory/clusterfactory-0.2.1.tgz
+    version: 0.2.1
+  - apiVersion: v2
+    appVersion: 1.0.0
+    created: "2026-04-25T00:56:23.8652586Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -20,7 +39,7 @@ entries:
     version: 0.2.0
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-05T12:14:30.346537261Z"
+    created: "2026-04-25T00:56:23.837383692Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -37,7 +56,7 @@ entries:
     version: 0.1.8
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-05T12:14:30.31992587Z"
+    created: "2026-04-25T00:56:23.808131008Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -54,7 +73,7 @@ entries:
     version: 0.1.3
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-05T12:14:30.293155414Z"
+    created: "2026-04-25T00:56:23.782682855Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -72,7 +91,7 @@ entries:
   gitea-jenkins:
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-05T12:14:30.426966984Z"
+    created: "2026-04-25T00:56:23.946844786Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -89,7 +108,7 @@ entries:
     version: 0.1.1
   - apiVersion: v2
     appVersion: 1.0.0
-    created: "2026-04-05T12:14:30.399172724Z"
+    created: "2026-04-25T00:56:23.919340127Z"
     dependencies:
     - name: gitea
       repository: https://dl.gitea.com/charts/
@@ -104,4 +123,4 @@ entries:
     urls:
     - https://clusterfactory.github.io/clusterfactory/gitea-jenkins-0.1.0.tgz
     version: 0.1.0
-generated: "2026-04-05T12:14:30.265758162Z"
+generated: "2026-04-25T00:56:23.755267616Z"
