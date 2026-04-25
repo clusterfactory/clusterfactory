@@ -1,0 +1,43 @@
+# Gitea values for v0.3 demo
+# Lean bootstrap: SQLite, no persistence, Actions disabled
+
+gitea:
+  admin:
+    existingSecret: clusterfactory-gitea-admin
+  config:
+    database:
+      DB_TYPE: sqlite3
+    session:
+      PROVIDER: memory
+    cache:
+      ADAPTER: memory
+    queue:
+      TYPE: level
+    actions:
+      ENABLED: "false"    # No Actions in v0.3 demo
+    server:
+      PROTOCOL: http
+      DOMAIN: cf-gitea-http.cicd.svc.cluster.local
+      ROOT_URL: http://cf-gitea-http.cicd.svc.cluster.local:3000/
+      HTTP_PORT: 3000
+
+persistence:
+  enabled: false    # emptyDir for demo
+
+service:
+  http:
+    type: ClusterIP
+    port: 3000
+
+ingress:
+  enabled: false    # access via port-forward
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

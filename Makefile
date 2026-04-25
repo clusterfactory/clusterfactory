@@ -1,132 +1,29 @@
-.PHONY: help test test-unit test-integration test-all lint format build deploy-test clean
+.PHONY: help clean wire-image package deploy test
 
-# Variables
-WIRE_IMAGE ?= clusterfactory-wire:0.2.0
-TEST_NAMESPACE ?= default
-CLUSTER_NAME ?= clusterfactory-test
-
-help: ## Show this help message
-	@echo "ClusterFactory Development Commands"
-	@echo ""
+help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# Testing
-test-unit: ## Run unit tests
-	python3 -m pytest factory/testing/layers/unit/ -v
+clean:  ## Clean build artifacts
+	rm -rf clusterfactory-ci-*.tar.zst
+	rm -rf zarf-sbom/
 
-test-integration: ## Run integration tests (requires live cluster)
-	python3 -m pytest factory/testing/layers/integration/ -v -m integration
+wire-image:  ## Build and load wire engine image into k3d
+	docker build -t ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 engine/
+	k3d image import ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 -c cf-test || true
 
-test-all: ## Run all test layers
-	./run-tests.py all -v
+package:  ## Create Zarf package
+	zarf package create . --confirm
 
-test-watch: ## Run unit tests in watch mode
-	python3 -m pytest factory/testing/layers/unit/ -v --looponfail
+deploy:  ## Deploy package to k8s (requires GITEA_ADMIN_PASSWORD env var)
+	@test -n "$(GITEA_ADMIN_PASSWORD)" || (echo "ERROR: GITEA_ADMIN_PASSWORD not set" && exit 1)
+	zarf package deploy clusterfactory-ci-0.3.0-amd64.tar.zst \
+		--confirm \
+		--set GITEA_ADMIN_PASSWORD=$(GITEA_ADMIN_PASSWORD)
 
-# Code Quality
-lint: ## Run linters
-	@echo "Running flake8..."
-	-python3 -m flake8 factory/ --max-line-length=100 --ignore=E501,W503
-	@echo "Running mypy..."
-	-python3 -m mypy factory/ --ignore-missing-imports
+test:  ## Run tests
+	cd engine && pytest tests/
 
-format: ## Format code with black
-	python3 -m black factory/ --line-length=100
+lint:  ## Lint Python code
+	cd engine && pylint src/clusterfactory_engine/
 
-# Docker
-build: ## Build wire Docker image
-	docker build -f Dockerfile.wire -t $(WIRE_IMAGE) .
-
-build-push: build ## Build and push wire image
-	docker push $(WIRE_IMAGE)
-
-# Cluster Management
-cluster-create: ## Create k3d test cluster
-	k3d cluster create $(CLUSTER_NAME) \
-		--agents 2 \
-		--registry-create test-registry:5000
-
-cluster-delete: ## Delete test cluster
-	k3d cluster delete $(CLUSTER_NAME)
-
-cluster-import-image: build ## Import wire image into cluster
-	k3d image import $(WIRE_IMAGE) -c $(CLUSTER_NAME)
-
-# Deployment
-deploy-bash: ## Deploy with bash engine
-	helm install test-bash . \
-		--set wire.engine=bash \
-		--wait --timeout=10m
-
-deploy-python: build cluster-import-image ## Deploy with Python engine
-	helm install test-python . \
-		--set wire.engine=python \
-		--set wire.image.python=$(WIRE_IMAGE) \
-		--wait --timeout=10m
-
-deploy-compare: ## Deploy both engines for comparison
-	$(MAKE) deploy-bash
-	kubectl create namespace python-test || true
-	helm install test-python . \
-		--namespace python-test \
-		--set wire.engine=python \
-		--set wire.image.python=$(WIRE_IMAGE) \
-		--wait --timeout=10m
-
-# Debugging
-logs-bash: ## Show bash wire logs
-	kubectl logs -l app.kubernetes.io/name=wire,wire.clusterfactory.io/engine=bash --tail=100
-
-logs-python: ## Show Python wire logs
-	kubectl logs -l app.kubernetes.io/name=wire,wire.clusterfactory.io/engine=python --tail=100
-
-describe-wire: ## Describe wire job
-	kubectl describe job -l app.kubernetes.io/name=wire
-
-port-forward-gitea: ## Port forward Gitea (localhost:3000)
-	kubectl port-forward svc/test-gitea-http 3000:3000
-
-port-forward-jenkins: ## Port forward Jenkins (localhost:8080)
-	kubectl port-forward svc/test-jenkins 8080:8080
-
-# Helm
-helm-template-bash: ## Render Helm templates (bash engine)
-	helm template test . --set wire.engine=bash
-
-helm-template-python: ## Render Helm templates (Python engine)
-	helm template test . --set wire.engine=python
-
-helm-lint: ## Lint Helm chart
-	helm lint .
-
-# Cleanup
-clean: ## Clean up test artifacts
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete
-	rm -rf *.egg-info
-
-clean-all: clean ## Clean everything including deployments
-	-helm uninstall test-bash
-	-helm uninstall test-python -n python-test
-	-kubectl delete namespace python-test
-
-# Development Workflow
-dev-setup: ## Set up development environment
-	pip install -r requirements.txt
-	pip install flake8 mypy black pytest-watch
-
-dev-test: test-unit ## Quick development test (unit only)
-
-dev-cycle: clean test-unit build ## Full development cycle
-
-# Full Integration Test Cycle
-full-test: cluster-create build cluster-import-image deploy-python test-integration ## Full integration test cycle
-	@echo "✅ Full integration test cycle complete"
-
-# CI Commands
-ci-test: test-unit lint ## Run CI tests
-	@echo "✅ CI tests passed"
-
-ci-integration: cluster-create build cluster-import-image deploy-python test-integration cluster-delete ## CI integration test
-	@echo "✅ CI integration tests passed"
+.DEFAULT_GOAL := help

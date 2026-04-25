@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cf-wire-files
+  namespace: cicd
+data:
+  Jenkinsfile: |
+    pipeline {
+      agent any
+      stages {
+        stage('hello') {
+          steps {
+            sh 'echo hello from clusterfactory v0.3'
+          }
+        }
+      }
+    }
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cf-wire
+  namespace: cicd
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wire
+    spec:
+      serviceAccountName: cf-wire
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wire
+          image: ghcr.io/clusterfactory/clusterfactory-wire:0.3.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: GITEA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: clusterfactory-gitea-admin
+                  key: password
+            - name: JENKINS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: cf-jenkins
+                  key: jenkins-admin-password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: platform-spec
+              mountPath: /config
+              readOnly: true
+            - name: files
+              mountPath: /files
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: platform-spec
+          configMap:
+            name: cf-platform-spec
+        - name: files
+          configMap:
+            name: cf-wire-files
+        - name: tmp
+          emptyDir: {}
