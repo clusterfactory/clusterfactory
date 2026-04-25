@@ -1,9 +1,9 @@
 # Jenkins values for v0.3 demo
-# Minimal plugins, no persistence, controller-only (no agents)
+# Custom image with pre-installed plugins for airgap
 
 controller:
   image:
-    repository: jenkins/jenkins
+    repository: clusterfactory/jenkins-cf
     tag: 2.541.3-jdk21
 
   admin:
@@ -16,7 +16,7 @@ controller:
   ingress:
     enabled: false    # access via port-forward
 
-  installPlugins: []  # Plugins can't be downloaded in airgap; use image with pre-installed plugins
+  installPlugins: []  # Plugins pre-installed in custom image
 
   JCasC:
     defaultConfig: true

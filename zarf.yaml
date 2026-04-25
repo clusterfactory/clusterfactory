@@ -55,7 +55,7 @@ components:
       - docker.gitea.com/gitea:1.23.6-rootless
 
   # ─────────────────────────────────────────────────────────────
-  # Jenkins — upstream chart, vanilla, minimal plugin set
+  # Jenkins — custom image with pre-installed plugins for airgap
   # ─────────────────────────────────────────────────────────────
   - name: jenkins
     required: true
@@ -69,7 +69,7 @@ components:
         valuesFiles:
           - values/jenkins.yaml
     images:
-      - jenkins/jenkins:2.541.3-jdk21
+      - clusterfactory/jenkins-cf:2.541.3-jdk21
       - kiwigrid/k8s-sidecar:2.5.0
 
   # ─────────────────────────────────────────────────────────────

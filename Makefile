@@ -1,4 +1,6 @@
-.PHONY: help clean wire-image package deploy test
+.PHONY: help clean wire-image jenkins-image package deploy test
+
+JENKINS_VERSION ?= 2.541.3-jdk21
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -10,6 +12,9 @@ clean:  ## Clean build artifacts
 wire-image:  ## Build and load wire engine image into k3d
 	docker build -t ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 engine/
 	k3d image import ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 -c cf-test || true
+
+jenkins-image:  ## Build Jenkins image with pre-installed plugins
+	docker build -t clusterfactory/jenkins-cf:$(JENKINS_VERSION) images/jenkins/
 
 package:  ## Create Zarf package
 	zarf package create . --confirm
