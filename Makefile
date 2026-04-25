@@ -16,7 +16,7 @@ package:  ## Create Zarf package
 
 deploy:  ## Deploy package to k8s (requires GITEA_ADMIN_PASSWORD env var)
 	@test -n "$(GITEA_ADMIN_PASSWORD)" || (echo "ERROR: GITEA_ADMIN_PASSWORD not set" && exit 1)
-	zarf package deploy clusterfactory-ci-0.3.0-amd64.tar.zst \
+	zarf package deploy zarf-package-clusterfactory-ci-amd64-0.3.0.tar.zst \
 		--confirm \
 		--set GITEA_ADMIN_PASSWORD=$(GITEA_ADMIN_PASSWORD)
 

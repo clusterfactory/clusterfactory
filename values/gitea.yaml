@@ -41,3 +41,12 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+redis-cluster:
+  enabled: false
+
+postgresql:
+  enabled: false
+
+postgresql-ha:
+  enabled: false

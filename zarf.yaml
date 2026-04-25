@@ -52,7 +52,7 @@ components:
         valuesFiles:
           - values/gitea.yaml
     images:
-      - gitea/gitea:1.23.6
+      - docker.gitea.com/gitea:1.23.6-rootless
 
   # ─────────────────────────────────────────────────────────────
   # Jenkins — upstream chart, vanilla, minimal plugin set
@@ -70,7 +70,7 @@ components:
           - values/jenkins.yaml
     images:
       - jenkins/jenkins:2.541.3-jdk21
-      - kiwigrid/k8s-sidecar:1.27.1
+      - kiwigrid/k8s-sidecar:2.5.0
 
   # ─────────────────────────────────────────────────────────────
   # Platform spec ConfigMap — what the wire engine reads
