@@ -49,8 +49,7 @@ jobs:
 
       - name: Install zarf
         run: |
-          curl -sL https://github.com/zarf-dev/zarf/releases/latest/download/zarf_Linux_amd64.tar.gz \
-            | tar -xz
+          curl -sL https://github.com/defenseunicorns/zarf/releases/download/v0.42.1/zarf_v0.42.1_Linux_amd64 -o zarf
           sudo install -m 0755 zarf /usr/local/bin/zarf
           zarf version
 
@@ -76,8 +75,7 @@ jobs:
 
       - name: Install zarf
         run: |
-          curl -sL https://github.com/zarf-dev/zarf/releases/latest/download/zarf_Linux_amd64.tar.gz \
-            | tar -xz
+          curl -sL https://github.com/defenseunicorns/zarf/releases/download/v0.42.1/zarf_v0.42.1_Linux_amd64 -o zarf
           sudo install -m 0755 zarf /usr/local/bin/zarf
 
       - name: Install helm
