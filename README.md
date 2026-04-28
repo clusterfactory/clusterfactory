@@ -1,35 +1,44 @@
 # clusterfactory
 
-**Airgap CI platform: Gitea (git) + Jenkins (workflow engine), auto-wired, delivered as a Zarf package.**
+clusterfactory packages an opinionated CI stack — Gitea as the git server,
+Jenkins as the workflow engine — as a single signed Zarf bundle that installs
+on an airgapped Kubernetes cluster. A small Python wire engine runs in-cluster
+on first deploy, mints a Gitea API token, stores it in Jenkins as a credential
+the pipeline can use to clone, and emits a structural SHA so an operator can
+prove the install matches the connected build without comparing secret values.
 
-Zarf handles supply chain: signed bundle, SBOMs, image transport, Helm installs. clusterfactory handles what Zarf doesn't — cross-service credential wiring. After Zarf installs Gitea and Jenkins, a small Python wire engine mints an API token from Gitea, stores it in Jenkins as a credential, creates a `cf-demo/hello-world` repo, commits a Jenkinsfile, and creates a matching Jenkins pipeline. It emits a structural SHA proving the wiring graph executed as declared.
+## Try it
 
-## Demo
-
-On a connected machine:
 ```bash
-zarf package create .
+# Connected machine
+make wire-image
+make package
+
+# Airgapped target (after copying the .tar.zst over)
+GITEA_ADMIN_PASSWORD=<your-password> make deploy
 ```
 
-Transfer `clusterfactory-ci-0.3.0-amd64.tar.zst` to the airgapped cluster. Then:
-```bash
-zarf package deploy clusterfactory-ci-0.3.0-amd64.tar.zst \
-    --key cosign.pub \
-    --set GITEA_ADMIN_PASSWORD=<yourpassword>
-```
+After deploy, port-forward Gitea (`:3000`) and Jenkins (`:8080`); both come up
+pre-wired against `cf-demo/hello-world`. The structural SHA prints at the end
+of `zarf package deploy` and is also persisted to the `cf-wire-result`
+ConfigMap.
 
-At the end, Zarf prints the structural SHA and the port-forward commands. Push to `cf-demo/hello-world` to trigger a build.
+## Layout
 
-## Status
+| Path | What |
+|------|------|
+| `zarf.yaml` | Zarf package definition (charts, images, manifests, deploy actions) |
+| `platform.yaml` | Wiring graph the Python engine reads |
+| `engine/` | Python wire engine (`clusterfactory_engine`) — the only custom image |
+| `manifests/` | Standalone K8s manifests Zarf applies (wire Job, RBAC, NetworkPolicy) |
+| `values/` | Upstream Helm chart values for Gitea and Jenkins |
+| `files/` | Bootstrap files committed into Gitea on first run (e.g., `Jenkinsfile`) |
+| `engine/tests/` | pytest unit tests + bash e2e airgap install test |
 
-v0.3 is a demo. One deployment mode (Gitea as git, Jenkins as CI). Additional components (Harbor, OpenBao) and third-party extensibility are planned for v0.4+. See `refactor-to-zarf.md` for the roadmap.
+## Status and scope
 
-## Requirements
-
-- [Zarf](https://zarf.dev/) 0.32.0+
-- Kubernetes 1.28+
-- kubectl
-
-## License
-
-MIT - see [LICENSE](LICENSE)
+v0.3 demo. One mode: Gitea-as-git, Jenkins-as-workflow-engine. No Gitea
+Actions, no Harbor, no OpenBao, no SDK packaging — those come in v0.4 and v1.0.
+The full design and the rationale for the v0.3 reset are in
+[`refactor-to-zarf.md`](refactor-to-zarf.md). Historical refactor notes live
+under [`docs/history/`](docs/history/).

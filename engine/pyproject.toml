@@ -23,3 +23,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+# Tests are colocated with the package: engine/tests/{unit,integration}/
+testpaths = ["tests/unit"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+markers = [
+  "e2e: end-to-end tests requiring a live cluster (run via test-e2e make target)",
+]
