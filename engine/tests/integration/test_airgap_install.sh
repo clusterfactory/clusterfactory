@@ -123,8 +123,8 @@ if [[ ! -f zarf-init-amd64-*.tar.zst ]]; then
   yellow "downloading zarf-init..."
   zarf tools download-init
 fi
-# Initialize without optional components
-zarf init --confirm --components=k3s
+# Initialize without optional components (skip k3s since k3d provides the cluster)
+zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector
 
 step "zarf deploy"
 zarf package deploy "${PKG}" \
