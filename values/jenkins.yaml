@@ -1,9 +1,10 @@
 # Jenkins values for v0.3 demo
-# Custom image with pre-installed plugins for airgap
+# Standard upstream Jenkins chart with vanilla image (no plugins in airgap)
+# For automated credential wiring in future: build custom image with plugins baked in
 
 controller:
   image:
-    repository: clusterfactory/jenkins-cf
+    repository: jenkins/jenkins
     tag: 2.541.3-jdk21
 
   admin:
@@ -16,7 +17,9 @@ controller:
   ingress:
     enabled: false    # access via port-forward
 
-  installPlugins: []  # Plugins pre-installed in custom image
+  # installPlugins disabled for airgap - plugins must be baked into custom image
+  # For v0.3 demo: vanilla Jenkins, manual credential setup documented
+  installPlugins: []
 
   JCasC:
     defaultConfig: true

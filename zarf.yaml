@@ -55,11 +55,11 @@ components:
       - docker.gitea.com/gitea:1.23.6-rootless
 
   # ─────────────────────────────────────────────────────────────
-  # Jenkins — custom image with pre-installed plugins for airgap
+  # Jenkins — standard upstream chart, vanilla image (no plugins in airgap)
   # ─────────────────────────────────────────────────────────────
   - name: jenkins
     required: true
-    description: "Jenkins 2.541.3 LTS as workflow engine."
+    description: "Jenkins 2.541.3 LTS as workflow engine (vanilla, no plugins for airgap demo)."
     charts:
       - name: jenkins
         url: https://charts.jenkins.io
@@ -69,7 +69,7 @@ components:
         valuesFiles:
           - values/jenkins.yaml
     images:
-      - clusterfactory/jenkins-cf:2.541.3-jdk21
+      - jenkins/jenkins:2.541.3-jdk21
       - kiwigrid/k8s-sidecar:2.5.0
 
   # ─────────────────────────────────────────────────────────────
@@ -85,11 +85,11 @@ components:
           - manifests/platform-configmap.yaml
 
   # ─────────────────────────────────────────────────────────────
-  # Wire engine — our custom code, the only non-upstream image
+  # Wire engine — auto-wiring (requires Jenkins plugins in future versions)
   # ─────────────────────────────────────────────────────────────
   - name: wire
-    required: true
-    description: "Credential wiring: Gitea → Jenkins."
+    required: false
+    description: "Credential wiring: Gitea → Jenkins (disabled for v0.3 - needs plugins)."
     manifests:
       - name: wire-rbac
         namespace: cicd
