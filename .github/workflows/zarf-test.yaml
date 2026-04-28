@@ -93,6 +93,7 @@ jobs:
           done
 
       - name: Validate Kubernetes manifests
+        if: steps.check_files.outputs.files_exist == 'true'
         run: |
           for manifest in manifests/*.yaml; do
             echo "Validating $manifest..."
