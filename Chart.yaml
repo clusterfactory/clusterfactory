@@ -5,7 +5,7 @@ version: 0.2.1
 appVersion: "1.0.0"
 dependencies:
   - name: gitea
-    version: "11.0.1"
+    version: 12.5.3
     repository: "https://dl.gitea.com/charts/"
     condition: gitea.enabled
   - name: jenkins
