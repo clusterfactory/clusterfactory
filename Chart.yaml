@@ -9,7 +9,7 @@ dependencies:
     repository: "https://dl.gitea.com/charts/"
     condition: gitea.enabled
   - name: jenkins
-    version: "5.9.9"
+    version: 5.9.18
     repository: "https://charts.jenkins.io"
     condition: jenkins.enabled
 # Trigger test workflow
