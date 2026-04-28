@@ -13,17 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  # ── Helm lint ────────────────────────────────────────────────────────────────
-  helm-lint:
-    name: Helm Lint
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
-      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4  # v4
-      - run: helm dependency update .
-      - run: helm lint . --strict
+  # ── Helm lint disabled (no standalone chart in v0.3, Zarf uses upstream charts) ──
 
   # ── Trivy misconfiguration scan ──────────────────────────────────────────────
   trivy:

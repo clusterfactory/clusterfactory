@@ -118,6 +118,11 @@ yellow "package: ${PKG}"
 
 # ── 3. zarf init + deploy ───────────────────────────────────────────────────
 step "zarf init"
+# Download zarf-init if not present
+if [[ ! -f zarf-init-amd64-*.tar.zst ]]; then
+  yellow "downloading zarf-init..."
+  zarf tools download-init
+fi
 zarf init --confirm --components git-server=false
 
 step "zarf deploy"
