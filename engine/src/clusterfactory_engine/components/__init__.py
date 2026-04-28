@@ -1,6 +1,10 @@
 """Component implementations."""
 
-from .gitea import Gitea
-from .jenkins import Jenkins
+from .gitea import GiteaComponent
+from .jenkins import JenkinsComponent
 
-__all__ = ["Gitea", "Jenkins"]
+# Convenience aliases
+Gitea = GiteaComponent
+Jenkins = JenkinsComponent
+
+__all__ = ["GiteaComponent", "JenkinsComponent", "Gitea", "Jenkins"]
