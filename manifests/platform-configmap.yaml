@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cf-platform-spec
+  namespace: cicd
+data:
+  platform.yaml: |
+    apiVersion: clusterfactory.io/v1
+    kind: Platform
+    metadata:
+      name: cf-ci
+      version: "0.3.0"
+
+    spec:
+      components:
+        - name: gitea
+          kind: gitea
+          config:
+            service: cf-gitea-http.cicd.svc.cluster.local
+            port: 3000
+            admin_user: gitea-admin
+            admin_pass_env: GITEA_PASS
+            org: cf-demo
+            repo: hello-world
+            bootstrap_files:
+              - path: Jenkinsfile
+                source: /files/Jenkinsfile
+
+        - name: jenkins
+          kind: jenkins
+          config:
+            service: cf-jenkins.cicd.svc.cluster.local
+            port: 8080
+            admin_user: admin
+            admin_pass_env: JENKINS_PASS
+            pipeline_name: cf-demo-hello-world
+
+      wiring:
+        - from: gitea
+          to: jenkins
+          credential: UserPass

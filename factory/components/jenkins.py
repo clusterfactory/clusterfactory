@@ -12,6 +12,17 @@ from factory.model.credential import Credential
 
 log = logging.getLogger("factory.components.jenkins")
 
+# Jenkins version and plugin requirements
+# This is the single source of truth for Jenkins configuration in clusterfactory
+JENKINS_VERSION = "2.541.3-jdk21"
+PLUGINS = [
+    "plain-credentials",  # Latest version
+    "credentials",        # Latest version
+    "git",                # Latest version
+    "workflow-aggregator", # Latest version
+    "workflow-job",       # Latest version
+]
+
 
 class JenkinsComponent(Component):
     """

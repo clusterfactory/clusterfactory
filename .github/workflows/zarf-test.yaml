@@ -77,8 +77,8 @@ jobs:
           import yaml
           with open('platform.yaml') as f:
               platform = yaml.safe_load(f)
-          assert 'components' in platform, 'Missing components'
-          print(f'✓ Valid platform spec with {len(platform[\"components\"])} components')
+          assert 'spec' in platform and 'components' in platform['spec'], 'Missing spec.components'
+          print(f'✓ Valid platform spec with {len(platform[\"spec\"][\"components\"])} components')
           "
 
       - name: Check for required manifests
@@ -196,7 +196,7 @@ jobs:
       - name: Test image runs
         if: steps.check_engine.outputs.engine_exists == 'true'
         run: |
-          docker run --rm clusterfactory/wire:test python -c "from clusterfactory_engine import Credential; print('✓ Engine loads correctly')"
+          docker run --rm --entrypoint python clusterfactory/wire:test -c "from clusterfactory_engine import Credential; print('✓ Engine loads correctly')"
 
   security-scan:
     name: Security scan wire engine
