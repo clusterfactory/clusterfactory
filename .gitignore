@@ -4,3 +4,10 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# Zarf packages and artifacts
+*.tar.zst
+zarf-package-*.tar.zst
+zarf-init-*.tar.zst
+zarf-sbom/
+zarf-tmp/
