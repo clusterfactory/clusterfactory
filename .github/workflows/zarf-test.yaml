@@ -42,10 +42,22 @@ jobs:
         run: |
           pip install pyyaml jsonschema
 
+      - name: Check if Zarf files exist
+        id: check_files
+        run: |
+          if [ -f "zarf.yaml" ] && [ -f "validate-package.py" ]; then
+            echo "files_exist=true" >> $GITHUB_OUTPUT
+          else
+            echo "files_exist=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Zarf files not found - skipping validation (expected on non-v0.3 branches)"
+          fi
+
       - name: Validate package structure
+        if: steps.check_files.outputs.files_exist == 'true'
         run: python validate-package.py
 
       - name: Validate zarf.yaml syntax
+        if: steps.check_files.outputs.files_exist == 'true'
         run: |
           python -c "
           import yaml
@@ -59,6 +71,7 @@ jobs:
           "
 
       - name: Validate platform.yaml syntax
+        if: steps.check_files.outputs.files_exist == 'true'
         run: |
           python -c "
           import yaml
@@ -69,6 +82,7 @@ jobs:
           "
 
       - name: Check for required manifests
+        if: steps.check_files.outputs.files_exist == 'true'
         run: |
           for manifest in wire-job.yaml wire-rbac.yaml platform-configmap.yaml gitea-admin-secret.yaml networkpolicy.yaml; do
             if [ ! -f "manifests/$manifest" ]; then
@@ -105,23 +119,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
+      - name: Check if engine directory exists
+        id: check_engine
+        run: |
+          if [ -d "engine" ]; then
+            echo "engine_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "engine_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Engine directory not found - skipping lint (expected on non-v0.3 branches)"
+          fi
+
       - name: Set up Python
+        if: steps.check_engine.outputs.engine_exists == 'true'
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: '3.12'
 
       - name: Install dependencies
+        if: steps.check_engine.outputs.engine_exists == 'true'
         working-directory: engine
         run: |
           pip install -e .
           pip install pylint
 
       - name: Run pylint
+        if: steps.check_engine.outputs.engine_exists == 'true'
         working-directory: engine
         run: |
           pylint src/clusterfactory_engine/ --disable=missing-docstring,too-few-public-methods || true
 
       - name: Check imports
+        if: steps.check_engine.outputs.engine_exists == 'true'
         working-directory: engine
         run: |
           python -c "
@@ -137,21 +165,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
+      - name: Check if engine directory exists
+        id: check_engine
+        run: |
+          if [ -d "engine" ]; then
+            echo "engine_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "engine_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Engine directory not found - skipping build (expected on non-v0.3 branches)"
+          fi
+
       - name: Set up Docker Buildx
+        if: steps.check_engine.outputs.engine_exists == 'true'
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349  # v3.7.1
 
       - name: Build wire engine image
+        if: steps.check_engine.outputs.engine_exists == 'true'
         working-directory: engine
         run: |
           docker build -t clusterfactory/wire:test -f Dockerfile .
           echo "✓ Wire engine image built successfully"
 
       - name: Inspect image
+        if: steps.check_engine.outputs.engine_exists == 'true'
         run: |
           docker inspect clusterfactory/wire:test
           docker history clusterfactory/wire:test
 
       - name: Test image runs
+        if: steps.check_engine.outputs.engine_exists == 'true'
         run: |
           docker run --rm clusterfactory/wire:test python -c "from clusterfactory_engine import Credential; print('✓ Engine loads correctly')"
 
@@ -163,14 +205,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
+      - name: Check if engine directory exists
+        id: check_engine
+        run: |
+          if [ -d "engine" ]; then
+            echo "engine_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "engine_exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Engine directory not found - skipping security scan (expected on non-v0.3 branches)"
+          fi
+
       - name: Set up Docker Buildx
+        if: steps.check_engine.outputs.engine_exists == 'true'
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349  # v3.7.1
 
       - name: Build image for scanning
+        if: steps.check_engine.outputs.engine_exists == 'true'
         working-directory: engine
         run: docker build -t clusterfactory/wire:scan -f Dockerfile .
 
       - name: Run Trivy scan
+        if: steps.check_engine.outputs.engine_exists == 'true'
         uses: aquasecurity/trivy-action@0.29.0
         with:
           image-ref: 'clusterfactory/wire:scan'
@@ -179,7 +234,7 @@ jobs:
           severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy results
+        if: steps.check_engine.outputs.engine_exists == 'true'
         uses: github/codeql-action/upload-sarif@7dd8b13b3f8e2f6468d89f4abe0c2d91e3801b0b  # v3.28.5
         with:
           sarif_file: 'trivy-results.sarif'
-        if: always()
