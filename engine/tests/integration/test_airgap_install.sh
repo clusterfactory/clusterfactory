@@ -136,13 +136,18 @@ ctx="k3d-${K3D_CLUSTER}"
 kc() { kubectl --context "${ctx}" "$@"; }
 
 step "wait for gitea + jenkins"
+# Discover the actual StatefulSet names (they may include chart name suffixes)
+GITEA_STS="$(kc -n "${NS}" get statefulset -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "cf-gitea")"
+JENKINS_STS="$(kc -n "${NS}" get statefulset -l app.kubernetes.io/name=jenkins -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "cf-jenkins")"
+
+yellow "waiting for: ${GITEA_STS}, ${JENKINS_STS}"
+
 kc -n "${NS}" rollout status \
-  statefulset/cf-gitea --timeout="${TIMEOUT_GITEA}" \
+  statefulset/${GITEA_STS} --timeout="${TIMEOUT_GITEA}" \
   || fail "gitea did not become ready"
 
-# Jenkins chart deploys as a StatefulSet named after the release.
 kc -n "${NS}" rollout status \
-  statefulset/cf-jenkins --timeout="${TIMEOUT_JENKINS}" \
+  statefulset/${JENKINS_STS} --timeout="${TIMEOUT_JENKINS}" \
   || fail "jenkins did not become ready"
 
 step "wait for wire Job"
