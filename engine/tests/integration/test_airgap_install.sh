@@ -144,47 +144,19 @@ kc -n "${NS}" get statefulset -o wide || true
 yellow "Pods:"
 kc -n "${NS}" get pods -o wide || true
 
-# Wait for StatefulSets to be created (they may take a moment after deployment)
-yellow "Waiting for StatefulSets to appear..."
-for i in {1..30}; do
-  if kc -n "${NS}" get statefulset 2>/dev/null | grep -q gitea; then
-    yellow "Gitea StatefulSet found"
-    break
-  fi
-  sleep 2
-done
-
-# Discover the actual StatefulSet names (they may include chart name suffixes)
-GITEA_STS="$(kc -n "${NS}" get statefulset -l app.kubernetes.io/name=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-if [[ -z "${GITEA_STS}" ]]; then
-  # Try alternate label
-  GITEA_STS="$(kc -n "${NS}" get statefulset -l app=gitea -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-fi
-if [[ -z "${GITEA_STS}" ]]; then
-  red "Could not find Gitea StatefulSet with any known label"
-  kc -n "${NS}" get statefulset --show-labels || true
-  fail "gitea StatefulSet not found"
-fi
-
-JENKINS_STS="$(kc -n "${NS}" get statefulset -l app.kubernetes.io/name=jenkins -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-if [[ -z "${JENKINS_STS}" ]]; then
-  # Try alternate label
-  JENKINS_STS="$(kc -n "${NS}" get statefulset -l app.kubernetes.io/component=jenkins-controller -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
-fi
-if [[ -z "${JENKINS_STS}" ]]; then
-  red "Could not find Jenkins StatefulSet with any known label"
-  kc -n "${NS}" get statefulset --show-labels || true
-  fail "jenkins StatefulSet not found"
-fi
-
-yellow "waiting for: ${GITEA_STS}, ${JENKINS_STS}"
-
-kc -n "${NS}" rollout status \
-  statefulset/${GITEA_STS} --timeout="${TIMEOUT_GITEA}" \
+# Wait for components by label (survives chart changes to workload kind).
+# Gitea v11.x renders as a Deployment (no StatefulSet template exists).
+# Jenkins renders as a StatefulSet.
+yellow "Waiting for Gitea pods..."
+kc -n "${NS}" wait --for=condition=ready pod \
+  -l app.kubernetes.io/instance=cf-gitea \
+  --timeout="${TIMEOUT_GITEA}" \
   || fail "gitea did not become ready"
 
-kc -n "${NS}" rollout status \
-  statefulset/${JENKINS_STS} --timeout="${TIMEOUT_JENKINS}" \
+yellow "Waiting for Jenkins pods..."
+kc -n "${NS}" wait --for=condition=ready pod \
+  -l app.kubernetes.io/instance=cf-jenkins \
+  --timeout="${TIMEOUT_JENKINS}" \
   || fail "jenkins did not become ready"
 
 step "wait for wire Job"
