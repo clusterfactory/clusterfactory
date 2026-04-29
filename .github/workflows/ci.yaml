@@ -65,6 +65,8 @@ jobs:
           helm repo add jenkins https://charts.jenkins.io
           helm repo update
           helm dependency build .
+          # Extract charts for Helm v3.16+ compatibility
+          cd charts && tar -xzf gitea-11.0.1.tgz && tar -xzf jenkins-5.9.9.tgz && cd ..
 
       - name: Render templates
         run: |
@@ -149,6 +151,8 @@ jobs:
           helm repo add jenkins https://charts.jenkins.io
           helm repo update
           helm dependency build .
+          # Extract charts for Helm v3.16+ compatibility
+          cd charts && tar -xzf gitea-11.0.1.tgz && tar -xzf jenkins-5.9.9.tgz && cd ..
 
       - name: Install
         run: |
