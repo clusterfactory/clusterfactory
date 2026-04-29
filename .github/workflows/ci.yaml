@@ -41,7 +41,15 @@ jobs:
           cat Chart.lock || echo "No Chart.lock found"
 
       - name: Helm lint
-        run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Directory contents:"
+          ls -la
+          echo "Charts directory exists?"
+          ls -la charts/ || echo "Charts directory missing!"
+          echo "Running helm lint..."
+          helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
 
   template:
     name: Template (mode=${{ matrix.mode }})
