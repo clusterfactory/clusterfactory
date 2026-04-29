@@ -41,10 +41,10 @@ a clear error for tools that don't honor the schema.
 {{- fail "giteaAdmin.password must be set. Pass --set giteaAdmin.password=<value> or use a values file." -}}
 {{- end -}}
 {{/* Mode and subchart enabled flags must be consistent. */}}
-{{- $jenkinsExpected := eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" -}}
-{{- $jenkinsActual := .Values.jenkins.enabled -}}
+{{- $jenkinsExpected := include "clusterfactory.mode.jenkinsEnabled" . -}}
+{{- $jenkinsActual := ternary "true" "false" (and .Values.jenkins .Values.jenkins.enabled) -}}
 {{- if ne $jenkinsExpected $jenkinsActual -}}
-{{- fail (printf "mode=%s requires jenkins.enabled=%v but got jenkins.enabled=%v. Use --set jenkins.enabled=%v or a values file that sets both consistently." .Values.mode $jenkinsExpected $jenkinsActual $jenkinsExpected) -}}
+{{- fail (printf "mode=%s requires jenkins.enabled=%s but got jenkins.enabled=%s. Use --set jenkins.enabled=%s or a values file that sets both consistently." .Values.mode $jenkinsExpected $jenkinsActual $jenkinsExpected) -}}
 {{- end -}}
 {{- if not .Values.gitea.enabled -}}
 {{- fail "gitea.enabled must be true — Gitea is the git host in every mode." -}}

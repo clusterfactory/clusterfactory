@@ -2,8 +2,9 @@ apiVersion: v2
 name: clusterfactory
 description: One helm install for a working CI/CD platform — Gitea, optionally Jenkins, optionally Gitea Actions. Online or airgapped via Zarf.
 type: application
-version: 0.4.0
+version: 0.4.1
 appVersion: "1.0.0"
+icon: https://raw.githubusercontent.com/clusterfactory/clusterfactory/main/docs/icon.png
 keywords:
   - ci-cd
   - gitea
