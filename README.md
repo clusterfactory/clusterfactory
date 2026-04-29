@@ -1,44 +1,104 @@
-# clusterfactory
+# ClusterFactory
 
-clusterfactory packages an opinionated CI stack — Gitea as the git server,
-Jenkins as the workflow engine — as a single signed Zarf bundle that installs
-on an airgapped Kubernetes cluster. A small Python wire engine runs in-cluster
-on first deploy, mints a Gitea API token, stores it in Jenkins as a credential
-the pipeline can use to clone, and emits a structural SHA so an operator can
-prove the install matches the connected build without comparing secret values.
+**One `helm install` for a working CI/CD platform — Gitea, optionally Jenkins, optionally Gitea Actions. Online or airgapped via Zarf.**
 
-## Try it
+ClusterFactory is a Helm chart that composes upstream Gitea and Jenkins charts and wires them together via a post-install Job. You pick a mode, run `helm install`, and you get a working CI/CD platform — including a bootstrap repo, a working pipeline, and (in modes that include it) a registered Gitea Actions runner.
 
-```bash
-# Connected machine
-make wire-image
-make package
+## Modes
 
-# Airgapped target (after copying the .tar.zst over)
-GITEA_ADMIN_PASSWORD=<your-password> make deploy
+| Mode            | Gitea | Gitea Actions | Jenkins | Bootstrap pipeline |
+|-----------------|:-----:|:-------------:|:-------:|--------------------|
+| `gitea-actions` |   ✓   |       ✓       |    —    | `.gitea/workflows/ci.yaml` runs on push |
+| `jenkins`       |   ✓   |       —       |    ✓    | Jenkinsfile runs on push (via webhook)  |
+| `both`          |   ✓   |       ✓       |    ✓    | Both of the above                       |
+
+## Install
+
+### Connected
+
+```sh
+helm repo add gitea https://dl.gitea.com/charts/
+helm repo add jenkins https://charts.jenkins.io
+helm dependency build .
+
+# Pick a mode. Gitea admin password is required.
+helm install cf . \
+  --namespace cicd --create-namespace \
+  --set mode=both \
+  --set jenkins.enabled=true \
+  --set giteaAdmin.password='<your-password>'
 ```
 
-After deploy, port-forward Gitea (`:3000`) and Jenkins (`:8080`); both come up
-pre-wired against `cf-demo/hello-world`. The structural SHA prints at the end
-of `zarf package deploy` and is also persisted to the `cf-wire-result`
-ConfigMap.
+After `helm install`:
 
-## Layout
+```sh
+# Watch the wire Job complete.
+kubectl -n cicd logs -f job/cf-wire
 
-| Path | What |
-|------|------|
-| `zarf.yaml` | Zarf package definition (charts, images, manifests, deploy actions) |
-| `platform.yaml` | Wiring graph the Python engine reads |
-| `engine/` | Python wire engine (`clusterfactory_engine`) — the only custom image |
-| `manifests/` | Standalone K8s manifests Zarf applies (wire Job, RBAC, NetworkPolicy) |
-| `values/` | Upstream Helm chart values for Gitea and Jenkins |
-| `files/` | Bootstrap files committed into Gitea on first run (e.g., `Jenkinsfile`) |
-| `engine/tests/` | pytest unit tests + bash e2e airgap install test |
+# Verify functional wiring.
+helm test cf -n cicd
 
-## Status and scope
+# Read the wiring receipt.
+kubectl -n cicd get configmap cf-wire-result -o yaml
+```
 
-v0.3 demo. One mode: Gitea-as-git, Jenkins-as-workflow-engine. No Gitea
-Actions, no Harbor, no OpenBao, no SDK packaging — those come in v0.4 and v1.0.
-The full design and the rationale for the v0.3 reset are in
-[`refactor-to-zarf.md`](refactor-to-zarf.md). Historical refactor notes live
-under [`docs/history/`](docs/history/).
+### Airgapped
+
+```sh
+# In a connected environment, build the Zarf package:
+zarf package create . --confirm
+
+# Move the resulting zarf-package-clusterfactory-*.tar.zst across the airgap.
+
+# In the airgapped environment:
+zarf package deploy zarf-package-clusterfactory-*.tar.zst --confirm \
+  --set GITEA_ADMIN_PASSWORD='<your-password>'
+```
+
+## What you get
+
+- **Gitea** as the git host. Org and repo created automatically by the wire Job, with a bootstrap commit on `main`.
+- **Jenkins** (in `jenkins`/`both` modes), with a pipeline job pre-configured to fetch `Jenkinsfile` from the bootstrap repo. A Gitea webhook triggers builds on push.
+- **Gitea Actions** (in `gitea-actions`/`both` modes), with a DaemonSet runner registered to the Gitea instance. The bootstrap workflow runs on push.
+- **A wiring receipt** at `cf-wire-result` ConfigMap — a structural sha of the wires performed, plus the sorted list of `producer:consumer:credential_kind` tuples. Same wiring graph → same hash, regardless of secret values.
+
+## Three-minute demo
+
+```sh
+# 1. Install (mode=both).
+helm install cf . -n cicd --create-namespace \
+  --set mode=both --set jenkins.enabled=true \
+  --set giteaAdmin.password=demo-password-12345
+
+# 2. Wait for the wire Job (≈30s once pods are up).
+kubectl -n cicd wait --for=condition=complete --timeout=5m job/cf-wire
+
+# 3. Open Gitea.
+kubectl -n cicd port-forward svc/cf-gitea-http 3000:3000 &
+# → http://localhost:3000  (login: gitea-admin / demo-password-12345)
+# → cf-demo/hello-world repo, with a Jenkinsfile and .gitea/workflows/ci.yaml
+
+# 4. Open Jenkins.
+PASS=$(kubectl -n cicd get secret cf-jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+kubectl -n cicd port-forward svc/cf-jenkins 8080:8080 &
+# → http://localhost:8080  (login: admin / $PASS)
+# → "hello-world" job, wired to cf-demo/hello-world via webhook
+
+# 5. Push a commit to Gitea, watch both pipelines run.
+```
+
+## What this is not
+
+- Not an Operator. The wire Job runs once at install/upgrade and exits.
+- Not a meta-installer. Subcharts are vanilla upstream Gitea (11.0.1) and Jenkins (5.9.9).
+- Not a standard. See [docs/composing-platforms.md](docs/composing-platforms.md) for the conventions used here, in case they're useful for similar meta-charts.
+
+## Documentation
+
+- [docs/composing-platforms.md](docs/composing-platforms.md) — the discipline of composing N charts into one.
+- [docs/airgap.md](docs/airgap.md) — Zarf-based airgap delivery.
+- [CHANGELOG.md](CHANGELOG.md)
+
+## License
+
+See [LICENSE](LICENSE).

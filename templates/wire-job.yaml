@@ -1,0 +1,83 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-wire
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: wire
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: wire
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Release.Name }}-wire
+      volumes:
+        - name: script
+          configMap:
+            name: {{ .Release.Name }}-wire-script
+            defaultMode: 0755
+      containers:
+        - name: wire
+          image: {{ .Values.wireJob.image | quote }}
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          command: ["/bin/sh", "/scripts/wire.sh"]
+          env:
+            - name: MODE
+              value: {{ .Values.mode | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: GITEA_SVC
+              value: {{ include "clusterfactory.giteaService" . | quote }}
+            - name: GITEA_PORT
+              value: "3000"
+            - name: GITEA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "clusterfactory.giteaAdminSecret" . }}
+                  key: username
+            - name: GITEA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "clusterfactory.giteaAdminSecret" . }}
+                  key: password
+            - name: ORG
+              value: {{ .Values.wire.org | quote }}
+            - name: REPO
+              value: {{ .Values.wire.repo.name | quote }}
+            - name: REPO_DESCRIPTION
+              value: {{ .Values.wire.repo.description | quote }}
+            - name: RUNNER_SECRET
+              value: "{{ .Release.Name }}-runner-reg-token"
+            - name: RESULT_CONFIGMAP
+              value: "{{ .Release.Name }}-wire-result"
+            - name: WORKFLOW_B64
+              value: {{ .Files.Get "files/.gitea/workflows/ci.yaml" | b64enc | quote }}
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+            - name: JENKINS_SVC
+              value: {{ include "clusterfactory.jenkinsService" . | quote }}
+            - name: JENKINS_PORT
+              value: "8080"
+            - name: JENKINS_USER
+              value: "admin"
+            - name: JENKINS_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "clusterfactory.jenkinsAdminSecret" . }}
+                  key: jenkins-admin-password
+            - name: JENKINS_JOB
+              value: {{ .Values.wire.jenkinsJob | quote }}
+            - name: JENKINSFILE_B64
+              value: {{ .Files.Get "files/Jenkinsfile" | b64enc | quote }}
+{{- end }}

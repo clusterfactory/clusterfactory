@@ -1,0 +1,50 @@
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .Release.Name }}-test-actions"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/name: test-actions
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: {{ .Values.wireJob.image | quote }}
+      env:
+        - name: GITEA_URL
+          value: "http://{{ include "clusterfactory.giteaService" . }}:3000"
+        - name: GITEA_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "clusterfactory.giteaAdminSecret" . }}
+              key: username
+        - name: GITEA_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "clusterfactory.giteaAdminSecret" . }}
+              key: password
+      command: ["/bin/sh", "-eu", "-c"]
+      args:
+        - |
+          set -eu
+          echo "test-actions | listing registered runners"
+          # Poll: runner takes a few seconds to register after the secret appears.
+          i=0
+          while [ "$i" -lt 24 ]; do
+            resp=$(curl -fsS -u "${GITEA_USER}:${GITEA_PASS}" \
+              "${GITEA_URL}/api/v1/admin/runners" || echo '')
+            if echo "$resp" | grep -q '"id"'; then
+              echo "test-actions | runner registered"
+              echo "test-actions | OK"
+              exit 0
+            fi
+            i=$((i + 1))
+            sleep 5
+          done
+          echo "test-actions | FAIL: no runner registered after 120s" >&2
+          exit 1
+{{- end }}

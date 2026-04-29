@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .Release.Name }}-test-gitea"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/name: test-gitea
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: {{ .Values.wireJob.image | quote }}
+      env:
+        - name: GITEA_URL
+          value: "http://{{ include "clusterfactory.giteaService" . }}:3000"
+        - name: ORG
+          value: {{ .Values.wire.org | quote }}
+        - name: REPO
+          value: {{ .Values.wire.repo.name | quote }}
+        - name: GITEA_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "clusterfactory.giteaAdminSecret" . }}
+              key: username
+        - name: GITEA_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "clusterfactory.giteaAdminSecret" . }}
+              key: password
+      command: ["/bin/sh", "-eu", "-c"]
+      args:
+        - |
+          set -eu
+          echo "test-gitea | reaching ${GITEA_URL}"
+          curl -fsS "${GITEA_URL}/api/healthz" >/dev/null
+          echo "test-gitea | healthz OK"
+
+          echo "test-gitea | verifying org ${ORG}"
+          curl -fsS -u "${GITEA_USER}:${GITEA_PASS}" \
+            "${GITEA_URL}/api/v1/orgs/${ORG}" >/dev/null
+
+          echo "test-gitea | verifying repo ${ORG}/${REPO}"
+          curl -fsS -u "${GITEA_USER}:${GITEA_PASS}" \
+            "${GITEA_URL}/api/v1/repos/${ORG}/${REPO}" >/dev/null
+
+          echo "test-gitea | OK"

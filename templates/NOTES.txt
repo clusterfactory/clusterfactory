@@ -1,0 +1,54 @@
+ClusterFactory v{{ .Chart.Version }} installed in namespace "{{ .Release.Namespace }}".
+
+Mode: {{ .Values.mode }}
+
+What's running:
+  • Gitea            (git host)
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
+  • Gitea Actions    (workflow engine — DaemonSet runner)
+{{- end }}
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+  • Jenkins          (workflow engine)
+{{- end }}
+
+The wire Job runs as a post-install hook. It will:
+  • create org "{{ .Values.wire.org }}" and repo "{{ .Values.wire.org }}/{{ .Values.wire.repo.name }}"
+  • push bootstrap files
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
+  • register a Gitea Actions runner
+{{- end }}
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+  • create Jenkins job "{{ .Values.wire.jenkinsJob }}" pointing at the bootstrap repo
+  • configure a Gitea webhook → Jenkins
+{{- end }}
+  • write the wiring receipt (structural sha) to ConfigMap "{{ .Release.Name }}-wire-result"
+
+Watch the wiring complete:
+
+  kubectl -n {{ .Release.Namespace }} logs -f job/{{ .Release.Name }}-wire
+
+Open Gitea (port-forward):
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-gitea-http 3000:3000
+
+  Username: {{ .Values.giteaAdmin.username }}
+  Password: (the value you passed via giteaAdmin.password)
+
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+
+Open Jenkins (port-forward):
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-jenkins 8080:8080
+
+  Username: admin
+  Password:
+    kubectl -n {{ .Release.Namespace }} get secret {{ .Release.Name }}-jenkins -o jsonpath='{.data.jenkins-admin-password}' | base64 -d
+{{- end }}
+
+Verify functional wiring:
+
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Read the wiring receipt:
+
+  kubectl -n {{ .Release.Namespace }} get configmap {{ .Release.Name }}-wire-result -o yaml

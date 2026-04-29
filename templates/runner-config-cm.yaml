@@ -1,0 +1,24 @@
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-runner-config
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
+data:
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      file: /data/.runner
+      capacity: 2
+      timeout: 1h
+      labels:
+        - "ubuntu-latest:docker://node:20-bookworm"
+    cache:
+      enabled: false
+    container:
+      network: host
+      privileged: false
+{{- end }}

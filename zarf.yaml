@@ -1,97 +1,31 @@
 kind: ZarfPackageConfig
+
 metadata:
-  name: clusterfactory-ci
-  version: 0.3.0
-  description: 'Airgap CI demo: Gitea (git) + Jenkins (workflow), auto-wired.'
-  url: https://github.com/clusterfactory/clusterfactory
-  architecture: amd64
-variables:
-- name: GITEA_ADMIN_PASSWORD
-  description: Gitea admin password (required, prompted if not set).
-  prompt: true
-  sensitive: true
+  name: clusterfactory
+  description: "ClusterFactory — one helm install for working CI/CD, packaged for airgap."
+  version: 0.4.0
+
 components:
-- name: netpol
-  required: true
-  description: "Default-deny ingress except wire\u2192{gitea,jenkins}."
-  manifests:
-  - name: networkpolicy
-    namespace: cicd
-    files:
-    - manifests/networkpolicy.yaml
-- name: gitea-secret
-  required: true
-  description: Pre-create the admin Secret Gitea will use.
-  manifests:
-  - name: gitea-admin
-    namespace: cicd
-    files:
-    - manifests/gitea-admin-secret.yaml
-- name: gitea
-  required: true
-  description: Gitea 1.23.6 as a git server (Actions disabled for the demo).
-  charts:
-  - name: gitea
-    url: https://dl.gitea.com/charts/
-    version: 11.0.1
-    namespace: cicd
-    releaseName: cf-gitea
-    valuesFiles:
-    - values/gitea.yaml
-  images:
-  - docker.gitea.com/gitea:1.23.6-rootless
-- name: jenkins
-  required: true
-  description: Jenkins 2.541.3 LTS as workflow engine (vanilla, no plugins for airgap
-    demo).
-  charts:
-  - name: jenkins
-    url: https://charts.jenkins.io
-    version: 5.9.9
-    namespace: cicd
-    releaseName: cf-jenkins
-    valuesFiles:
-    - values/jenkins.yaml
-  images:
-  - jenkins/jenkins:2.541.3-jdk21
-  - kiwigrid/k8s-sidecar:2.5.0
-- name: platform-spec
-  required: true
-  description: 'Platform spec: components + wiring graph for the engine.'
-  manifests:
-  - name: platform-configmap
-    namespace: cicd
-    files:
-    - manifests/platform-configmap.yaml
-- name: wire
-  required: false
-  description: "Credential wiring: Gitea \u2192 Jenkins (disabled for v0.3 - needs\
-    \ plugins)."
-  manifests:
-  - name: wire-rbac
-    namespace: cicd
-    files:
-    - manifests/wire-rbac.yaml
-  - name: wire-job
-    namespace: cicd
-    files:
-    - manifests/wire-job.yaml
-  actions:
-    onDeploy:
-      after:
-      - description: Print post-install access instructions.
-        cmd: "echo \"\"\necho \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\"\necho \"  clusterfactory-ci is up.\"\necho \"\"\necho\
-          \ \"  Port-forward:\"\necho \"    kubectl port-forward -n cicd svc/cf-gitea-http\
-          \ 3000:3000\"\necho \"    kubectl port-forward -n cicd svc/cf-jenkins 8080:8080\"\
-          \necho \"\"\necho \"  Credentials:\"\necho \"    Gitea:   gitea-admin / <the\
-          \ password you set>\"\necho \"    Jenkins: admin / \\$(kubectl get secret\
-          \ cf-jenkins -n cicd \\\\\"\necho \"              -o jsonpath='{.data.jenkins-admin-password}'\
-          \ | base64 -d)\"\necho \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\"\n"
+  - name: clusterfactory
+    description: "Gitea + optional Jenkins + optional Gitea Actions, wired by post-install Job."
+    required: true
+    charts:
+      - name: clusterfactory
+        version: 0.4.0
+        namespace: cicd
+        localPath: .
+        valuesFiles:
+          - values-airgap.yaml
+    images:
+      # Wire Job and runner init container.
+      - alpine/curl:8.10.0
+      # Gitea Actions runner.
+      - gitea/act_runner:0.2.11
+      # Subchart images — pinned to the versions in values.yaml.
+      # Bump in lockstep with subchart upgrades.
+      - gitea/gitea:1.23.6-rootless
+      - docker.io/jenkins/jenkins:2.541.3-jdk21
+      - docker.io/kiwigrid/k8s-sidecar:2.5.0
+      # Jenkins agents (used by the bootstrap Jenkinsfile).
+      - alpine:3.20
+      - node:20-bookworm

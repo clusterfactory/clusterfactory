@@ -1,136 +1,31 @@
 # Changelog
 
-All notable changes to clusterfactory are documented here.
+## v0.4.0 — clean-room rewrite, bash wiring only
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
-Versioning: [Semantic Versioning](https://semver.org/).
-
-## Unreleased
-
-<!-- PRs add entries here. Released versions move them to a versioned section. -->
-
-## [0.2.0] - 2026-04-05
-
-### Added
-- Kaniko-based container builds — eliminates Docker-in-Docker and privileged
-  containers; runner now spawns ephemeral Kubernetes Jobs for image builds
-- `runner-rbac.yaml` — ServiceAccount, Role, RoleBinding for runner with
-  minimal pod/job permissions for Kaniko job spawning
-- `templates/networkpolicy.yaml` — NetworkPolicy for Gitea and Jenkins ingress;
-  prevents silent wire job failure on default-deny clusters (Calico, Cilium)
-- `networkPolicy.enabled: true` in values.yaml — on by default, safe to disable
-- Release workflow: SBOM generation via Syft (`anchore/sbom-action`), cosign
-  SBOM attestation, SLSA Level 2 provenance via `slsa-github-generator`
-- `on: release: types: [published]` trigger in release.yaml — fixes Scorecard
-  Packaging check
-- `administration: read` permission on Scorecard job — fixes Branch-Protection `?`
-- `docs/kaniko-builds.md` — comprehensive guide for Kaniko usage with Gitea Actions
-- `docs/kaniko-migration.md` — upgrade guide from DinD to Kaniko
+Breaking simplification. The v0.3 Python wire engine was an interesting experiment but added cost without earning it at the current scale (two components, one wire). v0.4.0 reverts to a single bash post-install Job for wiring and treats Zarf as a thin airgap wrapper rather than a primary architectural concern.
 
 ### Changed
-- Runner hardened: `runAsNonRoot`, `readOnlyRootFilesystem`, `drop: ALL`
-  capabilities, `seccompProfile: RuntimeDefault` — passes restricted PSA
-- Runner label changed from `ubuntu-latest:host` / `ubuntu-latest:docker` to
-  `ubuntu-latest:kubernetes` — Kaniko mode
-- `runner.mode` and `runner.dindImage` values removed (breaking change)
-- `runner.capacity` added (default: 2) — configures max concurrent workflow runs
-- `.trivyignore` restructured — all suppressions documented with rationale;
-  "temporary" framing removed; subchart findings separated from intentional accepts
+- Wiring is now a single `files/wire.sh` script, mounted into a post-install Job via ConfigMap. POSIX sh, idempotent, no Python.
+- One user-facing knob: `mode` (`gitea-actions` | `jenkins` | `both`). Subchart enablement and runner enablement are derived.
+- `values.schema.json` validates `mode` and requires `giteaAdmin.password` to be set explicitly. No default password.
+- The wiring receipt (structural sha of `producer:consumer:credential_kind` tuples) is preserved in bash and written to the `cf-wire-result` ConfigMap.
+- CI: integration test now waits for Gitea as a Deployment and Jenkins as a StatefulSet (Gitea v11.x has no StatefulSet template — the v0.3 CI was structurally wrong).
 
 ### Removed
-- Docker-in-Docker sidecar — no privileged containers in any default mode
-- `runner.mode` value (host | dind) — replaced by Kaniko architecture
-- `runner.dindImage` value — no longer needed
-- `KANIKO_REFACTORING.md` from repo root — content moved to docs/
-
-### Breaking changes
-- Workflows using `runs-on: ubuntu-latest` with Docker commands must migrate
-  to Kaniko. See `docs/kaniko-migration.md`.
-- `runner.mode` and `runner.dindImage` values removed — remove from any
-  overrides before upgrading.
-
-## [0.1.8] - 2026-04-03
-
-### Fixed
-- Runner DaemonSet: use NODE_NAME from downward API instead of hostname to
-  prevent ghost runner accumulation on pod restart
-- load.sh: registry mode now retags only bundled images (images.txt) instead
-  of all images in local Docker daemon
-- load.sh: replace deprecated --atomic with --rollback-on-failure
-
-### Removed
-- Generated chart tarballs from repo root (clusterfactory-0.1.4.tgz through
-  0.1.7.tgz) — build artifacts do not belong in source
-
-## [0.1.6] - 2026-04-03
+- Python wire engine and its container image.
+- `wire.engine` value selector.
+- `manifests/platform-configmap.yaml` and other templates that existed only to feed the Python engine.
+- v0.3 design documents that no longer reflect the product (moved to `docs/archive/` if kept at all).
 
 ### Added
-- Helm test jobs (`templates/tests/`) asserting Gitea and Jenkins wiring after install
-- k3d CI pipeline (`.github/workflows/test.yaml`) — full install + helm test on every push/PR
-- Branch protection: `Lint and dry-run` and `Install and test (k3d)` required to merge
+- `docs/composing-platforms.md` — the conventions used here, written as a discipline rather than a standard.
+- `docs/airgap.md` — Zarf packaging and airgap deployment.
+- helm tests that verify functional wiring (org/repo exist, Jenkins job exists, runner registered) rather than just pod readiness.
 
-### Fixed
-- `.helmignore`: exclude packaged `.tgz` artifacts from chart load to prevent Helm release
-  secret exceeding the 1MB Kubernetes limit
+## v0.3.x
 
-## [0.1.5] - 2026-04-03
+v0.3 introduced a Python wire engine with a typed Component abstraction, a structural-sha hasher, and a separate container image. The architecture was sound for a much larger graph; for two components it was overkill. v0.4 keeps the structural-sha idea, drops the rest.
 
-### Added
-- `runner.mode` value (`host` | `dind`) — opt-in Docker-in-Docker sidecar for full
-  container support in CI jobs
-- `runner.dindImage` value (`docker:27-dind`) for airgap override
-- DinD sidecar: `docker:dind` with `privileged` scoped to that container only;
-  readiness probe on port 2375 gates pod ready state
+## v0.2.x
 
-### Changed
-- `runner.labels` removed — labels are now derived from `runner.mode` to prevent
-  host/dind label mismatch
-- `act_runner` image bumped to `nightly`
-- `container.network` in runner config set to `host` when `runner.mode=dind`
-
-## [0.1.4] - 2026-04-03
-
-### Added
-- `persistence` top-level block (`enabled`, `storageClassName`, `size`)
-- Pre-install preflight Job: fails fast with human-readable error when
-  `persistence.enabled=true` but no usable StorageClass is found; lists available
-  classes in the error output
-- Preflight RBAC (ServiceAccount, ClusterRole, ClusterRoleBinding) with hook-weight -11
-
-### Changed
-- `gitea.persistence` and `jenkins.persistence` default to `enabled: false` (emptyDir);
-  eliminates silent PVC-pending hang on clusters with no default StorageClass
-
-### Fixed
-- Preflight RBAC delete policy set to `before-hook-creation` only — `hook-succeeded`
-  on non-Job hook resources fires on apply (not job completion) and deleted RBAC before
-  the preflight pod could use it
-
-## [0.1.3] - 2026-04-02
-
-### Changed
-- Runner state moved from `hostPath` to `emptyDir`
-- Gitea subchart updated to 11.0.1
-- Jenkins subchart updated to 5.9.9
-- Wire job: idempotent token and credential upsert on upgrade
-
-### Added
-- Airgap bundle support via `hack/bundle.sh`
-- Supply chain hardening: LICENSE, SECURITY.md, Dependabot, pinned actions
-- Security scanning: Trivy, OSSF Scorecard, Helm lint
-
-## [0.1.2] - 2026-04-02
-
-### Added
-- hello-world repo: Jenkinsfile and Gitea Actions workflow pushed by wire job
-- GitHub Pages Helm repository
-
-## [0.1.0] - 2026-04-02
-
-### Added
-- Initial release
-- Gitea + Jenkins installed via a single `helm install`
-- Wire job: Gitea org, repo, Jenkinsfile, Actions workflow, Jenkins job and
-  credentials created automatically on install
-- Gitea Actions runner DaemonSet with init container registration flow
-- hello-world pipeline runnable in both Jenkins and Gitea Actions
+Original architecture: Helm chart with bash post-install hook. v0.4.0 returns to this shape.

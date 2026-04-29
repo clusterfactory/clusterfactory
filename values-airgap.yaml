@@ -1,0 +1,21 @@
+# Airgap value overrides applied by Zarf at deploy time.
+#
+# Image pull policies are set to IfNotPresent so the in-cluster mirror Zarf
+# stands up is used. Zarf rewrites image references at deploy time to point
+# at the mirror — these values just disable any "always pull from upstream"
+# behavior in the subcharts.
+
+gitea:
+  image:
+    pullPolicy: IfNotPresent
+  init:
+    image:
+      pullPolicy: IfNotPresent
+
+jenkins:
+  controller:
+    image:
+      pullPolicy: IfNotPresent
+  agent:
+    image:
+      pullPolicy: IfNotPresent

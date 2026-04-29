@@ -1,0 +1,67 @@
+{{- if .Values.preflight.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-preflight
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: preflight
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: preflight
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ .Release.Name }}-preflight
+      containers:
+        - name: preflight
+          image: {{ .Values.wireJob.image | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MIN_K8S_VERSION
+              value: {{ .Values.preflight.minK8sVersion | quote }}
+            - name: MODE
+              value: {{ .Values.mode | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+          command: ["/bin/sh", "-eu", "-c"]
+          args:
+            - |
+              set -eu
+              echo "preflight | mode=${MODE} namespace=${NAMESPACE}"
+
+              # 1. Kubernetes API reachable.
+              KUBE_API="https://kubernetes.default.svc"
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              VERSION_JSON=$(curl -fsS --cacert "$CACERT" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                "${KUBE_API}/version")
+              SERVER_VERSION=$(echo "$VERSION_JSON" | grep -o '"gitVersion":"[^"]*"' | cut -d'"' -f4)
+              echo "preflight | kubernetes ${SERVER_VERSION}"
+
+              # 2. Major.minor satisfies minimum.
+              SERVER_MM=$(echo "$SERVER_VERSION" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/\1.\2/')
+              MIN_MM=$(echo "$MIN_K8S_VERSION" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/\1.\2/')
+              if [ "$(printf '%s\n%s' "$MIN_MM" "$SERVER_MM" | sort -V | head -1)" != "$MIN_MM" ]; then
+                echo "preflight | FAIL: kubernetes ${SERVER_MM} < required ${MIN_MM}"
+                exit 1
+              fi
+              echo "preflight | kubernetes version OK (>= ${MIN_MM})"
+
+              # 3. Mode is one of the allowed values (defense in depth — schema catches it earlier).
+              case "$MODE" in
+                gitea-actions|jenkins|both) ;;
+                *) echo "preflight | FAIL: invalid mode ${MODE}"; exit 1 ;;
+              esac
+
+              echo "preflight | OK"
+{{- end }}

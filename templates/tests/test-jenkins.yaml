@@ -1,0 +1,42 @@
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .Release.Name }}-test-jenkins"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/name: test-jenkins
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: {{ .Values.wireJob.image | quote }}
+      env:
+        - name: JENKINS_URL
+          value: "http://{{ include "clusterfactory.jenkinsService" . }}:8080"
+        - name: JENKINS_USER
+          value: "admin"
+        - name: JENKINS_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "clusterfactory.jenkinsAdminSecret" . }}
+              key: jenkins-admin-password
+        - name: JENKINS_JOB
+          value: {{ .Values.wire.jenkinsJob | quote }}
+      command: ["/bin/sh", "-eu", "-c"]
+      args:
+        - |
+          set -eu
+          echo "test-jenkins | reaching ${JENKINS_URL}"
+          curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
+            "${JENKINS_URL}/api/json" >/dev/null
+          echo "test-jenkins | api OK"
+
+          echo "test-jenkins | verifying job ${JENKINS_JOB} exists"
+          curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
+            "${JENKINS_URL}/job/${JENKINS_JOB}/api/json" >/dev/null
+          echo "test-jenkins | job OK"
+{{- end }}
