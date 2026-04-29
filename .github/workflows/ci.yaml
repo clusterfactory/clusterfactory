@@ -29,6 +29,8 @@ jobs:
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
           helm dependency build .
+          echo "Charts directory contents:"
+          ls -la charts/ || echo "Warning: No charts/ directory created"
 
       - name: Helm lint
         run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true

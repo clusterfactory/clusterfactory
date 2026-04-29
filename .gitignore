@@ -11,3 +11,8 @@ zarf-package-*.tar.zst
 zarf-init-*.tar.zst
 zarf-sbom/
 zarf-tmp/
+
+# Helm dependencies (downloaded at build time)
+charts/
+*.tgz
+Chart.lock
