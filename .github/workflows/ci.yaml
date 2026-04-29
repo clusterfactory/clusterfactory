@@ -28,9 +28,10 @@ jobs:
         run: |
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
-          helm dependency build .
+          helm repo update
+          helm dependency build . || { echo "Dependency build failed"; exit 1; }
           echo "Charts directory contents:"
-          ls -la charts/ || echo "Warning: No charts/ directory created"
+          ls -laR charts/
 
       - name: Helm lint
         run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
@@ -58,6 +59,7 @@ jobs:
         run: |
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
+          helm repo update
           helm dependency build .
 
       - name: Render templates
@@ -139,6 +141,7 @@ jobs:
         run: |
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
+          helm repo update
           helm dependency build .
 
       - name: Install
