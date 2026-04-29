@@ -156,12 +156,20 @@ jobs:
 
       - name: Install
         run: |
+          # Set actions.ENABLED based on mode
+          if [ "${{ matrix.mode }}" = "gitea-actions" ] || [ "${{ matrix.mode }}" = "both" ]; then
+            ACTIONS_FLAG="--set gitea.gitea.config.actions.ENABLED=true"
+          else
+            ACTIONS_FLAG="--set gitea.gitea.config.actions.ENABLED=false"
+          fi
+          
           helm upgrade --install cf . \
             --namespace cicd --create-namespace \
             --timeout 15m \
             --set mode=${{ matrix.mode }} \
             --set jenkins.enabled=${{ matrix.jenkins }} \
-            --set giteaAdmin.password=ci-test-pw-${{ github.run_id }}
+            --set giteaAdmin.password=ci-test-pw-${{ github.run_id }} \
+            $ACTIONS_FLAG
 
       - name: Wait for Gitea Deployment
         run: kubectl -n cicd rollout status deployment/cf-gitea --timeout=5m
