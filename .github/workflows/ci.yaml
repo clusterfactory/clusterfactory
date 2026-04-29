@@ -23,33 +23,18 @@ jobs:
         run: shellcheck -s sh files/wire.sh
 
       - uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'  # Pin to Helm v3 - v4 has breaking changes with dependency handling
 
       - name: Helm dependency build
         run: |
-          set -x
-          helm version
-          helm repo list || true
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
           helm repo update
-          echo "Running helm dependency build..."
           helm dependency build .
-          echo "Dependency build complete"
-          echo "Charts directory contents:"
-          ls -laR charts/
-          echo "Chart.lock contents:"
-          cat Chart.lock || echo "No Chart.lock found"
 
       - name: Helm lint
-        run: |
-          echo "Current directory:"
-          pwd
-          echo "Directory contents:"
-          ls -la
-          echo "Charts directory exists?"
-          ls -la charts/ || echo "Charts directory missing!"
-          echo "Running helm lint..."
-          helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
+        run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
 
   template:
     name: Template (mode=${{ matrix.mode }})
@@ -69,6 +54,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'
 
       - name: Helm dependency build
         run: |
@@ -138,6 +125,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'
 
       - name: Install k3d
         run: |
