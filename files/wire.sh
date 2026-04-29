@@ -233,7 +233,6 @@ jenkins_ensure_job() {
   log "ensuring jenkins job: ${JENKINS_JOB}"
 
   giteaTokenForJenkins="$1"
-  repoUrl="${GITEA_URL}/${ORG}/${REPO}.git"
   # Authenticated clone URL (admin user + token).
   authUrl="http://${GITEA_USER}:${giteaTokenForJenkins}@${GITEA_SVC}:${GITEA_PORT}/${ORG}/${REPO}.git"
 
