@@ -129,6 +129,7 @@ zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zar
 step "zarf deploy"
 zarf package deploy "${PKG}" \
   --confirm \
+  --components=wire \
   --set "GITEA_ADMIN_PASSWORD=${GITEA_ADMIN_PASSWORD}"
 
 # ── 4. assertions ───────────────────────────────────────────────────────────
