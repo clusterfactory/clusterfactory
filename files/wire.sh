@@ -172,15 +172,11 @@ gitea_mint_token() {
 gitea_mint_runner_token() {
   # Mint Gitea Actions runner registration token.
   log "minting runner registration token"
-  resp=$(gitea_curl POST "/api/v1/orgs/${ORG}/actions/runners/registration-token" "")
+  # Try instance-level token (requires admin).
+  resp=$(gitea_curl GET "/api/v1/admin/runners/registration-token" 2>/dev/null || echo "")
   token=$(echo "$resp" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
   if [ -z "$token" ]; then
-    # Fallback: instance-level token (admin only).
-    resp=$(gitea_curl GET "/api/v1/admin/runners/registration-token")
-    token=$(echo "$resp" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-  fi
-  if [ -z "$token" ]; then
-    fail "runner token mint did not return token"
+    fail "runner token mint failed (admin endpoint returned no token)"
   fi
   printf '%s' "$token"
 }
