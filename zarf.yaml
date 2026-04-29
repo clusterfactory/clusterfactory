@@ -79,25 +79,17 @@ components:
   actions:
     onDeploy:
       after:
-      - description: Wait for wire Job to complete.
-        cmd: "kubectl wait --for=condition=complete \\\n  --timeout=10m -n cicd job/cf-wire\n"
-        maxRetries: 0
-      - description: Read and report the structural SHA.
-        cmd: "kubectl get cm -n cicd cf-wire-result \\\n  -o jsonpath='{.data.structural_sha}'\n"
-        setVariables:
-        - name: STRUCTURAL_SHA
       - description: Print post-install access instructions.
         cmd: "echo \"\"\necho \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
           \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
           \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
           \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\"\necho \"  clusterfactory-ci is up.\"\necho \"  Structural\
-          \ SHA: ${STRUCTURAL_SHA}\"\necho \"\"\necho \"  Port-forward:\"\necho \"\
-          \    kubectl port-forward -n cicd svc/cf-gitea-http 3000:3000\"\necho \"\
-          \    kubectl port-forward -n cicd svc/cf-jenkins 8080:8080\"\necho \"\"\n\
-          echo \"  Credentials:\"\necho \"    Gitea:   gitea-admin / <the password\
-          \ you set>\"\necho \"    Jenkins: admin / \\$(kubectl get secret cf-jenkins\
-          \ -n cicd \\\\\"\necho \"              -o jsonpath='{.data.jenkins-admin-password}'\
+          \u2500\u2500\u2500\"\necho \"  clusterfactory-ci is up.\"\necho \"\"\necho\
+          \ \"  Port-forward:\"\necho \"    kubectl port-forward -n cicd svc/cf-gitea-http\
+          \ 3000:3000\"\necho \"    kubectl port-forward -n cicd svc/cf-jenkins 8080:8080\"\
+          \necho \"\"\necho \"  Credentials:\"\necho \"    Gitea:   gitea-admin / <the\
+          \ password you set>\"\necho \"    Jenkins: admin / \\$(kubectl get secret\
+          \ cf-jenkins -n cicd \\\\\"\necho \"              -o jsonpath='{.data.jenkins-admin-password}'\
           \ | base64 -d)\"\necho \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
           \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
           \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\

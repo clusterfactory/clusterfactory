@@ -161,11 +161,19 @@ kc -n "${NS}" wait --for=condition=ready pod \
   || fail "jenkins did not become ready"
 
 step "wait for wire Job"
+yellow "Checking wire Job status..."
+kc -n "${NS}" get job cf-wire -o wide || fail "wire Job not found"
+kc -n "${NS}" get pods -l app.kubernetes.io/name=wire || true
+yellow "Wire Job pod logs (initial):"
+kc -n "${NS}" logs -l app.kubernetes.io/name=wire --tail=50 || true
+
 kc -n "${NS}" wait --for=condition=complete \
   --timeout="${TIMEOUT_WIRE}" job/cf-wire \
   || {
-    yellow "wire Job did not complete; dumping logs:"
-    kc -n "${NS}" logs job/cf-wire --tail=200 || true
+    yellow "wire Job did not complete; dumping full state:"
+    kc -n "${NS}" describe job cf-wire || true
+    kc -n "${NS}" get pods -l app.kubernetes.io/name=wire -o wide || true
+    kc -n "${NS}" logs -l app.kubernetes.io/name=wire --tail=200 || true
     fail "wire Job failed"
   }
 
