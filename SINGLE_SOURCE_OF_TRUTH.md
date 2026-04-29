@@ -1,156 +1,84 @@
-# Single Source of Truth Pattern - Established
+# Single Source of Truth: component versions and dependencies
 
-## Overview
+For each opinionated service in clusterfactory (currently Gitea and Jenkins),
+**one Python module** is the source of truth for:
 
-Established the pattern where `factory/components/<service>.py` is the single source of truth for:
-- Service versions
-- Required dependencies (plugins, extensions, etc.)
-- Configuration requirements
+- Service version (image tag)
+- Required dependencies (plugins, extensions)
+- Configuration the engine assumes is present
 
-This makes upgrades manageable long-term by eliminating scattered version references.
+After v0.3, that module lives at:
 
-## Pattern Implementation
+```
+engine/src/clusterfactory_engine/components/<service>.py
+```
 
-###  Component File (Source of Truth)
-**File**: `factory/components/jenkins.py`
+Anything else that mentions a version — Helm values, Zarf component image
+list, Dockerfile base image — must agree with the component module, and
+disagreements are resolved by editing the module first and reconciling
+downstream.
+
+## Why this pattern
+
+Without it, version constants drift. Helm values say `1.23.6`, Zarf
+bundles `1.23.5`, the Dockerfile pulls `1.24.0`, the Python component
+expects API shapes from `1.22`. By the time someone notices, three teams
+are debugging the same problem.
+
+By contrast: when the constant lives in one place and everything else
+references that place (or is generated from it), an upgrade is "edit one
+file, run `make package`, run `make test-e2e`."
+
+## Where the constants live today
+
+### Jenkins
+
+`engine/src/clusterfactory_engine/components/jenkins.py`:
 
 ```python
-# Jenkins version and plugin requirements
-# This is the single source of truth for Jenkins configuration in clusterfactory
 JENKINS_VERSION = "2.541.3-jdk21"
 PLUGINS = [
-    "plain-credentials",   # Latest version
-    "credentials",         # Latest version
-    "git",                 # Latest version
-    "workflow-aggregator", # Latest version
-    "workflow-job",        # Latest version
+    "plain-credentials",
+    "credentials",
+    "git",
+    "workflow-aggregator",
+    "workflow-job",
 ]
 ```
 
-### Image Dockerfile
-**File**: `images/jenkins/Dockerfile`
+These flow downstream to:
 
-```dockerfile
-FROM jenkins/jenkins:2.541.3-jdk21
+| File | What it pins | How it stays consistent |
+|------|--------------|-------------------------|
+| `zarf.yaml` | `jenkins/jenkins:2.541.3-jdk21` image | Manual; covered by `test_zarf_package.py` drift checks |
+| `values/jenkins.yaml` | chart `controller.image.tag` | Manual |
+| `images/jenkins/Dockerfile` (if a custom image is built) | `FROM jenkins/jenkins:2.541.3-jdk21` and the plugin list | Manual |
 
-# Install plugins matching factory/components/jenkins.py PLUGINS list
-RUN jenkins-plugin-cli --plugins \
-    plain-credentials \
-    credentials \
-    git \
-    workflow-aggregator \
-    workflow-job
-```
+### Gitea
 
-**Note**: Currently manual. Future enhancement: generate from component file.
+`engine/src/clusterfactory_engine/components/gitea.py` carries the
+expected version via the image tag it asserts against. The same pattern
+applies to `zarf.yaml` and `values/gitea.yaml`.
 
-### Makefile Target
-**File**: `Makefile`
+## Upgrading
 
-```makefile
-JENKINS_VERSION ?= 2.541.3-jdk21
+1. Edit the component module — bump `JENKINS_VERSION` (or equivalent).
+2. Update `zarf.yaml` and `values/*.yaml` to match. Run unit tests:
+   `make test-unit` — `test_zarf_package.py` will surface obvious
+   inconsistencies.
+3. Build and run e2e: `make package && make test-e2e`.
+4. Tag and release.
 
-jenkins-image:  ## Build Jenkins image with pre-installed plugins
-docker build -t clusterfactory/jenkins-cf:$(JENKINS_VERSION) images/jenkins/
-```
+## Future: generate downstream pins from the component module
 
-### Zarf Package
-**File**: `zarf.yaml`
+Today step 2 is manual. The intended evolution is a Makefile target that
+reads the constants from the Python module and writes the corresponding
+lines into `zarf.yaml` and `values/*.yaml` — turning manual reconciliation
+into a generated artifact. That's a v0.4 task; the contract for now is
+"edit the module, sync the rest, let the unit tests catch you."
 
-```yaml
-components:
-  - name: jenkins
-    images:
-      - clusterfactory/jenkins-cf:2.541.3-jdk21  # Custom image
-      - kiwigrid/k8s-sidecar:2.5.0
-```
+## Note
 
-### Helm Values
-**File**: `values/jenkins.yaml`
-
-```yaml
-controller:
-  image:
-    repository: clusterfactory/jenkins-cf
-    tag: 2.541.3-jdk21
-  installPlugins: []  # Pre-installed in custom image
-```
-
-## Upgrade Process
-
-When upgrading Jenkins (e.g., to 2.542.0-jdk21):
-
-1. **Update component file** (single change):
-   ```python
-   # factory/components/jenkins.py
-   JENKINS_VERSION = "2.542.0-jdk21"
-   PLUGINS = [...]  # Update if needed
-   ```
-
-2. **Update Dockerfile base image**:
-   ```dockerfile
-   FROM jenkins/jenkins:2.542.0-jdk21
-   ```
-
-3. **Rebuild**:
-   ```bash
-   make jenkins-image
-   make package
-   make deploy
-   ```
-
-That's it! No hunting through multiple files for version references.
-
-## Benefits
-
-✅ **Single source of truth**: Component file defines requirements  
-✅ **Easy upgrades**: Change one constant, rebuild  
-✅ **Versioned together**: Code knows what it needs  
-✅ **Airgap-ready**: Plugins baked into image  
-✅ **No manual edits**: zarf.yaml references are consistent  
-
-## Future Enhancements
-
-### Generate Dockerfile from Component
-**Option 1**: Python script reads component, writes Dockerfile  
-**Option 2**: Template Dockerfile with placeholder, substitute at build  
-**Option 3**: Makefile generates Dockerfile dynamically  
-
-Example Makefile target:
-```makefile
-generate-jenkins-dockerfile:
-python3 -c "from factory.components.jenkins import JENKINS_VERSION, PLUGINS; \
-print(f'FROM jenkins/jenkins:{JENKINS_VERSION}'); \
-print('RUN jenkins-plugin-cli --plugins ' + ' '.join(PLUGINS))" \
-> images/jenkins/Dockerfile.generated
-```
-
-### Version File
-Create `VERSION` or `.version` file:
-```
-JENKINS_VERSION=2.541.3-jdk21
-GITEA_VERSION=1.23.6-rootless
-```
-
-Read in Makefile, component files, Dockerfiles.
-
-## Current Status
-
-- ✅ Pattern established
-- ✅ Jenkins component constants defined
-- ✅ Custom image Dockerfile created
-- ✅ Makefile target added
-- ✅ zarf.yaml updated
-- ✅ values/jenkins.yaml updated
-- ⏳ Package rebuild in progress (images ready)
-
-## Files Changed
-
-```
-factory/components/jenkins.py  # Added JENKINS_VERSION, PLUGINS constants
-images/jenkins/Dockerfile      # Created custom Jenkins image
-Makefile                       # Added jenkins-image target
-zarf.yaml                      # Updated to use custom image
-values/jenkins.yaml            # Updated repository and tag
-```
-
+A previous version of this document referenced `factory/components/*.py`
+as the SSOT location. That tree was the pre-Zarf scaffolding and was
+removed during the v0.3 cleanup; see `refactor-to-zarf.md` for the move.

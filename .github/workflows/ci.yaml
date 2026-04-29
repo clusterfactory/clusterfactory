@@ -1,0 +1,95 @@
+name: ci
+
+on:
+  push:
+    branches: [main, v0.3]
+  pull_request:
+    branches: [main, v0.3]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── unit: fast, no cluster, runs on every push ────────────────────────────
+  unit:
+    name: Unit tests (engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: engine/requirements.txt
+
+      - name: Install engine + dev deps
+        working-directory: engine
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: pytest
+        working-directory: engine
+        run: python -m pytest tests/unit/ -ra --tb=short
+
+      - name: pylint (non-blocking)
+        working-directory: engine
+        run: |
+          python -m pylint src/clusterfactory_engine/ \
+            --disable=missing-docstring,too-few-public-methods \
+            --exit-zero
+
+  # ── lint zarf.yaml + manifests ────────────────────────────────────────────
+  zarf-lint:
+    name: Zarf + manifest lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install zarf
+        run: |
+          curl -sL https://github.com/defenseunicorns/zarf/releases/download/v0.42.1/zarf_v0.42.1_Linux_amd64 -o zarf
+          sudo install -m 0755 zarf /usr/local/bin/zarf
+          zarf version
+
+      - name: zarf dev lint
+        run: zarf dev lint . || echo "::warning::zarf dev lint reported issues"
+
+      - name: Validate platform.yaml is parseable
+        run: python -c "import yaml; yaml.safe_load(open('platform.yaml'))"
+
+  # ── e2e: airgap install on k3d (slower; full proof of the demo goal) ──────
+  e2e:
+    name: E2E airgap install
+    runs-on: ubuntu-latest
+    needs: [unit, zarf-lint]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install k3d
+        run: |
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      - name: Install zarf
+        run: |
+          curl -sL https://github.com/defenseunicorns/zarf/releases/download/v0.42.1/zarf_v0.42.1_Linux_amd64 -o zarf
+          sudo install -m 0755 zarf /usr/local/bin/zarf
+
+      - name: Install helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
+
+      - name: Run airgap install test
+        env:
+          GITEA_ADMIN_PASSWORD: ci-test-pw-${{ github.run_id }}
+          K3D_CLUSTER: cf-ci
+        run: bash engine/tests/integration/test_airgap_install.sh
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          kubectl --context k3d-cf-ci -n cicd get all || true
+          kubectl --context k3d-cf-ci -n cicd describe job/cf-wire || true
+          kubectl --context k3d-cf-ci -n cicd logs job/cf-wire --tail=500 || true
