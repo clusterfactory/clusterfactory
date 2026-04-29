@@ -32,6 +32,8 @@ jobs:
           helm repo add jenkins https://charts.jenkins.io
           helm repo update
           helm dependency build .
+          # Helm v3.16+ with --strict requires extracted charts, not just .tgz
+          cd charts && tar -xzf gitea-11.0.1.tgz && tar -xzf jenkins-5.9.9.tgz && cd ..
 
       - name: Helm lint
         run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
