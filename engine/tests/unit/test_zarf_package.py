@@ -72,12 +72,15 @@ def test_platform_spec_configmap_is_packaged(zarf):
     assert "platform-spec" in comps
 
 
-def test_wire_component_runs_after_install_and_emits_sha(zarf):
-    """The wire Job must run on deploy and surface the structural SHA, or the
-    airgap promise is unprovable."""
+def test_wire_component_deploys_job_manifest(zarf):
+    """The wire Job manifest must be packaged so it can be deployed.
+    The integration test handles waiting and validation."""
     comps = _components(zarf)
     assert "wire" in comps, "zarf.yaml must declare a wire component"
-    actions = comps["wire"].get("actions", {}).get("onDeploy", {}).get("after", [])
-    cmds = " ".join(a.get("cmd", "") for a in actions)
-    assert "cf-wire" in cmds, "deploy actions must wait on the wire Job"
-    assert "structural_sha" in cmds, "deploy must surface the structural SHA"
+    wire = comps["wire"]
+    
+    # Check that wire manifests are included
+    manifests = wire.get("manifests", [])
+    manifest_names = [m["name"] for m in manifests]
+    assert "wire-rbac" in manifest_names, "wire component must include RBAC"
+    assert "wire-job" in manifest_names, "wire component must include the Job manifest"
