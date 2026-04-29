@@ -26,12 +26,19 @@ jobs:
 
       - name: Helm dependency build
         run: |
+          set -x
+          helm version
+          helm repo list || true
           helm repo add gitea https://dl.gitea.com/charts/
           helm repo add jenkins https://charts.jenkins.io
           helm repo update
-          helm dependency build . || { echo "Dependency build failed"; exit 1; }
+          echo "Running helm dependency build..."
+          helm dependency build .
+          echo "Dependency build complete"
           echo "Charts directory contents:"
           ls -laR charts/
+          echo "Chart.lock contents:"
+          cat Chart.lock || echo "No Chart.lock found"
 
       - name: Helm lint
         run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
