@@ -26,15 +26,17 @@ rules:
     resources: ["secrets"]
     verbs: ["get"]
     resourceNames: [{{ include "clusterfactory.giteaAdminSecret" . | quote }}, {{ include "clusterfactory.jenkinsAdminSecret" . | quote }}]
-  # Upsert runner registration token secret.
+  # Upsert runner registration token secret and result configmap.
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["create"]
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "create", "patch", "update"]
+    verbs: ["get", "patch", "update"]
     resourceNames: ["{{ .Release.Name }}-runner-reg-token"]
-  # Upsert result configmap.
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "create", "patch", "update"]
+    verbs: ["get", "patch", "update"]
     resourceNames: ["{{ .Release.Name }}-wire-result"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
