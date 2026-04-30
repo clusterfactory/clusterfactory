@@ -27,6 +27,20 @@ helm install cf . -n cicd --create-namespace [your-flags]
 
 This provides a clean state and speeds up debugging significantly. Don't waste time debugging stale state.
 
+### CI/CD Workflow Monitoring
+
+**After every push, monitor GitHub Actions automatically:**
+
+1. Check workflow status: Visit https://github.com/clusterfactory/clusterfactory/actions
+2. If any job fails:
+   - Click into the failed job
+   - Read the error output carefully
+   - Copy the FULL error message (not just the summary)
+   - Fix the issue locally using the debugging workflow above
+   - Test the fix locally with `k3d cluster delete && create`
+   - Only push when local tests pass
+3. **Act immediately on failures** - don't wait for user to report them
+
 ## Chart Development Guidelines
 
 ### Testing Locally
