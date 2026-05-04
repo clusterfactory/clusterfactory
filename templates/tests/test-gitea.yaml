@@ -34,6 +34,13 @@ spec:
       args:
         - |
           set -eu
+          
+          # Install curl if missing (alpine:3.21 base doesn't have it)
+          if ! command -v curl >/dev/null 2>&1; then
+            echo "Installing curl..."
+            apk add --no-cache curl >/dev/null 2>&1
+          fi
+          
           echo "test-gitea | reaching ${GITEA_URL}"
           curl -fsS "${GITEA_URL}/api/healthz" >/dev/null
           echo "test-gitea | healthz OK"

@@ -30,6 +30,13 @@ spec:
       args:
         - |
           set -eu
+          
+          # Install curl if missing (alpine:3.21 base doesn't have it)
+          if ! command -v curl >/dev/null 2>&1; then
+            echo "Installing curl..."
+            apk add --no-cache curl >/dev/null 2>&1
+          fi
+          
           echo "test-jenkins | reaching ${JENKINS_URL}"
           curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
             "${JENKINS_URL}/api/json" >/dev/null
