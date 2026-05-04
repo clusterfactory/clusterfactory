@@ -210,11 +210,33 @@ gitea_ensure_webhook() {
 
 jenkins_curl() {
   method="$1"; path="$2"; body="${3:-}"
+  
+  # Use a cookie jar to maintain session
+  cookie_jar="/tmp/jenkins-cookies.txt"
+  
+  # Get CSRF crumb for POST/PUT/DELETE requests
+  if [ "$method" != "GET" ]; then
+    crumb_response=$(curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
+      -c "$cookie_jar" \
+      "${JENKINS_URL}/crumbIssuer/api/json" 2>/dev/null || echo '{}')
+    crumb=$(echo "$crumb_response" | jq -r '.crumb // empty')
+    crumb_field=$(echo "$crumb_response" | jq -r '.crumbRequestField // "Jenkins-Crumb"')
+  fi
+  
   if [ -n "$body" ]; then
-    curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
-      -H "Content-Type: application/xml" \
-      -X "$method" "${JENKINS_URL}${path}" \
-      --data "$body"
+    if [ -n "$crumb" ]; then
+      curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
+        -b "$cookie_jar" -c "$cookie_jar" \
+        -H "Content-Type: application/xml" \
+        -H "${crumb_field}: ${crumb}" \
+        -X "$method" "${JENKINS_URL}${path}" \
+        --data "$body"
+    else
+      curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
+        -H "Content-Type: application/xml" \
+        -X "$method" "${JENKINS_URL}${path}" \
+        --data "$body"
+    fi
   else
     curl -fsS -u "${JENKINS_USER}:${JENKINS_PASS}" \
       -X "$method" "${JENKINS_URL}${path}"
