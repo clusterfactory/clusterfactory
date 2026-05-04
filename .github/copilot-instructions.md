@@ -2,64 +2,92 @@
 
 ## Critical Debugging Workflow
 
+### ALWAYS Nuke k3d Cluster Between Operations
+
+**DO NOT delete namespaces - NUKE the entire cluster:**
+
+```bash
+# Wrong way (leaves state, causes issues):
+helm uninstall cf -n cicd
+kubectl delete ns cicd
+
+# RIGHT WAY - nuke cluster completely:
+k3d cluster delete test
+k3d cluster create test --wait
+# Now install fresh - clean slate, no stale state
+```
+
+**Why nuke?**
+- Deleting namespaces is slow (30+ seconds waiting for termination)
+- Can leave orphaned resources, finalizers, stuck pods
+- k3d cluster recreate is FASTER (20-30 seconds total)
+- Guarantees clean state - no debugging phantom issues
+
+### NEVER Push to Remote Without Local k3d Testing
+
+**Rule: Test ALL install modes locally on k3d BEFORE pushing to GitHub**
+
+```bash
+# Test all 3 modes before any git push:
+
+# 1. Test jenkins mode
+k3d cluster delete test && k3d cluster create test --wait
+helm install cf . -n cicd --create-namespace \
+  --set mode=jenkins \
+  --set jenkins.enabled=true \
+  --set gitea.gitea.config.actions.ENABLED=false \
+  --set giteaAdmin.password=testpass123 \
+  --set jenkinsAdmin.password=testpass123 \
+  --timeout=10m
+# Wait ~5min, check: kubectl -n cicd get pods,job
+# Verify wire job completes successfully
+
+# 2. Test gitea-actions mode  
+k3d cluster delete test && k3d cluster create test --wait
+helm install cf . -n cicd --create-namespace \
+  --set mode=gitea-actions \
+  --set jenkins.enabled=false \
+  --set gitea.gitea.config.actions.ENABLED=true \
+  --set giteaAdmin.password=testpass123 \
+  --timeout=10m
+# Wait ~2min, check: kubectl -n cicd get pods,job
+# Verify wire job completes successfully
+
+# 3. Test both mode
+k3d cluster delete test && k3d cluster create test --wait
+helm install cf . -n cicd --create-namespace \
+  --set mode=both \
+  --set jenkins.enabled=true \
+  --set gitea.gitea.config.actions.ENABLED=true \
+  --set giteaAdmin.password=testpass123 \
+  --set jenkinsAdmin.password=testpass123 \
+  --timeout=10m
+# Wait ~5min, check: kubectl -n cicd get pods,job
+# Verify wire job completes successfully
+
+# ONLY push to GitHub after ALL 3 modes work locally:
+git add -A && git commit -m "..." && git push
+```
+
 ### Fast Iteration Loop (< 30 seconds)
 
 **USE THIS for quick checks - DON'T wait 5+ minutes for installs:**
 
 ```bash
 # Quick status check (instant)
-./quick-check.sh
+kubectl -n cicd get pods,job
 
 # If something looks broken, check immediately
-kubectl -n cicd get pods              # See what's running NOW
 kubectl -n cicd describe pod <name>   # Why is it failing?
 kubectl -n cicd logs <pod-name>       # What's the error?
 
 # Fix and re-test without waiting
-helm uninstall cf -n cicd
+k3d cluster delete test && k3d cluster create test --wait
 helm install cf . -n cicd --create-namespace [your-flags]
-./quick-check.sh                      # Check status instantly
+kubectl -n cicd get pods,job          # Check status instantly
 ```
 
-**Key principle: Check pods immediately, don't wait for timeouts!**
-
-### After Running Helm Install
-
-**Check status IMMEDIATELY** (don't wait 5 minutes):
-
-```bash
-# Instant status (shows what's actually deployed)
-./quick-check.sh
-
-# Or manual check
-kubectl -n cicd get pods,job,statefulsets,deployments
-```
-
-If there are issues:
-1. **Check pod status first**: `kubectl -n cicd get pods` - is it Running/Pending/CrashLoopBackOff?
-2. **Check logs immediately**: `kubectl -n cicd logs <pod-name>`
-3. **Check events**: `kubectl -n cicd get events --sort-by='.lastTimestamp'`
-4. **Describe failing resources**: `kubectl -n cicd describe pod <pod-name>`
-
-### When Encountering Unclear Errors
-
-**FIRST OPTION: Nuke and recreate k3d cluster** (30 seconds total)
-
-```bash
-k3d cluster delete test
-k3d cluster create test --wait
-# Now re-test - clean state, no stale resources
-```
-
-**SECOND OPTION: Quick namespace cleanup** (5 seconds)
-
-```bash
-helm uninstall cf -n cicd
-kubectl delete ns cicd
-# Faster than cluster recreation, good for most issues
-```
-
-This provides a clean state and speeds up debugging significantly. Don't waste time debugging stale state or waiting for long timeouts.
+**Key principle: Nuke cluster between tests, check pods immediately, test all modes before push!**
 
 ### CI/CD Workflow Monitoring
 

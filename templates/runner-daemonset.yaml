@@ -28,6 +28,13 @@ spec:
           args:
             - |
               set -eu
+              
+              # Install curl if missing
+              if ! command -v curl >/dev/null 2>&1; then
+                echo "Installing curl..."
+                apk add --no-cache curl >/dev/null 2>&1
+              fi
+              
               KUBE_API="https://kubernetes.default.svc"
               TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
               CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
