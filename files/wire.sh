@@ -19,7 +19,7 @@
 #   JENKINS_JOB       Jenkins job name (only used when jenkins enabled)
 #   JENKINSFILE_B64   base64 of the Jenkinsfile (mounted via ConfigMap)
 
-set -euo pipefail
+set -eu
 
 # ── install dependencies if missing ──────────────────────────────────────────
 if ! command -v curl >/dev/null 2>&1; then
