@@ -36,6 +36,13 @@ spec:
           args:
             - |
               set -eu
+              
+              # Install dependencies if missing
+              if ! command -v curl >/dev/null 2>&1; then
+                echo "Installing curl..."
+                apk add --no-cache curl >/dev/null 2>&1
+              fi
+              
               echo "preflight | mode=${MODE} namespace=${NAMESPACE}"
 
               # 1. Kubernetes API reachable.

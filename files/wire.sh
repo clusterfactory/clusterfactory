@@ -18,6 +18,19 @@
 #   REPO_DESCRIPTION  Gitea repo description
 #   JENKINS_JOB       Jenkins job name (only used when jenkins enabled)
 #   JENKINSFILE_B64   base64 of the Jenkinsfile (mounted via ConfigMap)
+
+set -euo pipefail
+
+# ── install dependencies if missing ──────────────────────────────────────────
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Installing curl..."
+  apk add --no-cache curl >/dev/null 2>&1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "Installing jq..."
+  apk add --no-cache jq >/dev/null 2>&1
+fi
 #   WORKFLOW_B64      base64 of the Gitea Actions workflow (mounted via ConfigMap)
 #   RUNNER_SECRET     Name of the secret to write the runner registration token into
 #   NAMESPACE         Release namespace (used for kubectl-style API calls)
@@ -62,7 +75,7 @@ record_wire() {
 # ── readiness ─────────────────────────────────────────────────────────────
 
 wait_for_url() {
-  url="$1"; name="$2"; max=60
+  url="$1"; name="$2"; max=120
   i=0
   while [ "$i" -lt "$max" ]; do
     if curl -fsS -o /dev/null --max-time 5 "$url"; then
@@ -150,20 +163,16 @@ gitea_mint_token() {
   log "minting token: ${name}"
   # List tokens, find by name, delete if present.
   tokens_json=$(gitea_curl GET "/api/v1/users/${GITEA_USER}/tokens" || echo '[]')
-  existing_id=$(echo "$tokens_json" \
-    | tr ',' '\n' \
-    | awk -v n="$name" '
-        /"name"[[:space:]]*:/ { gsub(/.*"name"[[:space:]]*:[[:space:]]*"/, ""); gsub(/".*/, ""); cur=$0 }
-        /"id"[[:space:]]*:/   { gsub(/.*"id"[[:space:]]*:[[:space:]]*/, ""); gsub(/[^0-9].*/, ""); if (cur==n) print $0 }
-      ' | head -1)
+  existing_id=$(echo "$tokens_json" | jq -r ".[] | select(.name == \"${name}\") | .id")
   if [ -n "$existing_id" ]; then
     log "revoking prior token id=${existing_id}"
     gitea_curl_soft DELETE "/api/v1/users/${GITEA_USER}/tokens/${existing_id}" >/dev/null
   fi
   resp=$(gitea_curl POST "/api/v1/users/${GITEA_USER}/tokens" \
     "{\"name\":\"${name}\",\"scopes\":[\"write:repository\",\"write:user\",\"write:organization\"]}")
-  token=$(echo "$resp" | grep -o '"sha1":"[^"]*"' | cut -d'"' -f4)
-  if [ -z "$token" ]; then
+  token=$(echo "$resp" | jq -r '.sha1')
+  if [ -z "$token" ] || [ "$token" = "null" ]; then
+    log "ERROR: Token creation response: ${resp}"
     fail "token mint did not return sha1"
   fi
   printf '%s' "$token"
@@ -174,8 +183,8 @@ gitea_mint_runner_token() {
   log "minting runner registration token"
   # Use repo-level token (works with non-admin after repo is created).
   resp=$(gitea_curl GET "/api/v1/repos/${ORG}/${REPO}/actions/runners/registration-token")
-  token=$(echo "$resp" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-  if [ -z "$token" ]; then
+  token=$(echo "$resp" | jq -r '.token')
+  if [ -z "$token" ] || [ "$token" = "null" ]; then
     fail "runner token mint failed"
   fi
   printf '%s' "$token"
@@ -187,12 +196,7 @@ gitea_ensure_webhook() {
   target="$1"
   log "ensuring webhook → ${target}"
   hooks_json=$(gitea_curl GET "/api/v1/repos/${ORG}/${REPO}/hooks" || echo '[]')
-  existing_id=$(echo "$hooks_json" \
-    | tr ',' '\n' \
-    | awk -v u="$target" '
-        /"url"[[:space:]]*:/ { gsub(/.*"url"[[:space:]]*:[[:space:]]*"/, ""); gsub(/".*/, ""); cur=$0 }
-        /"id"[[:space:]]*:/  { gsub(/.*"id"[[:space:]]*:[[:space:]]*/, ""); gsub(/[^0-9].*/, ""); if (cur==u) print $0 }
-      ' | head -1)
+  existing_id=$(echo "$hooks_json" | jq -r ".[] | select(.config.url == \"${target}\") | .id")
   if [ -n "$existing_id" ]; then
     log "removing prior webhook id=${existing_id}"
     gitea_curl_soft DELETE "/api/v1/repos/${ORG}/${REPO}/hooks/${existing_id}" >/dev/null
@@ -342,10 +346,10 @@ JSON
 upsert_result_configmap() {
   # $1=structural_sha $2=mode $3=wires-newline-list
   sha="$1"; mode="$2"; wires="$3"
-  # Escape newlines in wires for JSON.
-  wires_json=$(printf '%s' "$wires" | awk 'BEGIN{ORS="\\n"} {print}')
+  # Escape newlines in wires for JSON using jq.
+  wires_json=$(printf '%s' "$wires" | jq -Rs .)
   body=$(cat <<JSON
-{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"${RESULT_CONFIGMAP}"},"data":{"structural_sha":"${sha}","mode":"${mode}","wires":"${wires_json}"}}
+{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"${RESULT_CONFIGMAP}"},"data":{"structural_sha":"${sha}","mode":"${mode}","wires":${wires_json}}}
 JSON
 )
   code=$(k8s_curl_soft GET "/api/v1/namespaces/${NAMESPACE}/configmaps/${RESULT_CONFIGMAP}")

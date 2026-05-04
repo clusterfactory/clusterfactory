@@ -20,6 +20,33 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ .Release.Name }}-wire
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+      initContainers:
+        - name: wait-for-jenkins
+          image: {{ .Values.wireJob.image | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Install curl if missing
+              if ! command -v curl >/dev/null 2>&1; then
+                echo "Installing curl..."
+                apk add --no-cache curl >/dev/null 2>&1
+              fi
+              
+              echo "Waiting for Jenkins to be ready..."
+              max=120
+              i=0
+              while [ "$i" -lt "$max" ]; do
+                if curl -fsS -o /dev/null --max-time 5 "http://{{ include "clusterfactory.jenkinsService" . }}:8080/login"; then
+                  echo "Jenkins is ready!"
+                  exit 0
+                fi
+                i=$((i + 1))
+                sleep 5
+              done
+              echo "Timeout waiting for Jenkins after $((max * 5)) seconds"
+              exit 1
+{{- end }}
       volumes:
         - name: script
           configMap:

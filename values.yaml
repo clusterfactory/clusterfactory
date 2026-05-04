@@ -53,7 +53,6 @@ gitea:
       server:
         PROTOCOL: http
         HTTP_PORT: 3000
-      # actions.ENABLED is templated by _mode-helpers — true for gitea-actions/both, false for jenkins
   persistence:
     enabled: false   # demo: emptyDir. Override for real deployments.
   service:
@@ -87,7 +86,7 @@ jenkins:
       - kubernetes:4253.v7700d91739e5
       - workflow-aggregator:600.vb_57cdd26fdd7
       - git:5.5.2
-      - configuration-as-code:1850.va_a_8c31d3158b_
+      - configuration-as-code:2053.vb_0da_47381a_25
       - gitea:1.4.7
     resources:
       requests:
@@ -120,7 +119,7 @@ runner:
 
 # ── wire job ──────────────────────────────────────────────────────────────
 wireJob:
-  image: alpine/curl:8.10.0   # has curl, sh, base64. ~10MB.
+  image: alpine:3.21   # has apk, sh, base64. Will install curl and jq. ~8MB.
   # Used by Zarf for image discovery — same image is also referenced by runner above.
 
 # ── network policy ────────────────────────────────────────────────────────
