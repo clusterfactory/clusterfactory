@@ -2,30 +2,64 @@
 
 ## Critical Debugging Workflow
 
-### After Running Helm Install
+### Fast Iteration Loop (< 30 seconds)
 
-**ALWAYS** check Kubernetes status immediately after `helm install`:
+**USE THIS for quick checks - DON'T wait 5+ minutes for installs:**
 
 ```bash
-kubectl -n cicd get pods,job
+# Quick status check (instant)
+./quick-check.sh
+
+# If something looks broken, check immediately
+kubectl -n cicd get pods              # See what's running NOW
+kubectl -n cicd describe pod <name>   # Why is it failing?
+kubectl -n cicd logs <pod-name>       # What's the error?
+
+# Fix and re-test without waiting
+helm uninstall cf -n cicd
+helm install cf . -n cicd --create-namespace [your-flags]
+./quick-check.sh                      # Check status instantly
+```
+
+**Key principle: Check pods immediately, don't wait for timeouts!**
+
+### After Running Helm Install
+
+**Check status IMMEDIATELY** (don't wait 5 minutes):
+
+```bash
+# Instant status (shows what's actually deployed)
+./quick-check.sh
+
+# Or manual check
+kubectl -n cicd get pods,job,statefulsets,deployments
 ```
 
 If there are issues:
-1. Check pod logs: `kubectl -n cicd logs <pod-name>`
-2. Check events: `kubectl -n cicd get events --sort-by='.lastTimestamp'`
-3. Describe failing resources: `kubectl -n cicd describe pod <pod-name>`
+1. **Check pod status first**: `kubectl -n cicd get pods` - is it Running/Pending/CrashLoopBackOff?
+2. **Check logs immediately**: `kubectl -n cicd logs <pod-name>`
+3. **Check events**: `kubectl -n cicd get events --sort-by='.lastTimestamp'`
+4. **Describe failing resources**: `kubectl -n cicd describe pod <pod-name>`
 
 ### When Encountering Unclear Errors
 
-**FIRST OPTION: Nuke and recreate k3d cluster**
+**FIRST OPTION: Nuke and recreate k3d cluster** (30 seconds total)
 
 ```bash
 k3d cluster delete test
 k3d cluster create test --wait
-helm install cf . -n cicd --create-namespace [your-flags]
+# Now re-test - clean state, no stale resources
 ```
 
-This provides a clean state and speeds up debugging significantly. Don't waste time debugging stale state.
+**SECOND OPTION: Quick namespace cleanup** (5 seconds)
+
+```bash
+helm uninstall cf -n cicd
+kubectl delete ns cicd
+# Faster than cluster recreation, good for most issues
+```
+
+This provides a clean state and speeds up debugging significantly. Don't waste time debugging stale state or waiting for long timeouts.
 
 ### CI/CD Workflow Monitoring
 
