@@ -50,7 +50,19 @@ jobs:
           helm repo update
 
       - name: Build Helm dependencies
-        run: helm dependency build .
+        run: |
+          helm dependency build .
+          
+          # Extract chart tarballs (Zarf requires extracted directories)
+          cd charts
+          for tgz in *.tgz; do
+            [ -f "$tgz" ] || continue
+            tar -xzf "$tgz"
+          done
+          cd ..
+          
+          echo "Charts directory contents:"
+          ls -la charts/
 
       # Cache the Zarf package based on inputs that determine its contents
       - name: Cache Zarf package
