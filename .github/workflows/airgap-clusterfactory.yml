@@ -255,20 +255,14 @@ jobs:
             --tunnel-through-iap \
             --ssh-flag="-o StrictHostKeyChecking=no" \
             --command='
-              newgrp docker <<DOCKER
               set -euo pipefail
               
               echo "=== Creating k3d cluster ==="
-              k3d cluster create cf-airgap \
-                --no-lb \
-                --k3s-arg "--disable=traefik@server:0" \
-                --wait \
-                --timeout 120s
+              sudo -u $USER sg docker -c "k3d cluster create cf-airgap --no-lb --k3s-arg \"--disable=traefik@server:0\" --wait --timeout 120s"
               
               echo "=== Cluster info ==="
-              kubectl cluster-info
-              kubectl get nodes
-              DOCKER
+              sudo -u $USER sg docker -c "kubectl cluster-info"
+              sudo -u $USER sg docker -c "kubectl get nodes"
             '
 
       # ── Download zarf-init package ────────────────────────────────────────
@@ -330,17 +324,13 @@ jobs:
             --tunnel-through-iap \
             --ssh-flag="-o StrictHostKeyChecking=no" \
             --command='
-              newgrp docker <<DOCKER
               set -euo pipefail
               
               echo "=== Zarf init ==="
-              zarf init \
-                --confirm \
-                --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector
+              sudo -u $USER sg docker -c "zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector"
               
               echo "=== Zarf namespace pods ==="
-              kubectl -n zarf get pods
-              DOCKER
+              sudo -u $USER sg docker -c "kubectl -n zarf get pods"
             '
 
       # ── Zarf package deploy ───────────────────────────────────────────────
@@ -351,19 +341,15 @@ jobs:
             --tunnel-through-iap \
             --ssh-flag="-o StrictHostKeyChecking=no" \
             --command="
-              newgrp docker <<DOCKER
               set -euo pipefail
               
               PACKAGE=\$(ls ~/zarf-package-clusterfactory-*.tar.zst | head -1)
               echo \"=== Deploying: \${PACKAGE} ===\"
               
-              zarf package deploy \"\${PACKAGE}\" \
-                --confirm \
-                --set GITEA_ADMIN_PASSWORD='${{ secrets.GITEA_ADMIN_PASSWORD }}'
+              sudo -u \$USER sg docker -c \"zarf package deploy \${PACKAGE} --confirm --set GITEA_ADMIN_PASSWORD='${{ secrets.GITEA_ADMIN_PASSWORD }}'\"
               
               echo \"=== ClusterFactory namespace pods ===\"
-              kubectl -n cicd get pods
-              DOCKER
+              sudo -u \$USER sg docker -c \"kubectl -n cicd get pods\"
             "
 
       # ── Assertions ─────────────────────────────────────────────────────────
@@ -374,11 +360,14 @@ jobs:
             --tunnel-through-iap \
             --ssh-flag="-o StrictHostKeyChecking=no" \
             --command='
-              newgrp docker <<DOCKER
               set -euo pipefail
-              kc() { kubectl --context k3d-cf-airgap "$@"; }
+              
+              # Run all kubectl commands with docker group access
+              run_kubectl() {
+                sudo -u $USER sg docker -c "kubectl --context k3d-cf-airgap $*"
+              }
+              
               PASS=0; FAIL=0
-
               ok()   { echo "OK:   $*";  PASS=$((PASS+1)); }
               fail() { echo "FAIL: $*";  FAIL=$((FAIL+1)); }
 
@@ -386,13 +375,13 @@ jobs:
 
               # ── 1. Wire Job completed ────────────────────────────────────────────
               echo "--- 1. Checking wire Job completion ---"
-              kc -n cicd wait --for=condition=complete --timeout=10m job/cf-wire \
+              run_kubectl -n cicd wait --for=condition=complete --timeout=10m job/cf-wire \
                 && ok "wire Job completed" \
                 || fail "wire Job did not complete"
 
               # ── 2. Structural SHA is a 64-char hex string ────────────────────────
               echo "--- 2. Checking structural SHA ---"
-              SHA=$(kc -n cicd get configmap cf-wire-result \
+              SHA=$(run_kubectl -n cicd get configmap cf-wire-result \
                 -o jsonpath="{.data.structural_sha}" 2>/dev/null || true)
               [ ${#SHA} -eq 64 ] \
                 && ok "structural_sha=${SHA}" \
@@ -400,7 +389,7 @@ jobs:
 
               # ── 3. Gitea org exists ──────────────────────────────────────────────
               echo "--- 3. Checking Gitea org ---"
-              kc -n cicd port-forward svc/cf-gitea-http 3000:3000 >/dev/null 2>&1 &
+              run_kubectl -n cicd port-forward svc/cf-gitea-http 3000:3000 >/dev/null 2>&1 &
               PF=$!
               sleep 4
 
@@ -427,10 +416,10 @@ jobs:
 
               # ── 6. Jenkins credential present ───────────────────────────────────
               echo "--- 6. Checking Jenkins credential ---"
-              JENKINS_PASS=$(kc -n cicd get secret cf-jenkins \
+              JENKINS_PASS=$(run_kubectl -n cicd get secret cf-jenkins \
                 -o jsonpath="{.data.jenkins-admin-password}" | base64 -d)
 
-              kc -n cicd port-forward svc/cf-jenkins 8080:8080 >/dev/null 2>&1 &
+              run_kubectl -n cicd port-forward svc/cf-jenkins 8080:8080 >/dev/null 2>&1 &
               PF=$!
               sleep 6
 
@@ -453,7 +442,7 @@ jobs:
 
               # ── 8. All pod images from in-cluster Zarf registry ─────────────────
               echo "--- 8. Checking pod images ---"
-              EXTERNAL=$(kc -n cicd get pods \
+              EXTERNAL=$(run_kubectl -n cicd get pods \
                 -o jsonpath="{range .items[*]}{range .spec.containers[*]}{.image}{\"\\n\"}{end}{end}" \
                 | grep -v "^127.0.0.1" | grep -v "^$" || true)
               [ -z "${EXTERNAL}" ] \
@@ -462,14 +451,14 @@ jobs:
 
               # ── 9. Egress still blocked from inside the cluster ──────────────────
               echo "--- 9. Checking egress from inside cluster ---"
-              REGISTRY_PORT=$(kc -n zarf get svc zarf-docker-registry \
+              REGISTRY_PORT=$(run_kubectl -n zarf get svc zarf-docker-registry \
                 -o jsonpath="{.spec.ports[0].nodePort}")
               
               # Clean up any existing probe pod
-              kc -n cicd delete pod egress-probe --ignore-not-found=true
+              run_kubectl -n cicd delete pod egress-probe --ignore-not-found=true
               sleep 2
               
-              PROBE=$(kc -n cicd run egress-probe \
+              PROBE=$(run_kubectl -n cicd run egress-probe \
                 --image="127.0.0.1:${REGISTRY_PORT}/library/alpine:3.20" \
                 --restart=Never --rm -i \
                 --command -- sh -c \
@@ -484,7 +473,6 @@ jobs:
               echo ""
               echo "=== assertion summary: ${PASS} passed, ${FAIL} failed ==="
               [ "${FAIL}" -eq 0 ] || exit 1
-              DOCKER
             '
 
       # ── DESTROY — always runs even if steps above failed ──────────────────
