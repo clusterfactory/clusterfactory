@@ -247,39 +247,8 @@ jobs:
             && echo "OK: VM has internet before cut (expected)" \
             || echo "WARN: VM already cannot reach internet — check default GCP egress rules"
 
-      # ── CUT EGRESS — the VM is now airgapped ──────────────────────────────
-      - name: Cut VM egress (enforce airgap)
-        run: |
-          gcloud compute firewall-rules create "${FIREWALL_RULE}" \
-            --direction=EGRESS \
-            --action=DENY \
-            --rules=all \
-            --destination-ranges=0.0.0.0/0 \
-            --target-tags="${VM_NAME}" \
-            --priority=1000 \
-            --quiet
-
-          echo "Firewall rule applied. VM egress is now blocked."
-          sleep 5
-
-      # ── Verify the cut actually worked ────────────────────────────────────
-      - name: Assert VM cannot reach internet
-        run: |
-          RESULT=$(gcloud compute ssh "${VM_NAME}" \
-            --zone="${ZONE}" \
-            --tunnel-through-iap \
-            --ssh-flag="-o StrictHostKeyChecking=no" \
-            --command="curl --max-time 8 -s -o /dev/null -w '%{http_code}' https://example.com || echo BLOCKED" \
-            2>/dev/null || echo "BLOCKED")
-
-          echo "Egress probe result: ${RESULT}"
-
-          echo "${RESULT}" | grep -q "200" \
-            && (echo "FAIL: VM can still reach the internet — firewall rule did not apply" && exit 1) \
-            || echo "OK: VM cannot reach internet — airgap enforced"
-
-      # ── Create k3d cluster on the airgapped VM ─────────────────────────────
-      - name: Create k3d cluster
+      # ── Create k3d cluster BEFORE cutting egress ──────────────────────────
+      - name: Create k3d cluster (needs internet to pull k3s image)
         run: |
           gcloud compute ssh "${VM_NAME}" \
             --zone="${ZONE}" \
@@ -321,6 +290,37 @@ jobs:
             --tunnel-through-iap \
             --scp-flag="-o StrictHostKeyChecking=no" \
             --scp-flag="-o ServerAliveInterval=30"
+
+      # ── CUT EGRESS — the VM is now airgapped ──────────────────────────────
+      - name: Cut VM egress (enforce airgap)
+        run: |
+          gcloud compute firewall-rules create "${FIREWALL_RULE}" \
+            --direction=EGRESS \
+            --action=DENY \
+            --rules=all \
+            --destination-ranges=0.0.0.0/0 \
+            --target-tags="${VM_NAME}" \
+            --priority=1000 \
+            --quiet
+
+          echo "Firewall rule applied. VM egress is now blocked."
+          sleep 5
+
+      # ── Verify the cut actually worked ────────────────────────────────────
+      - name: Assert VM cannot reach internet
+        run: |
+          RESULT=$(gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command="curl --max-time 8 -s -o /dev/null -w '%{http_code}' https://example.com || echo BLOCKED" \
+            2>/dev/null || echo "BLOCKED")
+
+          echo "Egress probe result: ${RESULT}"
+
+          echo "${RESULT}" | grep -q "200" \
+            && (echo "FAIL: VM can still reach the internet — firewall rule did not apply" && exit 1) \
+            || echo "OK: VM cannot reach internet — airgap enforced"
 
       # ── Zarf init ──────────────────────────────────────────────────────────
       - name: Zarf init
