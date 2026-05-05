@@ -57,7 +57,9 @@ jobs:
           chmod +x dist/hello.sh
 
           # Simulate a checksum the "deploy" phase will verify
-          sha256sum dist/hello.sh | tee dist/hello.sh.sha256
+          cd dist
+          sha256sum hello.sh > hello.sh.sha256
+          cd ..
 
           echo "--- artifact contents ---"
           ls -lh dist/
