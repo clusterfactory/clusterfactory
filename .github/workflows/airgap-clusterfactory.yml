@@ -222,7 +222,7 @@ jobs:
           echo "Copying ${PACKAGE} to VM..."
           
           gcloud compute scp "${PACKAGE}" \
-            "${VM_NAME}:/home/${USER}/" \
+            "${VM_NAME}:~/" \
             --zone="${ZONE}" \
             --tunnel-through-iap \
             --scp-flag="-o StrictHostKeyChecking=no" \
@@ -316,7 +316,7 @@ jobs:
       - name: Copy zarf-init to VM
         run: |
           gcloud compute scp zarf-init-amd64.tar.zst \
-            "${VM_NAME}:/home/${USER}/" \
+            "${VM_NAME}:~/" \
             --zone="${ZONE}" \
             --tunnel-through-iap \
             --scp-flag="-o StrictHostKeyChecking=no" \
