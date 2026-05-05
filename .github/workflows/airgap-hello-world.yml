@@ -142,7 +142,7 @@ jobs:
             "${VM_NAME}:/tmp/" \
             --zone="${ZONE}" \
             --tunnel-through-iap \
-            --ssh-flag="-o StrictHostKeyChecking=no"
+            --scp-flag="-o StrictHostKeyChecking=no"
 
           # Verify it arrived
           gcloud compute ssh "${VM_NAME}" \
