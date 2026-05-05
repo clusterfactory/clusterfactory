@@ -180,6 +180,12 @@ jobs:
             --command='
               set -euo pipefail
               
+              echo "=== Fixing apt sources and keys ==="
+              sudo rm -rf /var/lib/apt/lists/*
+              sudo mkdir -p /var/lib/apt/lists/partial
+              sudo apt-get clean
+              sudo apt-get update || sudo apt-get update
+              
               echo "=== Installing Docker ==="
               curl -fsSL https://get.docker.com | sudo sh
               sudo usermod -aG docker $USER
