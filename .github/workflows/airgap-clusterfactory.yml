@@ -205,7 +205,7 @@ jobs:
               echo "=== Tool versions ==="
               docker --version
               k3d version
-              kubectl version --client --short
+              kubectl version --client
               zarf version
             '
 
