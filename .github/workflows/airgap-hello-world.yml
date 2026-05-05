@@ -18,7 +18,7 @@ name: airgap hello world
 on:
   workflow_dispatch:   # run manually first to verify
   push:
-    branches: [main]
+    branches: [main, helm-zarf-refactoring]
     paths:
       - .github/workflows/airgap-hello-world.yml
 
