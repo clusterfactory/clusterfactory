@@ -272,14 +272,15 @@ jobs:
           ZARF_VERSION=v0.32.4
           curl -fsSL \
             "https://github.com/defenseunicorns/zarf/releases/download/${ZARF_VERSION}/zarf-init-amd64-${ZARF_VERSION}.tar.zst" \
-            -o zarf-init-amd64.tar.zst
+            -o zarf-init-amd64-${ZARF_VERSION}.tar.zst
           
-          ls -lh zarf-init-amd64.tar.zst
+          ls -lh zarf-init-amd64-${ZARF_VERSION}.tar.zst
 
       - name: Copy zarf-init to VM
         run: |
-          gcloud compute scp zarf-init-amd64.tar.zst \
-            "${VM_NAME}:~/" \
+          ZARF_VERSION=v0.32.4
+          gcloud compute scp zarf-init-amd64-${ZARF_VERSION}.tar.zst \
+            "${VM_NAME}:~/zarf-init-amd64-${ZARF_VERSION}.tar.zst" \
             --zone="${ZONE}" \
             --tunnel-through-iap \
             --scp-flag="-o StrictHostKeyChecking=no" \
@@ -327,10 +328,11 @@ jobs:
               set -euo pipefail
               
               echo "=== Zarf init ==="
-              INIT_PKG=$(ls ~/zarf-init-amd64*.tar.zst | head -1)
-              echo "Using init package: ${INIT_PKG}"
+              # Zarf init looks for zarf-init-amd64-*.tar.zst in current directory
+              cd ~
+              ls -lh zarf-init-amd64-*.tar.zst
               
-              sudo -u $USER sg docker -c "zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector --package=${INIT_PKG}"
+              sudo -u $USER sg docker -c "cd ~ && zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector"
               
               echo "=== Zarf namespace pods ==="
               sudo -u $USER sg docker -c "kubectl -n zarf get pods"
