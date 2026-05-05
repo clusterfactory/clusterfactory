@@ -327,7 +327,10 @@ jobs:
               set -euo pipefail
               
               echo "=== Zarf init ==="
-              sudo -u $USER sg docker -c "zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector"
+              INIT_PKG=$(ls ~/zarf-init-amd64*.tar.zst | head -1)
+              echo "Using init package: ${INIT_PKG}"
+              
+              sudo -u $USER sg docker -c "zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector --package=${INIT_PKG}"
               
               echo "=== Zarf namespace pods ==="
               sudo -u $USER sg docker -c "kubectl -n zarf get pods"
