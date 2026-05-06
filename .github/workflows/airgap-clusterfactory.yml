@@ -8,6 +8,8 @@
 #   GCP_SA_KEY            base64-encoded JSON key for service account
 #   GCP_ZONE              e.g. us-central1-a
 #   GITEA_ADMIN_PASSWORD  password for gitea-admin user (min 8 chars)
+#
+# Last updated: 2026-05-06 - Billing restored, full E2E test ready
 
 name: airgap clusterfactory
 
