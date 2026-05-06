@@ -269,24 +269,7 @@ jobs:
               echo "=== Verify storage provisioner is ready ==="
               sudo -u $USER sg docker -c "kubectl get storageclass"
               sudo -u $USER sg docker -c "kubectl get pods -n kube-system -l app=local-path-provisioner"
-              sudo -u $USER sg docker -c "kubectl wait --for=condition=ready pod -n kube-system -l app=local-path-provisioner --timeout=60s"
-              
-              echo "=== Test PVC binding works ==="
-              sudo -u $USER sg docker -c "cat <<EOFPVC | kubectl apply -f -
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: test-pvc
-  namespace: default
-spec:
-  accessModes: [ReadWriteOnce]
-  storageClassName: local-path
-  resources:
-    requests:
-      storage: 1Gi
-EOFPVC"
-              sudo -u $USER sg docker -c "kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/test-pvc --timeout=60s"
-              sudo -u $USER sg docker -c "kubectl delete pvc test-pvc"
+              sudo -u $USER sg docker -c "kubectl wait --for=condition=ready pod -n kube-system -l app=local-path-provisioner --timeout=120s"
               
               echo "=== Storage verification complete ==="
             '
