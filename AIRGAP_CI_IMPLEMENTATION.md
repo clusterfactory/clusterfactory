@@ -191,5 +191,6 @@ This proves:
 
 ---
 **Created:** 2026-05-05  
-**Status:** Implemented, pushed to `helm-zarf-refactoring` branch  
-**First run:** Triggered via workflow_dispatch
+**Updated:** 2026-05-06  
+**Status:** Implemented, tested with billing restored  
+**First successful run:** In progress (run #15)
