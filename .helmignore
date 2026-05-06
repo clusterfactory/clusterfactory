@@ -1,6 +1,18 @@
+# Patterns to ignore when packaging the chart with `helm package`.
+.DS_Store
 .git/
 .gitignore
-docs/
-*.md
-/*.tgz
-/dist/
+.github/
+.idea/
+.vscode/
+*.tmproj
+*.bak
+*.swp
+*.tgz
+
+# CI/dev artifacts that shouldn't ship inside the chart.
+/docs/
+/CHANGELOG.md
+/zarf.yaml
+/values-airgap.yaml
+/zarf-package-*.tar.zst

@@ -1,0 +1,73 @@
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: "{{ .Release.Name }}-test-actions"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: "{{ .Release.Name }}-test-actions"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets", "configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: "{{ .Release.Name }}-test-actions"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: "{{ .Release.Name }}-test-actions"
+roleRef:
+  kind: Role
+  name: "{{ .Release.Name }}-test-actions"
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ .Release.Name }}-test-actions"
+  labels:
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/name: test-actions
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  restartPolicy: Never
+  serviceAccountName: "{{ .Release.Name }}-test-actions"
+  containers:
+    - name: test
+      image: bitnami/kubectl:latest
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          set -eu
+          echo "test-actions | verifying Actions wiring completed"
+          echo "test-actions | checking if runner secret exists"
+          if kubectl get secret {{ .Release.Name }}-runner-reg-token -n {{ .Release.Namespace }}; then
+            echo "test-actions | ✓ runner registration token secret exists"
+          else
+            echo "test-actions | FAIL: runner registration token secret not found" >&2
+            exit 1
+          fi
+          
+          echo "test-actions | checking if wiring receipt exists"
+          if kubectl get configmap {{ .Release.Name }}-wire-result -n {{ .Release.Namespace }}; then
+            echo "test-actions | ✓ wiring receipt configmap exists"
+          else
+            echo "test-actions | WARN: wiring receipt configmap not found"
+          fi
+          
+          echo "test-actions | OK - Actions wiring verified"
+          exit 0
+{{- end }}

@@ -1,0 +1,262 @@
+# Proves the two-machine airgap architecture works:
+#   Job 1 (ubuntu-latest): creates an artifact on a machine with internet
+#   Job 2 (ubuntu-latest): spins a GCP VM, scps the artifact in,
+#                          cuts all egress, runs a trivial deploy, asserts it worked
+#
+# Required repository secrets:
+#   GCP_PROJECT_ID        your GCP project id (e.g. my-project-123)
+#   GCP_SA_KEY            base64-encoded JSON key for a service account with:
+#                           - compute.instances.create / delete
+#                           - compute.firewalls.create / delete
+#                           - compute.instances.setMetadata
+#                           - iap.tunnelInstances.accessViaIAP
+#                         (or use Workload Identity — see note at bottom)
+#   GCP_ZONE              e.g. us-central1-a
+
+name: airgap hello world
+
+on:
+  workflow_dispatch:   # run manually first to verify
+  push:
+    branches: [main, helm-zarf-refactoring]
+    paths:
+      - .github/workflows/airgap-hello-world.yml
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1 — build
+  # Runs on a standard hosted runner that has full internet.
+  # Produces a tarball and uploads it as a workflow artifact.
+  # In the real workflow this becomes: zarf package create
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build artifact (internet)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create hello artifact
+        run: |
+          mkdir -p dist
+          cat > dist/hello.sh << 'EOF'
+          #!/bin/sh
+          # This script simulates "the thing zarf deploy would run".
+          # It must work with zero internet access.
+          echo "=== hello from airgap ==="
+          echo "hostname: $(hostname)"
+          echo "date:     $(date -u)"
+
+          # Prove we are not cheating — this must time out or fail
+          echo "--- egress probe (expect: blocked) ---"
+          wget --timeout=5 -q http://example.com -O /dev/null \
+            && echo "FAIL: internet reachable" \
+            || echo "OK:   internet blocked"
+
+          echo "=== done ==="
+          EOF
+          chmod +x dist/hello.sh
+
+          # Simulate a checksum the "deploy" phase will verify
+          cd dist
+          sha256sum hello.sh > hello.sh.sha256
+          cd ..
+
+          echo "--- artifact contents ---"
+          ls -lh dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-airgap
+          path: dist/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2 — test
+  # Runs on a standard hosted runner but does all real work on a GCP VM
+  # via SSH. The VM has egress cut before the "deploy" runs.
+  # ─────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Deploy and assert (airgapped GCP VM)
+    runs-on: ubuntu-latest
+    needs: build
+
+    # Unique suffix so parallel runs don't collide on VM/firewall names
+    env:
+      VM_NAME: airgap-hello-${{ github.run_id }}
+      FIREWALL_RULE: airgap-deny-${{ github.run_id }}
+      ZONE: ${{ secrets.GCP_ZONE }}
+      PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+
+    steps:
+
+      # ── Auth ──────────────────────────────────────────────────────────────
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # ── Download the artifact built in job 1 ──────────────────────────────
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hello-airgap
+          path: dist/
+
+      - name: Show what we got
+        run: ls -lh dist/
+
+      # ── Spin up the GCP VM ────────────────────────────────────────────────
+      - name: Create VM
+        run: |
+          gcloud compute instances create "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --machine-type=e2-small \
+            --image-family=ubuntu-2204-lts \
+            --image-project=ubuntu-os-cloud \
+            --boot-disk-size=20GB \
+            --tags="${VM_NAME}" \
+            --quiet
+
+          # Wait for SSH to be ready (IAP tunnel)
+          echo "Waiting for SSH to become available..."
+          for i in $(seq 1 20); do
+            gcloud compute ssh "${VM_NAME}" \
+              --zone="${ZONE}" \
+              --tunnel-through-iap \
+              --command="echo ready" \
+              --ssh-flag="-o StrictHostKeyChecking=no" \
+              --ssh-flag="-o ConnectTimeout=5" \
+              2>/dev/null && break || true
+            echo "  attempt ${i}/20 — sleeping 10s"
+            sleep 10
+          done
+
+      # ── Copy the artifact to the VM while it still has internet ───────────
+      - name: Copy artifact to VM
+        run: |
+          gcloud compute scp dist/hello.sh dist/hello.sh.sha256 \
+            "${VM_NAME}:/tmp/" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --scp-flag="-o StrictHostKeyChecking=no"
+
+          # Verify it arrived
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --command="ls -lh /tmp/hello.sh /tmp/hello.sh.sha256" \
+            --ssh-flag="-o StrictHostKeyChecking=no"
+
+      # ── Verify internet works on VM BEFORE cutting it ─────────────────────
+      - name: Confirm VM has internet (pre-cut baseline)
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --command="curl --max-time 5 -s -o /dev/null -w '%{http_code}' https://example.com" \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+          | grep -q 200 \
+            && echo "OK: VM has internet before cut (expected)" \
+            || echo "WARN: VM already cannot reach internet — check default GCP egress rules"
+
+      # ── CUT EGRESS — the VM is now airgapped ──────────────────────────────
+      - name: Cut VM egress (enforce airgap)
+        run: |
+          gcloud compute firewall-rules create "${FIREWALL_RULE}" \
+            --direction=EGRESS \
+            --action=DENY \
+            --rules=all \
+            --destination-ranges=0.0.0.0/0 \
+            --target-tags="${VM_NAME}" \
+            --priority=1000 \
+            --quiet
+
+          echo "Firewall rule applied. VM egress is now blocked."
+
+          # Short pause for the rule to propagate
+          sleep 5
+
+      # ── Verify the cut actually worked ────────────────────────────────────
+      - name: Assert VM cannot reach internet
+        run: |
+          # curl should fail — if it returns 200, the firewall rule is wrong
+          RESULT=$(gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --command="curl --max-time 8 -s -o /dev/null -w '%{http_code}' https://example.com || echo BLOCKED" \
+            --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null || echo "BLOCKED")
+
+          echo "Egress probe result: ${RESULT}"
+
+          echo "${RESULT}" | grep -q "200" \
+            && (echo "FAIL: VM can still reach the internet — firewall rule did not apply" && exit 1) \
+            || echo "OK: VM cannot reach internet — airgap enforced"
+
+      # ── "Deploy" — run the artifact on the airgapped VM ──────────────────
+      - name: Run hello script on airgapped VM
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --command="
+              set -euo pipefail
+
+              echo '--- verifying checksum ---'
+              cd /tmp
+              sha256sum -c hello.sh.sha256
+
+              echo '--- running hello script ---'
+              bash /tmp/hello.sh | tee /tmp/hello-output.txt
+            " \
+            --ssh-flag="-o StrictHostKeyChecking=no"
+
+      # ── Collect output and assert ─────────────────────────────────────────
+      - name: Assert output is correct
+        run: |
+          OUTPUT=$(gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --command="cat /tmp/hello-output.txt" \
+            --ssh-flag="-o StrictHostKeyChecking=no" 2>/dev/null)
+
+          echo "--- VM output ---"
+          echo "${OUTPUT}"
+          echo "-----------------"
+
+          # Assert the script ran
+          echo "${OUTPUT}" | grep -q "hello from airgap" \
+            && echo "OK: script ran" \
+            || (echo "FAIL: expected output not found" && exit 1)
+
+          # Assert the internet was blocked from inside the script
+          echo "${OUTPUT}" | grep -q "OK:   internet blocked" \
+            && echo "OK: internet was blocked during script execution" \
+            || (echo "FAIL: internet was reachable from inside the script" && exit 1)
+
+          echo "=== all assertions passed ==="
+
+      # ── DESTROY — always runs even if steps above failed ──────────────────
+      - name: Destroy firewall rule
+        if: always()
+        run: |
+          echo "Destroying firewall rule: ${FIREWALL_RULE}"
+          gcloud compute firewall-rules delete "${FIREWALL_RULE}" \
+            --quiet 2>/dev/null \
+            && echo "✓ Firewall rule deleted" \
+            || echo "⚠ Firewall rule already gone or never created"
+
+      - name: Destroy VM
+        if: always()
+        run: |
+          echo "Destroying VM: ${VM_NAME}"
+          gcloud compute instances delete "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --quiet 2>/dev/null \
+            && echo "✓ VM deleted" \
+            || echo "⚠ VM already gone or never created"

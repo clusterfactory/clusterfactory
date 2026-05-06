@@ -1,24 +1,34 @@
 pipeline {
-    agent any
-
+    agent {
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+    - name: shell
+      image: alpine:3.20
+      command: ["cat"]
+      tty: true
+'''
+        }
+    }
     stages {
         stage('Hello') {
             steps {
-                echo 'Hello World from Jenkins!'
+                container('shell') {
+                    sh 'echo "ClusterFactory bootstrap pipeline running on $(hostname)"'
+                    sh 'echo "Build: ${BUILD_NUMBER}"'
+                    sh 'echo "Job: ${JOB_NAME}"'
+                }
             }
         }
-
-        stage('Build Info') {
+        stage('Verify') {
             steps {
-                sh 'echo "Build number : ${BUILD_NUMBER}"'
-                sh 'echo "Branch       : ${GIT_BRANCH}"'
-                sh 'echo "Commit       : ${GIT_COMMIT}"'
+                container('shell') {
+                    sh 'echo "Pipeline OK"'
+                }
             }
         }
-    }
-
-    post {
-        success { echo 'Pipeline finished successfully.' }
-        failure { echo 'Pipeline failed.' }
     }
 }

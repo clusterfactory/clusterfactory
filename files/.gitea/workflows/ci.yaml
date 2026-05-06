@@ -1,47 +1,16 @@
-# This workflow runs on the clusterfactory Gitea Actions runner.
-#
-# The runner uses Kaniko for building container images.
-# No Docker daemon or privileged containers required.
-#
-# To build container images with Kaniko:
-#   jobs:
-#     build:
-#       runs-on: ubuntu-latest
-#       steps:
-#         - run: |
-#             kubectl create job kaniko-build \
-#               --image=gcr.io/kaniko-project/executor:latest \
-#               -- \
-#               --context=dir://$(pwd) \
-#               --dockerfile=Dockerfile \
-#               --destination=registry/image:tag
-#
-# See docs/kaniko-builds.md for more examples
-name: CI
-
+name: ci
 on:
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
 
 jobs:
   hello:
     runs-on: ubuntu-latest
     steps:
-      - name: Hello from Gitea Actions
+      - name: Hello
         run: |
-          echo "================================"
-          echo "  Hello from Gitea Actions!"
-          echo "================================"
-          echo "Repo   : ${{ gitea.repository }}"
-          echo "Branch : ${{ gitea.ref_name }}"
-          echo "Commit : ${{ gitea.sha }}"
-          echo "Runner : ${{ runner.name }}"
-          echo "OS     : ${{ runner.os }}"
-          echo "================================"
-
-      - name: System info
-        run: |
-          echo "Hostname : $(hostname)"
-          date
+          echo "ClusterFactory Gitea Actions running on $(hostname)"
+          echo "Repo: ${GITHUB_REPOSITORY:-unset}"
+          echo "Ref:  ${GITHUB_REF:-unset}"
+      - name: Verify
+        run: echo "Workflow OK"

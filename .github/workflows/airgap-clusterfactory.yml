@@ -1,0 +1,510 @@
+# Proves the ClusterFactory Zarf package works in a real airgap:
+#   Job 1 (ubuntu-latest): builds Zarf package on a machine with internet
+#   Job 2 (ubuntu-latest): spins a GCP VM, scps the package in,
+#                          cuts all egress, runs zarf init + deploy, asserts it worked
+#
+# Required repository secrets:
+#   GCP_PROJECT_ID        your GCP project id
+#   GCP_SA_KEY            base64-encoded JSON key for service account
+#   GCP_ZONE              e.g. us-central1-a
+#   GITEA_ADMIN_PASSWORD  password for gitea-admin user (min 8 chars)
+#
+# Last updated: 2026-05-06 - Billing restored, full E2E test ready
+
+name: airgap clusterfactory
+
+on:
+  workflow_dispatch:   # manual trigger — use this for the first run
+  push:
+    branches: [main, helm-zarf-refactoring]
+    paths:
+      - zarf.yaml
+      - values-airgap.yaml
+      - Chart.yaml
+      - Chart.lock
+      - engine/**
+      - .github/workflows/airgap-clusterfactory.yml
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 1 — build
+  # Runs on a standard hosted runner that has full internet.
+  # Produces a Zarf package and uploads it as a workflow artifact.
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build Zarf package (internet)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'
+
+      - name: Add Helm repos
+        run: |
+          helm repo add gitea https://dl.gitea.com/charts/
+          helm repo add jenkins https://charts.jenkins.io
+          helm repo update
+
+      - name: Build Helm dependencies
+        run: |
+          helm dependency build .
+          
+          # Extract chart tarballs (Zarf requires extracted directories)
+          cd charts
+          for tgz in *.tgz; do
+            [ -f "$tgz" ] || continue
+            tar -xzf "$tgz"
+          done
+          cd ..
+          
+          echo "Charts directory contents:"
+          ls -la charts/
+
+      # Cache the Zarf package based on inputs that determine its contents
+      - name: Cache Zarf package
+        uses: actions/cache@v4
+        id: zarf-cache
+        with:
+          path: zarf-package-clusterfactory-*.tar.zst
+          key: zarf-pkg-${{ hashFiles('zarf.yaml', 'values-airgap.yaml', 'Chart.yaml', 'Chart.lock') }}
+
+      - name: Install zarf
+        if: steps.zarf-cache.outputs.cache-hit != 'true'
+        run: |
+          ZARF_VERSION=v0.32.4
+          curl -fsSL \
+            "https://github.com/defenseunicorns/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" \
+            -o /usr/local/bin/zarf
+          chmod +x /usr/local/bin/zarf
+          zarf version
+
+      - name: Build Zarf package
+        if: steps.zarf-cache.outputs.cache-hit != 'true'
+        run: zarf package create . --confirm
+
+      - name: Record package filename
+        run: |
+          PACKAGE=$(ls zarf-package-clusterfactory-*.tar.zst | head -1)
+          echo "PACKAGE=${PACKAGE}" >> $GITHUB_ENV
+          echo "Built: ${PACKAGE}"
+          ls -lh "${PACKAGE}"
+
+      - name: Upload Zarf package
+        uses: actions/upload-artifact@v4
+        with:
+          name: zarf-package-clusterfactory
+          path: zarf-package-clusterfactory-*.tar.zst
+          retention-days: 1
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # JOB 2 — test
+  # Runs on a standard hosted runner but does all real work on a GCP VM
+  # via SSH. The VM has egress cut before zarf init and deploy.
+  # ─────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Deploy and assert (airgapped GCP VM)
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 45
+
+    # Unique suffix so parallel runs don't collide on VM/firewall names
+    env:
+      VM_NAME: airgap-cf-${{ github.run_id }}
+      FIREWALL_RULE: airgap-deny-${{ github.run_id }}
+      ZONE: ${{ secrets.GCP_ZONE }}
+      PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+
+    steps:
+
+      # ── Auth ──────────────────────────────────────────────────────────────
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # ── Download the Zarf package built in job 1 ──────────────────────────
+      - name: Download Zarf package
+        uses: actions/download-artifact@v4
+        with:
+          name: zarf-package-clusterfactory
+
+      - name: Show what we got
+        run: |
+          ls -lh
+          PACKAGE=$(ls zarf-package-clusterfactory-*.tar.zst | head -1)
+          echo "Package: ${PACKAGE}"
+          echo "Size: $(du -h ${PACKAGE} | cut -f1)"
+
+      # ── Spin up the GCP VM ────────────────────────────────────────────────
+      - name: Create VM
+        run: |
+          gcloud compute instances create "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --machine-type=e2-standard-4 \
+            --image-family=ubuntu-2204-lts \
+            --image-project=ubuntu-os-cloud \
+            --boot-disk-size=60GB \
+            --tags="${VM_NAME}" \
+            --quiet
+
+          # Wait for SSH to be ready (IAP tunnel)
+          echo "Waiting for SSH to become available..."
+          for i in $(seq 1 30); do
+            gcloud compute ssh "${VM_NAME}" \
+              --zone="${ZONE}" \
+              --tunnel-through-iap \
+              --command="echo ready" \
+              --ssh-flag="-o StrictHostKeyChecking=no" \
+              --ssh-flag="-o ConnectTimeout=5" \
+              2>/dev/null && break || true
+            echo "  attempt ${i}/30 — sleeping 10s"
+            sleep 10
+          done
+
+      # ── Install tools on the VM while it still has internet ───────────────
+      - name: Install tools on VM
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command='
+              set -euo pipefail
+              
+              echo "=== Fixing apt sources and keys ==="
+              sudo rm -rf /var/lib/apt/lists/*
+              sudo mkdir -p /var/lib/apt/lists/partial
+              sudo apt-get clean
+              sudo apt-get update || sudo apt-get update
+              
+              echo "=== Installing Docker ==="
+              curl -fsSL https://get.docker.com | sudo sh
+              sudo usermod -aG docker $USER
+              
+              echo "=== Installing k3d ==="
+              curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+              
+              echo "=== Installing kubectl ==="
+              KUBECTL_VERSION=$(curl -Ls https://dl.k8s.io/release/stable.txt)
+              curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+                -o kubectl
+              sudo install -m 0755 kubectl /usr/local/bin/kubectl
+              rm kubectl
+              
+              echo "=== Installing zarf ==="
+              ZARF_VERSION=v0.32.4
+              curl -fsSL \
+                "https://github.com/defenseunicorns/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" \
+                -o zarf
+              sudo install -m 0755 zarf /usr/local/bin/zarf
+              rm zarf
+              
+              echo "=== Tool versions ==="
+              docker --version
+              k3d version
+              kubectl version --client
+              zarf version
+            '
+
+      # ── Copy the Zarf package to the VM ───────────────────────────────────
+      - name: Copy Zarf package to VM
+        run: |
+          PACKAGE=$(ls zarf-package-clusterfactory-*.tar.zst | head -1)
+          echo "Copying ${PACKAGE} to VM..."
+          
+          gcloud compute scp "${PACKAGE}" \
+            "${VM_NAME}:~/" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --scp-flag="-o StrictHostKeyChecking=no" \
+            --scp-flag="-o ServerAliveInterval=30"
+          
+          # Verify it arrived
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command="ls -lh ~/zarf-package-clusterfactory-*.tar.zst"
+
+      # ── Verify internet works on VM BEFORE cutting it ─────────────────────
+      - name: Confirm VM has internet (pre-cut baseline)
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command="curl --max-time 5 -s -o /dev/null -w '%{http_code}' https://example.com" \
+          | grep -q 200 \
+            && echo "OK: VM has internet before cut (expected)" \
+            || echo "WARN: VM already cannot reach internet — check default GCP egress rules"
+
+      # ── Create k3d cluster BEFORE cutting egress ──────────────────────────
+      - name: Create k3d cluster (needs internet to pull k3s image)
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command='
+              set -euo pipefail
+              
+              echo "=== Creating k3d cluster ==="
+              sudo -u $USER sg docker -c "k3d cluster create cf-airgap --no-lb --k3s-arg \"--disable=traefik@server:0\" --wait --timeout 120s"
+              
+              echo "=== Cluster info ==="
+              sudo -u $USER sg docker -c "kubectl cluster-info"
+              sudo -u $USER sg docker -c "kubectl get nodes"
+              
+              echo "=== Verify storage provisioner is ready ==="
+              sudo -u $USER sg docker -c "kubectl get storageclass"
+              sudo -u $USER sg docker -c "kubectl get pods -n kube-system -l app=local-path-provisioner"
+              sudo -u $USER sg docker -c "kubectl wait --for=condition=ready pod -n kube-system -l app=local-path-provisioner --timeout=120s"
+              
+              echo "=== Storage verification complete ==="
+            '
+
+      # ── Download zarf-init package ────────────────────────────────────────
+      - name: Download zarf-init package
+        run: |
+          echo "Downloading zarf-init package..."
+          ZARF_VERSION=v0.32.4
+          curl -fsSL \
+            "https://github.com/defenseunicorns/zarf/releases/download/${ZARF_VERSION}/zarf-init-amd64-${ZARF_VERSION}.tar.zst" \
+            -o zarf-init-amd64-${ZARF_VERSION}.tar.zst
+          
+          ls -lh zarf-init-amd64-${ZARF_VERSION}.tar.zst
+
+      - name: Copy zarf-init to VM
+        run: |
+          ZARF_VERSION=v0.32.4
+          gcloud compute scp zarf-init-amd64-${ZARF_VERSION}.tar.zst \
+            "${VM_NAME}:~/zarf-init-amd64-${ZARF_VERSION}.tar.zst" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --scp-flag="-o StrictHostKeyChecking=no" \
+            --scp-flag="-o ServerAliveInterval=30"
+
+      # ── CUT EGRESS — the VM is now airgapped ──────────────────────────────
+      - name: Cut VM egress (enforce airgap)
+        run: |
+          gcloud compute firewall-rules create "${FIREWALL_RULE}" \
+            --direction=EGRESS \
+            --action=DENY \
+            --rules=all \
+            --destination-ranges=0.0.0.0/0 \
+            --target-tags="${VM_NAME}" \
+            --priority=1000 \
+            --quiet
+
+          echo "Firewall rule applied. VM egress is now blocked."
+          sleep 5
+
+      # ── Verify the cut actually worked ────────────────────────────────────
+      - name: Assert VM cannot reach internet
+        run: |
+          RESULT=$(gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command="curl --max-time 8 -s -o /dev/null -w '%{http_code}' https://example.com || echo BLOCKED" \
+            2>/dev/null || echo "BLOCKED")
+
+          echo "Egress probe result: ${RESULT}"
+
+          echo "${RESULT}" | grep -q "200" \
+            && (echo "FAIL: VM can still reach the internet — firewall rule did not apply" && exit 1) \
+            || echo "OK: VM cannot reach internet — airgap enforced"
+
+      # ── Zarf init ──────────────────────────────────────────────────────────
+      - name: Zarf init
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command='
+              set -euo pipefail
+              
+              echo "=== Zarf init ==="
+              # Zarf init looks for zarf-init-amd64-*.tar.zst in current directory
+              cd ~
+              ls -lh zarf-init-amd64-*.tar.zst
+              
+              sudo -u $USER sg docker -c "cd ~ && zarf init --confirm --components=zarf-agent,zarf-seed-registry,zarf-registry,zarf-injector"
+              
+              echo "=== Zarf namespace pods ==="
+              sudo -u $USER sg docker -c "kubectl -n zarf get pods"
+            '
+
+      # ── Zarf package deploy ───────────────────────────────────────────────
+      - name: Zarf package deploy
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command="
+              set -euo pipefail
+              
+              PACKAGE=\$(ls ~/zarf-package-clusterfactory-*.tar.zst | head -1)
+              echo \"=== Deploying: \${PACKAGE} ===\"
+              
+              sudo -u \$USER sg docker -c \"zarf package deploy \${PACKAGE} --confirm --set GITEA_ADMIN_PASSWORD='${{ secrets.GITEA_ADMIN_PASSWORD }}'\"
+              
+              echo \"=== ClusterFactory namespace pods ===\"
+              sudo -u \$USER sg docker -c \"kubectl -n cicd get pods\"
+            "
+
+      # ── Assertions ─────────────────────────────────────────────────────────
+      - name: Run assertions
+        run: |
+          gcloud compute ssh "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --tunnel-through-iap \
+            --ssh-flag="-o StrictHostKeyChecking=no" \
+            --command='
+              set -euo pipefail
+              
+              # Run all kubectl commands with docker group access
+              run_kubectl() {
+                sudo -u $USER sg docker -c "kubectl --context k3d-cf-airgap $*"
+              }
+              
+              PASS=0; FAIL=0
+              ok()   { echo "OK:   $*";  PASS=$((PASS+1)); }
+              fail() { echo "FAIL: $*";  FAIL=$((FAIL+1)); }
+
+              echo "=== Running assertions ==="
+
+              # ── 1. Wire Job completed ────────────────────────────────────────────
+              echo "--- 1. Checking wire Job completion ---"
+              run_kubectl -n cicd wait --for=condition=complete --timeout=10m job/cf-wire \
+                && ok "wire Job completed" \
+                || fail "wire Job did not complete"
+
+              # ── 2. Structural SHA is a 64-char hex string ────────────────────────
+              echo "--- 2. Checking structural SHA ---"
+              SHA=$(run_kubectl -n cicd get configmap cf-wire-result \
+                -o jsonpath="{.data.structural_sha}" 2>/dev/null || true)
+              [ ${#SHA} -eq 64 ] \
+                && ok "structural_sha=${SHA}" \
+                || fail "structural_sha missing or wrong length (got: ${SHA})"
+
+              # ── 3. Gitea org exists ──────────────────────────────────────────────
+              echo "--- 3. Checking Gitea org ---"
+              run_kubectl -n cicd port-forward svc/cf-gitea-http 3000:3000 >/dev/null 2>&1 &
+              PF=$!
+              sleep 4
+
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -u "gitea-admin:${{ secrets.GITEA_ADMIN_PASSWORD }}" \
+                http://localhost:3000/api/v1/orgs/cf-demo)
+              [ "${CODE}" = "200" ] && ok "org cf-demo exists" || fail "org cf-demo missing (HTTP ${CODE})"
+
+              # ── 4. Bootstrap repo exists ─────────────────────────────────────────
+              echo "--- 4. Checking bootstrap repo ---"
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -u "gitea-admin:${{ secrets.GITEA_ADMIN_PASSWORD }}" \
+                http://localhost:3000/api/v1/repos/cf-demo/hello-world)
+              [ "${CODE}" = "200" ] && ok "repo cf-demo/hello-world exists" || fail "repo missing (HTTP ${CODE})"
+
+              # ── 5. Jenkinsfile committed ─────────────────────────────────────────
+              echo "--- 5. Checking Jenkinsfile ---"
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -u "gitea-admin:${{ secrets.GITEA_ADMIN_PASSWORD }}" \
+                http://localhost:3000/api/v1/repos/cf-demo/hello-world/contents/Jenkinsfile)
+              [ "${CODE}" = "200" ] && ok "Jenkinsfile committed" || fail "Jenkinsfile missing (HTTP ${CODE})"
+
+              kill ${PF} 2>/dev/null || true
+
+              # ── 6. Jenkins credential present ───────────────────────────────────
+              echo "--- 6. Checking Jenkins credential ---"
+              JENKINS_PASS=$(run_kubectl -n cicd get secret cf-jenkins \
+                -o jsonpath="{.data.jenkins-admin-password}" | base64 -d)
+
+              run_kubectl -n cicd port-forward svc/cf-jenkins 8080:8080 >/dev/null 2>&1 &
+              PF=$!
+              sleep 6
+
+              curl -s -u "admin:${JENKINS_PASS}" \
+                "http://localhost:8080/credentials/store/system/domain/_/api/xml?depth=2" \
+                | grep -q "<id>gitea-userpass</id>" \
+                && ok "gitea-userpass credential present" \
+                || fail "gitea-userpass credential missing"
+
+              # ── 7. Jenkins pipeline job exists ──────────────────────────────────
+              echo "--- 7. Checking Jenkins pipeline job ---"
+              CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                -u "admin:${JENKINS_PASS}" \
+                "http://localhost:8080/job/cf-demo-hello-world/api/json")
+              [ "${CODE}" = "200" ] \
+                && ok "Jenkins pipeline job exists" \
+                || fail "Jenkins pipeline job missing (HTTP ${CODE})"
+
+              kill ${PF} 2>/dev/null || true
+
+              # ── 8. All pod images from in-cluster Zarf registry ─────────────────
+              echo "--- 8. Checking pod images ---"
+              EXTERNAL=$(run_kubectl -n cicd get pods \
+                -o jsonpath="{range .items[*]}{range .spec.containers[*]}{.image}{\"\\n\"}{end}{end}" \
+                | grep -v "^127.0.0.1" | grep -v "^$" || true)
+              [ -z "${EXTERNAL}" ] \
+                && ok "all pod images resolve through Zarf in-cluster registry" \
+                || fail "external image references found: ${EXTERNAL}"
+
+              # ── 9. Egress still blocked from inside the cluster ──────────────────
+              echo "--- 9. Checking egress from inside cluster ---"
+              REGISTRY_PORT=$(run_kubectl -n zarf get svc zarf-docker-registry \
+                -o jsonpath="{.spec.ports[0].nodePort}")
+              
+              # Clean up any existing probe pod
+              run_kubectl -n cicd delete pod egress-probe --ignore-not-found=true
+              sleep 2
+              
+              PROBE=$(run_kubectl -n cicd run egress-probe \
+                --image="127.0.0.1:${REGISTRY_PORT}/library/alpine:3.20" \
+                --restart=Never --rm -i \
+                --command -- sh -c \
+                "wget -T 5 -q http://example.com -O /dev/null && echo REACHABLE || echo BLOCKED" \
+                2>/dev/null || echo "BLOCKED")
+              
+              echo "${PROBE}" | grep -q "BLOCKED" \
+                && ok "internet blocked from inside cluster pods" \
+                || fail "internet reachable from inside cluster pod"
+
+              # ── Summary ──────────────────────────────────────────────────────────
+              echo ""
+              echo "=== assertion summary: ${PASS} passed, ${FAIL} failed ==="
+              [ "${FAIL}" -eq 0 ] || exit 1
+            '
+
+      # ── DESTROY — always runs even if steps above failed ──────────────────
+      - name: Destroy firewall rule
+        if: always()
+        run: |
+          echo "Destroying firewall rule: ${FIREWALL_RULE}"
+          gcloud compute firewall-rules delete "${FIREWALL_RULE}" \
+            --quiet 2>/dev/null \
+            && echo "✓ Firewall rule deleted" \
+            || echo "⚠ Firewall rule already gone or never created"
+
+      - name: Destroy VM
+        if: always()
+        run: |
+          echo "Destroying VM: ${VM_NAME}"
+          gcloud compute instances delete "${VM_NAME}" \
+            --zone="${ZONE}" \
+            --quiet 2>/dev/null \
+            && echo "✓ VM deleted" \
+            || echo "⚠ VM already gone or never created"

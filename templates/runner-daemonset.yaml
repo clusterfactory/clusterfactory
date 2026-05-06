@@ -1,137 +1,88 @@
-{{- $runnerEnabled := and .Values.runner.enabled (or (eq .Values.mode "gitea-actions") (eq .Values.mode "both")) }}
-{{- if $runnerEnabled }}
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: {{ .Release.Name }}-runner
-  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: gitea-runner
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    clusterfactory.io/mode: {{ .Values.mode | quote }}
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
 spec:
   selector:
     matchLabels:
-      app.kubernetes.io/name: gitea-runner
+      app.kubernetes.io/name: runner
       app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: gitea-runner
+        app.kubernetes.io/name: runner
         app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: runner
     spec:
       serviceAccountName: {{ .Release.Name }}-runner
-
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-
+      # The runner waits for the wire Job to create the registration token secret.
+      # initContainer polls until the secret has a token key, then runner starts.
       initContainers:
-        - name: register
-          image: {{ include "clusterfactory.image" (dict "Values" .Values "name" "actRunner") }}
-          command: ["/bin/sh", "-c"]
+        - name: wait-for-token
+          image: {{ .Values.wireJob.image | quote }}
+          command: ["/bin/sh", "-eu", "-c"]
           args:
             - |
-              set -e
-
-              echo "[runner-init] waiting for registration token..."
-
-              until [ -s /runner-token/token ]; do
+              set -eu
+              
+              # Install curl if missing
+              if ! command -v curl >/dev/null 2>&1; then
+                echo "Installing curl..."
+                apk add --no-cache curl >/dev/null 2>&1
+              fi
+              
+              KUBE_API="https://kubernetes.default.svc"
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              SECRET="{{ .Release.Name }}-runner-reg-token"
+              i=0
+              while [ "$i" -lt 120 ]; do
+                code=$(curl -sS --cacert "$CACERT" \
+                  -H "Authorization: Bearer ${TOKEN}" \
+                  -o /tmp/r -w '%{http_code}' \
+                  "${KUBE_API}/api/v1/namespaces/{{ .Release.Namespace }}/secrets/${SECRET}")
+                if [ "$code" = "200" ] && grep -q '"token"' /tmp/r; then
+                  echo "registration token available"
+                  exit 0
+                fi
+                i=$((i + 1))
                 sleep 5
               done
-
-              rm -f /data/.runner
-
-              echo "[runner-init] registering with Gitea at ${GITEA_INSTANCE_URL}..."
-
-              act_runner register \
-                --config /runner-config/config.yaml \
-                --instance "${GITEA_INSTANCE_URL}" \
-                --token "$(cat /runner-token/token)" \
-                --name "k8s-runner-${NODE_NAME}" \
-                --labels "ubuntu-latest:kubernetes" \
-                --no-interactive
-
-              echo "[runner-init] registration complete"
-
+              echo "FAIL: registration token not available after 600s" >&2
+              exit 1
+      containers:
+        - name: runner
+          image: {{ .Values.runner.image | quote }}
+          imagePullPolicy: IfNotPresent
           env:
             - name: GITEA_INSTANCE_URL
-              value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
-
-            - name: NODE_NAME
+              value: "http://{{ include "clusterfactory.giteaService" . }}:3000"
+            - name: GITEA_RUNNER_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Release.Name }}-runner-reg-token"
+                  key: token
+            - name: GITEA_RUNNER_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            capabilities:
-              drop:
-                - ALL
-
+            - name: CONFIG_FILE
+              value: /config/config.yaml
           volumeMounts:
             - name: runner-data
               mountPath: /data
-            - name: runner-token
-              mountPath: /runner-token
             - name: runner-config
-              mountPath: /runner-config
-
-      containers:
-        - name: runner
-          image: {{ include "clusterfactory.image" (dict "Values" .Values "name" "actRunner") }}
-
-          command:
-            - act_runner
-            - daemon
-            - --config
-            - /runner-config/config.yaml
-
-          env:
-            - name: HOME
-              value: /data
-
-            - name: GITEA_INSTANCE_URL
-              value: "http://{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local:3000"
-
+              mountPath: /config
+              readOnly: true
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              cpu: 1000m
-              memory: 512Mi
-
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            capabilities:
-              drop:
-                - ALL
-
-          volumeMounts:
-            - name: runner-data
-              mountPath: /data
-            - name: runner-config
-              mountPath: /runner-config
-
+            {{- toYaml .Values.runner.resources | nindent 12 }}
       volumes:
         - name: runner-data
           emptyDir: {}
-
-        - name: runner-token
-          secret:
-            secretName: {{ .Release.Name }}-runner-reg-token
-            optional: true
-
         - name: runner-config
           configMap:
             name: {{ .Release.Name }}-runner-config

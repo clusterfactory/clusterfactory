@@ -1,18 +1,18 @@
-{{- if .Values.persistence.enabled }}
+{{- if .Values.preflight.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ .Release.Name }}-preflight
-  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: preflight
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-10"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
 spec:
-  backoffLimit: 0
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 300
   template:
     metadata:
       labels:
@@ -23,80 +23,52 @@ spec:
       serviceAccountName: {{ .Release.Name }}-preflight
       containers:
         - name: preflight
-          image: {{ .Values.wire.image }}
-          command: [sh, -c]
+          image: {{ .Values.wireJob.image | quote }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MIN_K8S_VERSION
+              value: {{ .Values.preflight.minK8sVersion | quote }}
+            - name: MODE
+              value: {{ .Values.mode | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+          command: ["/bin/sh", "-eu", "-c"]
           args:
             - |
               set -eu
-              apk add -q curl jq
-
-              log()  { echo "[preflight] $*"; }
-              die()  { echo "[preflight] ERROR: $*" >&2; exit 1; }
-
-              WANT_CLASS="{{ .Values.persistence.storageClassName }}"
-              K8S="https://kubernetes.default.svc"
-              SA_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-
-              log "Checking StorageClass availability..."
-
-              sc_json=$(curl -fsSL \
-                -H "Authorization: Bearer ${SA_TOKEN}" \
-                --cacert "${CACERT}" \
-                "${K8S}/apis/storage.k8s.io/v1/storageclasses")
-
-              names=$(echo "$sc_json" | jq -r '.items[].metadata.name')
-              defaults=$(echo "$sc_json" | jq -r '
-                .items[]
-                | select(
-                    .metadata.annotations["storageclass.kubernetes.io/is-default-class"] == "true"
-                  )
-                | .metadata.name')
-
-              if [ -z "$WANT_CLASS" ]; then
-                # user wants cluster default
-                if [ -z "$defaults" ]; then
-                  echo ""
-                  echo "  [preflight] ERROR: persistence.enabled=true but no default StorageClass found."
-                  echo ""
-                  echo "  Option 1 — disable persistence (recommended for bootstrap use):"
-                  echo "    helm upgrade --install cf . --set persistence.enabled=false"
-                  echo ""
-                  echo "  Option 2 — set a StorageClass explicitly:"
-                  echo "    --set persistence.storageClassName=local-path   # RKE2 / k3s"
-                  echo "    --set persistence.storageClassName=standard     # kind / GKE"
-                  echo "    --set persistence.storageClassName=gp3          # EKS"
-                  echo "    --set persistence.storageClassName=longhorn     # Longhorn"
-                  echo ""
-                  if [ -n "$names" ]; then
-                    echo "  StorageClasses available on this cluster (none is default):"
-                    echo "$names" | while read -r n; do echo "    $n"; done
-                  else
-                    echo "  No StorageClasses found on this cluster."
-                  fi
-                  echo ""
-                  die "no default StorageClass"
-                fi
-                log "Default StorageClass found: ${defaults} — OK"
-              else
-                # user specified a class — check it exists
-                found=$(echo "$sc_json" | jq -r --arg want "$WANT_CLASS" '
-                  .items[] | select(.metadata.name == $want) | .metadata.name')
-                if [ -z "$found" ]; then
-                  echo ""
-                  echo "  [preflight] ERROR: StorageClass '${WANT_CLASS}' not found on this cluster."
-                  echo ""
-                  if [ -n "$names" ]; then
-                    echo "  StorageClasses available:"
-                    echo "$names" | while read -r n; do echo "    $n"; done
-                  else
-                    echo "  No StorageClasses found on this cluster."
-                  fi
-                  echo ""
-                  die "StorageClass '${WANT_CLASS}' not found"
-                fi
-                log "StorageClass '${WANT_CLASS}' found — OK"
+              
+              # Install dependencies if missing
+              if ! command -v curl >/dev/null 2>&1; then
+                echo "Installing curl..."
+                apk add --no-cache curl >/dev/null 2>&1
               fi
+              
+              echo "preflight | mode=${MODE} namespace=${NAMESPACE}"
 
-              log "Preflight passed."
+              # 1. Kubernetes API reachable.
+              KUBE_API="https://kubernetes.default.svc"
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              VERSION_JSON=$(curl -fsS --cacert "$CACERT" \
+                -H "Authorization: Bearer ${TOKEN}" \
+                "${KUBE_API}/version")
+              SERVER_VERSION=$(echo "$VERSION_JSON" | grep -o '"gitVersion":"[^"]*"' | cut -d'"' -f4)
+              echo "preflight | kubernetes ${SERVER_VERSION}"
+
+              # 2. Major.minor satisfies minimum.
+              SERVER_MM=$(echo "$SERVER_VERSION" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/\1.\2/')
+              MIN_MM=$(echo "$MIN_K8S_VERSION" | sed -E 's/^v?([0-9]+)\.([0-9]+).*/\1.\2/')
+              if [ "$(printf '%s\n%s' "$MIN_MM" "$SERVER_MM" | sort -V | head -1)" != "$MIN_MM" ]; then
+                echo "preflight | FAIL: kubernetes ${SERVER_MM} < required ${MIN_MM}"
+                exit 1
+              fi
+              echo "preflight | kubernetes version OK (>= ${MIN_MM})"
+
+              # 3. Mode is one of the allowed values (defense in depth — schema catches it earlier).
+              case "$MODE" in
+                gitea-actions|jenkins|both) ;;
+                *) echo "preflight | FAIL: invalid mode ${MODE}"; exit 1 ;;
+              esac
+
+              echo "preflight | OK"
 {{- end }}

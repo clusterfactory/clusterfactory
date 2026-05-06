@@ -1,240 +1,134 @@
-# ═══════════════════════════════════════════════════════════
-# Deployment Mode
-# ═══════════════════════════════════════════════════════════
-# Choose your CI/CD deployment model:
+# clusterfactory values.yaml
 #
-#   "gitea-actions" - Gitea + Actions (cloud-native, Kubernetes-first CI/CD)
-#                     Use case: Modern workflows, GitHub Actions compatibility
-#                     What you get: Gitea server + Actions engine + Kaniko runners
-#                     What's disabled: Jenkins (set jenkins.enabled=false)
+# One knob: mode.
+#   gitea-actions  → Gitea + Gitea Actions runner (no Jenkins)
+#   jenkins        → Gitea (git host) + Jenkins (workflow engine)
+#   both           → Gitea + Gitea Actions runner + Jenkins
 #
-#   "jenkins"       - Gitea + Jenkins (traditional pipeline CI)
-#                     Use case: Enterprise teams, existing Jenkins expertise
-#                     What you get: Gitea as Git server only + Jenkins orchestration
-#                     What's disabled: Gitea Actions, runners (set jenkins.enabled=true)
-#
-#   "both"          - Gitea + Actions + Jenkins (hybrid/legacy transition)
-#                     Use case: Migration scenarios, legacy infrastructure needs
-#                     What you get: Full stack, both CI/CD engines running
-#                     Note: Higher resource usage, use for specific migration needs
-#                     (set jenkins.enabled=true)
-#
-# ⚠️  IMPORTANT: When using helm, you must also set jenkins.enabled:
-#     --set mode=gitea-actions --set jenkins.enabled=false
-#     --set mode=jenkins --set jenkins.enabled=true
-#     --set mode=both --set jenkins.enabled=true
-#
-# Transparency: All images are digest-pinned for supply chain security.
-# You can security-scan what you deploy before going airgap.
-# ═══════════════════════════════════════════════════════════
+# Everything else is derived from mode via templates/_mode-helpers.tpl.
+# Subchart values below are passed through to the upstream gitea/jenkins
+# charts and reflect a working demo configuration. Override as needed.
 
-mode: "gitea-actions"  # Options: "gitea-actions" | "jenkins" | "both"
+mode: both
 
-# ─────────────────────────────────────────────
-# Tested compatibility matrix
-# Each chart version is tested against one specific pair.
-# Override image tags at your own risk — the wiring is not adaptive.
-#
-# Run: helm show values clusterfactory/clusterfactory | grep -A6 "^compatibility:"
-# ─────────────────────────────────────────────
-compatibility:
-  chart: "0.2.0"
-  gitea: "1.23.6"        # gitea subchart appVersion (gitea/gitea:11.0.1)
-  jenkins: "2.541.3"     # jenkins subchart appVersion (jenkins/jenkins:5.9.9)
-  actRunner: "0.3.1"     # gitea/act_runner image tag
-
-# ─────────────────────────────────────────────
-# Wire job settings
-# ─────────────────────────────────────────────
+# ── wiring config ─────────────────────────────────────────────────────────
+# Inputs to the post-install wire Job. These are the only things the user
+# typically customizes besides the admin password.
 wire:
-  org: clusterfactory
-  # Engine selection: "bash" (default, stable) or "python" (new, experimental)
-  engine: bash
-  
-  # Image overrides per engine
-  image:
-    bash: alpine:3.19
-    python: ghcr.io/kube-tarian/clusterfactory-wire:0.2.0
-  
+  org: cf-demo
   repo:
     name: hello-world
+    description: "ClusterFactory bootstrap repository"
+  # Jenkins job that gets created and webhook-wired to the bootstrap repo.
+  jenkinsJob: hello-world
 
-# ═══════════════════════════════════════════════════════════
-# Image Transparency & Supply Chain Security
-# ═══════════════════════════════════════════════════════════
-# All images pinned to SHA256 digests for:
-#   - Reproducible deployments (same digest = same bits, always)
-#   - Supply chain verification (cryptographically verifiable)
-#   - Airgap security scanning (pre-deployment CVE analysis)
-#   - SLSA compliance ready
-#
-# Verify images before airgap deployment:
-#   docker pull <image>@<digest>
-#   syft <image>@<digest> -o json > sbom.json  # Generate SBOM
-#   grype <image>@<digest> --only-fixed        # CVE scan
-#
-# Update digests: make update-digests (or manually via docker inspect)
-# ═══════════════════════════════════════════════════════════
-images:
-  gitea:
-    repository: gitea/gitea
-    tag: "1.23.6"
-    # Verify: docker pull gitea/gitea:1.23.6 && docker inspect gitea/gitea:1.23.6 | grep -A1 RepoDigests
-    digest: ""  # Set to sha256:... for digest pinning (recommended for production/airgap)
-    
-  jenkins:
-    repository: jenkins/jenkins
-    tag: "2.541.3-jdk21"
-    digest: ""  # Set to sha256:... for digest pinning
-    
-  actRunner:
-    repository: gitea/act_runner
-    tag: "0.3.1"
-    digest: ""  # Set to sha256:... for digest pinning
-    
-  # Wire job images (bootstrap containers)
-  wire:
-    bash:
-      repository: alpine
-      tag: "3.19"
-      digest: ""  # Set to sha256:... for digest pinning
-    python:
-      repository: ghcr.io/kube-tarian/clusterfactory-wire
-      tag: "0.2.0"
-      digest: ""  # Set to sha256:... for digest pinning
+# ── gitea admin secret ────────────────────────────────────────────────────
+# The parent chart owns the truth for the Gitea admin credential.
+# Both Gitea (via existingSecret) and the wire Job consume it.
+giteaAdmin:
+  username: gitea-admin
+  # Required: pass via --set giteaAdmin.password=... or values file.
+  # No default — install fails fast if unset rather than shipping a known weak password.
+  password: ""
 
-# ─────────────────────────────────────────────
-# Gitea Actions runner (DaemonSet)
-# Uses Kaniko for container builds — no Docker required
-# Auto-disabled when mode=jenkins, enabled when mode=gitea-actions or mode=both
-# ─────────────────────────────────────────────
-runner:
-  enabled: true  # Overridden by mode selector
-  image: gitea/act_runner:0.3.1  # Deprecated: use images.actRunner
-  capacity: 2  # max concurrent workflow runs per runner
+# ── upstream subchart values ──────────────────────────────────────────────
+# These are passed to the gitea (11.0.1) and jenkins (5.9.9) subcharts.
+# enabled flags are set by mode-helpers.tpl via overrides at install time;
+# the values here are the rest of the configuration.
 
-# ─────────────────────────────────────────────
-# Gitea subchart values
-# Auto-configured based on deployment mode:
-#   - mode=gitea-actions or mode=both: actions.ENABLED="true"
-#   - mode=jenkins: actions.ENABLED="false" (Git server only)
-# ─────────────────────────────────────────────
 gitea:
+  enabled: true
+  gitea:
+    admin:
+      existingSecret: clusterfactory-gitea-admin
+    config:
+      database:
+        DB_TYPE: sqlite3
+      session:
+        PROVIDER: memory
+      cache:
+        ADAPTER: memory
+      queue:
+        TYPE: level
+      server:
+        PROTOCOL: http
+        HTTP_PORT: 3000
+  persistence:
+    enabled: false   # demo: emptyDir. Override for real deployments.
+  service:
+    http:
+      type: ClusterIP
+      port: 3000
+  ingress:
+    enabled: false
   replicaCount: 1
-  image:
-    # tag: ""  # override Gitea app version, e.g. "1.22.0". Default: chart appVersion.
-    pullPolicy: IfNotPresent
-  # Recreate prevents LevelDB lock contention during upgrades (SQLite/LevelDB don't support concurrent access)
-  strategy:
-    type: Recreate
-
   resources:
     requests:
-      cpu: 50m
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  # Disable bundled HA backends — demo runs SQLite with in-memory cache/session.
+  redis-cluster:
+    enabled: false
+  postgresql:
+    enabled: false
+  postgresql-ha:
+    enabled: false
+
+jenkins:
+  enabled: true
+  controller:
+    # Jenkins admin password is auto-generated by the subchart and stored in
+    # secret <release>-jenkins / key jenkins-admin-password. The wire Job reads it.
+    installPlugins:
+      - kubernetes:4253.v7700d91739e5
+      - workflow-aggregator:600.vb_57cdd26fdd7
+      - git:5.5.2
+      - configuration-as-code:2053.vb_0da_47381a_25
+      - gitea:1.4.7
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 768Mi
+    javaOpts: "-Xms128m -Xmx512m -XX:+UseContainerSupport"
+  persistence:
+    enabled: false   # demo: emptyDir
+  agent:
+    enabled: true
+
+# ── gitea actions runner ──────────────────────────────────────────────────
+# The Gitea chart's act_runner subchart could be used, but we ship a
+# minimal DaemonSet runner that the wire Job registers post-install.
+# This keeps the runner registration in our wiring discipline rather than
+# splitting it across the upstream chart's lifecycle.
+runner:
+  # enabled is set by mode-helpers — true for gitea-actions/both, false for jenkins
+  image: gitea/act_runner:0.2.11
+  resources:
+    requests:
+      cpu: 100m
       memory: 128Mi
     limits:
       cpu: 500m
       memory: 512Mi
 
-  persistence:
-    enabled: false
+# ── wire job ──────────────────────────────────────────────────────────────
+wireJob:
+  image: alpine:3.21   # has apk, sh, base64. Will install curl and jq. ~8MB.
+  # Used by Zarf for image discovery — same image is also referenced by runner above.
 
-  ingress:
-    enabled: false
-
-  service:
-    http:
-      type: ClusterIP
-    ssh:
-      type: ClusterIP
-
-  # Disable all external dependencies — run lean with sqlite/memory
-  postgresql-ha:
-    enabled: false
-  postgresql:
-    enabled: false
-  redis-cluster:
-    enabled: false
-  redis:
-    enabled: false
-  memcached:
-    enabled: false
-
-  # Gitea chart's internal 'gitea:' section (nested one level in subchart context)
-  gitea:
-    admin:
-      username: gitea-admin
-      password: ""  # REQUIRED: Must be set via --set gitea.gitea.admin.password=<your-secure-password>
-      email: admin@cluster.local
-    config:
-      database:
-        DB_TYPE: sqlite3
-        PATH: /data/gitea/gitea.db
-      cache:
-        ADAPTER: memory
-      queue:
-        TYPE: level
-      session:
-        PROVIDER: memory
-      actions:
-        ENABLED: "true"  # Overridden by mode selector in templates
-
-# ─────────────────────────────────────────────
-# Jenkins subchart values
-# Enabled/disabled based on deployment mode.
-# ⚠️  IMPORTANT: Must be set explicitly when using helm:
-#     mode=gitea-actions → jenkins.enabled=false
-#     mode=jenkins → jenkins.enabled=true
-#     mode=both → jenkins.enabled=true
-# ─────────────────────────────────────────────
-jenkins:
-  enabled: false  # Default: false (matches mode=gitea-actions default)
-  controller:
-    # To pin a Jenkins version: --set jenkins.controller.image.tag=2.492-jdk21
-    resources:
-      requests:
-        cpu: 100m
-        memory: 256Mi
-      limits:
-        cpu: 1000m
-        memory: 1Gi
-    javaOpts: "-Xms256m -Xmx768m -XX:+UseContainerSupport"
-    installPlugins:
-      - "kubernetes:4423.vb_59f230b_ce53"
-      - "workflow-aggregator:608.v67378e9d3db_1"
-      - "git:5.10.1"
-      - "configuration-as-code:2061.vc08919f7fc37"
-      - "plain-credentials:199.v9f8e1f741799"
-    prometheus:
-      enabled: false
-    ingress:
-      enabled: false
-    serviceType: ClusterIP
-    JCasC:
-      defaultConfig: false
-
-  agent:
-    enabled: false
-
-  persistence:
-    enabled: false
-
-# ─────────────────────────────────────────────
-# Persistence (disabled by default)
-# clusterfactory is a bootstrap tool — emptyDir is the right default.
-# Enable only if you need state to survive pod restarts.
-# ─────────────────────────────────────────────
-persistence:
-  enabled: false
-  storageClassName: ""   # "" = cluster default, "-" = no dynamic provisioning
-  size: 5Gi
-
-# ─────────────────────────────────────────────
-# NetworkPolicy
-# Enable on clusters with a default-deny NetworkPolicy (Calico, Cilium, etc.).
-# Without this, the wire job cannot reach Gitea and Jenkins and will fail
-# silently on first install. Enabled by default — safe to disable if your
-# cluster has no NetworkPolicy enforcement.
-# ─────────────────────────────────────────────
+# ── network policy ────────────────────────────────────────────────────────
+# Lock down inter-namespace traffic. Disable for dev clusters that share a namespace.
 networkPolicy:
+  enabled: false
+
+# ── preflight ─────────────────────────────────────────────────────────────
+preflight:
   enabled: true
+  # Minimum Kubernetes version. Bumped only when we actually depend on newer APIs.
+  minK8sVersion: "1.27"

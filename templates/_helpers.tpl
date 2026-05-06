@@ -1,63 +1,47 @@
-{{/* 
-Expand the name of the chart.
+{{/*
+Standard chart helpers.
 */}}
+
 {{- define "clusterfactory.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
-{{- end }}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
 
-{{/*
-Create a default fully qualified app name.
-*/}}
 {{- define "clusterfactory.fullname" -}}
-{{- if .Values.fullnameOverride }}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- $name := default .Chart.Name .Values.nameOverride }}
-{{- if contains $name .Release.Name }}
-{{- .Release.Name | trunc 63 | trimSuffix "-" }}
-{{- else }}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
-{{- end }}
-{{- end }}
-{{- end }}
+{{- $name := default .Chart.Name .Values.nameOverride -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
 
-{{/*
-Common labels
-*/}}
+{{- define "clusterfactory.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "clusterfactory.labels" -}}
-helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/name: {{ include "clusterfactory.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end }}
+helm.sh/chart: {{ include "clusterfactory.chart" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end -}}
 
 {{/*
-Image reference with optional digest pinning
-Usage: {{ include "clusterfactory.image" (dict "Values" .Values "name" "gitea") }}
-Returns: repository@digest if digest is set, otherwise repository:tag
+Service DNS names — derived from how the upstream subcharts name their services.
+Used by the wire Job to reach Gitea and Jenkins.
 */}}
-{{- define "clusterfactory.image" -}}
-{{- $img := index .Values.images .name }}
-{{- if $img.digest }}
-{{- printf "%s@%s" $img.repository $img.digest }}
-{{- else }}
-{{- printf "%s:%s" $img.repository $img.tag }}
-{{- end }}
-{{- end }}
+{{- define "clusterfactory.giteaService" -}}
+{{- printf "%s-gitea-http.%s.svc.cluster.local" .Release.Name .Release.Namespace -}}
+{{- end -}}
+
+{{- define "clusterfactory.jenkinsService" -}}
+{{- printf "%s-jenkins.%s.svc.cluster.local" .Release.Name .Release.Namespace -}}
+{{- end -}}
 
 {{/*
-Wire image reference based on engine
-Returns: repository@digest if digest is set, otherwise repository:tag
+Names of the secrets the wire Job consumes.
 */}}
-{{- define "clusterfactory.wire.image" -}}
-{{- $engine := .Values.wire.engine }}
-{{- $img := index .Values.images.wire $engine }}
-{{- if $img.digest }}
-{{- printf "%s@%s" $img.repository $img.digest }}
-{{- else }}
-{{- printf "%s:%s" $img.repository $img.tag }}
-{{- end }}
-{{- end }}
+{{- define "clusterfactory.giteaAdminSecret" -}}
+clusterfactory-gitea-admin
+{{- end -}}
+
+{{- define "clusterfactory.jenkinsAdminSecret" -}}
+{{- printf "%s-jenkins" .Release.Name -}}
+{{- end -}}

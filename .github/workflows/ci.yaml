@@ -1,0 +1,200 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint chart and wire script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: shellcheck files/wire.sh
+        run: shellcheck -s sh files/wire.sh
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'  # Pin to Helm v3 - v4 has breaking changes with dependency handling
+
+      - name: Helm dependency build
+        run: |
+          helm repo add gitea https://dl.gitea.com/charts/
+          helm repo add jenkins https://charts.jenkins.io
+          helm repo update
+          helm dependency build .
+          # Helm v3.16+ with --strict requires extracted charts, not just .tgz
+          cd charts && tar -xzf gitea-11.0.1.tgz && tar -xzf jenkins-5.9.9.tgz && cd ..
+
+      - name: Helm lint
+        run: helm lint . --strict --set giteaAdmin.password=lint-password-12345 --set mode=both --set jenkins.enabled=true
+
+  template:
+    name: Template (mode=${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: gitea-actions
+            jenkins: "false"
+          - mode: jenkins
+            jenkins: "true"
+          - mode: both
+            jenkins: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'
+
+      - name: Helm dependency build
+        run: |
+          helm repo add gitea https://dl.gitea.com/charts/
+          helm repo add jenkins https://charts.jenkins.io
+          helm repo update
+          helm dependency build .
+          # Extract charts for Helm v3.16+ compatibility
+          cd charts && tar -xzf gitea-11.0.1.tgz && tar -xzf jenkins-5.9.9.tgz && cd ..
+
+      - name: Render templates
+        run: |
+          helm template cf . \
+            --namespace cicd \
+            --set mode=${{ matrix.mode }} \
+            --set jenkins.enabled=${{ matrix.jenkins }} \
+            --set giteaAdmin.password=template-password-12345 \
+            > /tmp/rendered.yaml
+
+      - name: Mode-specific assertions
+        run: |
+          mode="${{ matrix.mode }}"
+          # Gitea (Deployment) should always be present.
+          grep -q "kind: Deployment" /tmp/rendered.yaml \
+            && echo "✓ gitea Deployment rendered" \
+            || { echo "✗ gitea Deployment missing"; exit 1; }
+
+          # Wire Job + script ConfigMap always present.
+          grep -q "name: cf-wire-script" /tmp/rendered.yaml \
+            && echo "✓ wire script ConfigMap rendered" \
+            || { echo "✗ wire script ConfigMap missing"; exit 1; }
+
+          if [ "$mode" = "jenkins" ] || [ "$mode" = "both" ]; then
+            # Jenkins is a StatefulSet — assertion fixed from prior CI.
+            grep -q "kind: StatefulSet" /tmp/rendered.yaml \
+              && echo "✓ jenkins StatefulSet rendered" \
+              || { echo "✗ jenkins StatefulSet missing"; exit 1; }
+          else
+            ! grep -q "jenkins-controller" /tmp/rendered.yaml \
+              && echo "✓ jenkins absent (mode=${mode})" \
+              || { echo "✗ jenkins present in mode=${mode}"; exit 1; }
+          fi
+
+          if [ "$mode" = "gitea-actions" ] || [ "$mode" = "both" ]; then
+            grep -q "kind: DaemonSet" /tmp/rendered.yaml \
+              && echo "✓ runner DaemonSet rendered" \
+              || { echo "✗ runner DaemonSet missing"; exit 1; }
+          else
+            ! grep -q "kind: DaemonSet" /tmp/rendered.yaml \
+              && echo "✓ runner absent (mode=${mode})" \
+              || { echo "✗ runner present in mode=${mode}"; exit 1; }
+          fi
+
+  install:
+    name: Install (mode=${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    needs: template
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: gitea-actions
+            jenkins: "false"
+          - mode: jenkins
+            jenkins: "true"
+          - mode: both
+            jenkins: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: 'v3.16.4'
+
+      - name: Install k3d
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          k3d version
+
+      - name: Create cluster
+        run: |
+          k3d cluster create cf-ci \
+            --agents 1 \
+            --k3s-arg "--disable=traefik@server:0" \
+            --wait
+          kubectl cluster-info
+
+      - name: Helm dependency build
+        run: |
+          helm repo add gitea https://dl.gitea.com/charts/
+          helm repo add jenkins https://charts.jenkins.io
+          helm repo update
+          helm dependency build .
+          # Extract charts for Helm v3.16+ compatibility
+          cd charts && tar -xzf gitea-11.0.1.tgz && tar -xzf jenkins-5.9.9.tgz && cd ..
+
+      - name: Install
+        run: |
+          # Set actions.ENABLED based on mode
+          if [ "${{ matrix.mode }}" = "gitea-actions" ] || [ "${{ matrix.mode }}" = "both" ]; then
+            ACTIONS_FLAG="--set gitea.gitea.config.actions.ENABLED=true"
+          else
+            ACTIONS_FLAG="--set gitea.gitea.config.actions.ENABLED=false"
+          fi
+          
+          helm upgrade --install cf . \
+            --namespace cicd --create-namespace \
+            --timeout 15m \
+            --set mode=${{ matrix.mode }} \
+            --set jenkins.enabled=${{ matrix.jenkins }} \
+            --set giteaAdmin.password=ci-test-pw-${{ github.run_id }} \
+            $ACTIONS_FLAG
+
+      - name: Wait for Gitea Deployment
+        run: kubectl -n cicd rollout status deployment/cf-gitea --timeout=5m
+
+      - name: Wait for Jenkins StatefulSet
+        if: matrix.mode == 'jenkins' || matrix.mode == 'both'
+        run: kubectl -n cicd rollout status statefulset/cf-jenkins --timeout=5m
+
+      - name: Wait for wire Job to complete
+        run: kubectl -n cicd wait --for=condition=complete --timeout=10m job/cf-wire
+
+      - name: Show wire result ConfigMap
+        run: kubectl -n cicd get configmap cf-wire-result -o yaml
+
+      - name: Helm test
+        run: helm test cf -n cicd --timeout 5m
+
+      - name: Dump on failure
+        if: failure()
+        run: |
+          kubectl -n cicd get all
+          kubectl -n cicd describe job/cf-wire || true
+          kubectl -n cicd logs job/cf-wire --tail=500 || true
+          kubectl -n cicd get events --sort-by=.lastTimestamp | tail -50 || true
+
+      - name: Cleanup
+        if: always()
+        run: k3d cluster delete cf-ci

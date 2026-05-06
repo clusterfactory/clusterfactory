@@ -1,50 +1,36 @@
-{{- $runnerEnabled := and .Values.runner.enabled (or (eq .Values.mode "gitea-actions") (eq .Values.mode "both")) }}
-{{- if $runnerEnabled }}
----
+{{- if eq (include "clusterfactory.mode.runnerEnabled" .) "true" }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ .Release.Name }}-runner
-  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: gitea-runner
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-
+    {{- include "clusterfactory.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runner
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ .Release.Name }}-runner
-  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: gitea-runner
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "clusterfactory.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["pods", "pods/log"]
-    verbs: ["get", "list", "watch", "create", "delete"]
-  - apiGroups: ["batch"]
-    resources: ["jobs"]
-    verbs: ["get", "list", "watch", "create", "delete"]
-
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["{{ .Release.Name }}-runner-reg-token"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ .Release.Name }}-runner
-  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/name: gitea-runner
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: {{ .Release.Name }}-runner
+    {{- include "clusterfactory.labels" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
     name: {{ .Release.Name }}-runner
     namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-runner
+  apiGroup: rbac.authorization.k8s.io
 {{- end }}

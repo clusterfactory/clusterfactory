@@ -2,69 +2,109 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ .Release.Name }}-wire
-  namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- include "clusterfactory.labels" . | nindent 4 }}
     app.kubernetes.io/component: wire
-    wire.clusterfactory.io/engine: {{ .Values.wire.engine | quote }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "0"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
-  backoffLimit: 3
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 86400  # Keep pod for 24h for debugging
   template:
     metadata:
       labels:
         app.kubernetes.io/name: wire
         app.kubernetes.io/instance: {{ .Release.Name }}
-        wire.clusterfactory.io/engine: {{ .Values.wire.engine | quote }}
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ .Release.Name }}-wire
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+      initContainers:
+        - name: wait-for-jenkins
+          image: {{ .Values.wireJob.image | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Install curl if missing
+              if ! command -v curl >/dev/null 2>&1; then
+                echo "Installing curl..."
+                apk add --no-cache curl >/dev/null 2>&1
+              fi
+              
+              echo "Waiting for Jenkins to be ready..."
+              max=120
+              i=0
+              while [ "$i" -lt "$max" ]; do
+                if curl -fsS -o /dev/null --max-time 5 "http://{{ include "clusterfactory.jenkinsService" . }}:8080/login"; then
+                  echo "Jenkins is ready!"
+                  exit 0
+                fi
+                i=$((i + 1))
+                sleep 5
+              done
+              echo "Timeout waiting for Jenkins after $((max * 5)) seconds"
+              exit 1
+{{- end }}
+      volumes:
+        - name: script
+          configMap:
+            name: {{ .Release.Name }}-wire-script
+            defaultMode: 0755
       containers:
         - name: wire
-          {{- include "clusterfactory.wire.container" . | nindent 10 }}
+          image: {{ .Values.wireJob.image | quote }}
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+          command: ["/bin/sh", "/scripts/wire.sh"]
           env:
+            - name: MODE
+              value: {{ .Values.mode | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
             - name: GITEA_SVC
-              value: "{{ .Release.Name }}-gitea-http.{{ .Release.Namespace }}.svc.cluster.local"
-            - name: JENKINS_SVC
-              value: "{{ .Release.Name }}-jenkins.{{ .Release.Namespace }}.svc.cluster.local"
+              value: {{ include "clusterfactory.giteaService" . | quote }}
+            - name: GITEA_PORT
+              value: "3000"
             - name: GITEA_USER
               valueFrom:
                 secretKeyRef:
-                  name: clusterfactory-gitea-admin
+                  name: {{ include "clusterfactory.giteaAdminSecret" . }}
                   key: username
             - name: GITEA_PASS
               valueFrom:
                 secretKeyRef:
-                  name: clusterfactory-gitea-admin
+                  name: {{ include "clusterfactory.giteaAdminSecret" . }}
                   key: password
+            - name: ORG
+              value: {{ .Values.wire.org | quote }}
+            - name: REPO
+              value: {{ .Values.wire.repo.name | quote }}
+            - name: REPO_DESCRIPTION
+              value: {{ .Values.wire.repo.description | quote }}
+            - name: RUNNER_SECRET
+              value: "{{ .Release.Name }}-runner-reg-token"
+            - name: RESULT_CONFIGMAP
+              value: "{{ .Release.Name }}-wire-result"
+            - name: WORKFLOW_B64
+              value: {{ .Files.Get "files/.gitea/workflows/ci.yaml" | b64enc | quote }}
+{{- if eq (include "clusterfactory.mode.jenkinsEnabled" .) "true" }}
+            - name: JENKINS_SVC
+              value: {{ include "clusterfactory.jenkinsService" . | quote }}
+            - name: JENKINS_PORT
+              value: "8080"
             - name: JENKINS_USER
               value: "admin"
             - name: JENKINS_PASS
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-jenkins
+                  name: {{ include "clusterfactory.jenkinsAdminSecret" . }}
                   key: jenkins-admin-password
-            - name: ORG
-              value: {{ .Values.wire.org | quote }}
-            - name: REPO
-              value: {{ .Values.wire.repo.name | quote }}
-{{- if eq .Values.wire.engine "bash" }}
+            - name: JENKINS_JOB
+              value: {{ .Values.wire.jenkinsJob | quote }}
             - name: JENKINSFILE_B64
               value: {{ .Files.Get "files/Jenkinsfile" | b64enc | quote }}
-            - name: WORKFLOW_B64
-              value: {{ .Files.Get "files/.gitea/workflows/ci.yaml" | b64enc | quote }}
-            - name: NAMESPACE
-              value: {{ .Release.Namespace | quote }}
-            - name: RUNNER_SECRET_NAME
-              value: "{{ .Release.Name }}-runner-reg-token"
-{{- end }}
-{{- if eq .Values.wire.engine "python" }}
-      volumes:
-        - name: platform-config
-          configMap:
-            name: {{ .Release.Name }}-platform
 {{- end }}
