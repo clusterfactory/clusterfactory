@@ -272,7 +272,7 @@ jobs:
               sudo -u $USER sg docker -c "kubectl wait --for=condition=ready pod -n kube-system -l app=local-path-provisioner --timeout=60s"
               
               echo "=== Test PVC binding works ==="
-              sudo -u $USER sg docker -c "kubectl apply -f - <<EOF
+              sudo -u $USER sg docker -c "cat <<EOFPVC | kubectl apply -f -
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -284,8 +284,8 @@ spec:
   resources:
     requests:
       storage: 1Gi
-EOF"
-              sudo -u $USER sg docker -c "kubectl wait --for=jsonpath=\"{.status.phase}\"=Bound pvc/test-pvc --timeout=60s"
+EOFPVC"
+              sudo -u $USER sg docker -c "kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/test-pvc --timeout=60s"
               sudo -u $USER sg docker -c "kubectl delete pvc test-pvc"
               
               echo "=== Storage verification complete ==="
