@@ -5,12 +5,15 @@
 #
 #   1. cf-config    namespaces + PSA labels, NetworkPolicies, admin Secrets
 #   2. postgresql   (step 7)
-#   3. gitea        (step 2)
-#   4. jenkins      (step 2)
+#   3. gitea
+#   4. jenkins
 #   5. nexus        (step 7)
-#   6. cf-settings  wire-engine Job + RBAC (step 5)
+#   6. argocd       (optional, ADR 0013)
+#   7. cf-settings  wire-engine Job + RBAC (step 5)
 #
 # Nothing flavor-specific belongs here: no images:, no flavor values files.
+# Each app block (chart + common values) is self-contained so it can be
+# lifted into a per-app package later (ADR 0012).
 kind: ZarfPackageConfig
 metadata:
   name: clusterfactory-common
@@ -27,9 +30,38 @@ components:
         version: 0.1.0
         valuesFiles:
           - ../values/config-values.yaml
+
+      - name: gitea
+        url: https://dl.gitea.com/charts/
+        version: 11.0.1
+        namespace: clusterfactory
+        releaseName: gitea
+        valuesFiles:
+          - ../values/gitea-common-values.yaml
+
+      - name: jenkins
+        url: https://charts.jenkins.io
+        version: 5.9.9
+        namespace: clusterfactory
+        releaseName: jenkins
+        valuesFiles:
+          - ../values/jenkins-common-values.yaml
+
       - name: cf-settings
         namespace: clusterfactory
         localPath: ../charts/settings
         version: 0.1.0
         valuesFiles:
           - ../values/common-values.yaml
+
+    # Readiness gating (uds-way.md §3): kstatus-based healthChecks on the
+    # workloads. The wire Job wait/onFailure actions land in step 5.
+    healthChecks:
+      - apiVersion: apps/v1
+        kind: Deployment
+        name: gitea
+        namespace: clusterfactory
+      - apiVersion: apps/v1
+        kind: StatefulSet
+        name: jenkins
+        namespace: clusterfactory

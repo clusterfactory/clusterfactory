@@ -1,5 +1,9 @@
-# Applied by CI to every namespace before zarf init. Proves the package
-# needs no egress: DNS to kube-dns and in-cluster traffic only.
+# Applied by bundle/up.sh to every namespace the package touches, before
+# zarf init. Proves the package needs no internet egress. Allowed:
+#   - in-cluster pod traffic (any namespace)
+#   - DNS to kube-system
+#   - the Kubernetes API server (post-DNAT node IP; not a pod, so it must be
+#     an ipBlock - up.sh substitutes the real endpoint into __APISERVER__)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -20,3 +24,9 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    - to:
+        - ipBlock:
+            cidr: __APISERVER_IP__/32
+      ports:
+        - protocol: TCP
+          port: __APISERVER_PORT__

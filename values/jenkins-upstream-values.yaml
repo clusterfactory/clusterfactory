@@ -1,0 +1,17 @@
+# Jenkins — flavor `upstream`: image provenance only (ADR 0003).
+# The chart has no digest field; the tag carries tag@digest, which the
+# container runtime accepts. Keep in sync with the root zarf.yaml images: list.
+controller:
+  image:
+    registry: docker.io
+    repository: jenkins/jenkins
+    # renovate: datasource=docker depName=jenkins/jenkins
+    tag: 2.541.3-jdk21@sha256:827f56f02e09332a06638afa84068af39946066947e03cce95930ca598064384
+    pullPolicy: IfNotPresent
+  sidecars:
+    configAutoReload:
+      image:
+        registry: docker.io
+        repository: kiwigrid/k8s-sidecar
+        # renovate: datasource=docker depName=kiwigrid/k8s-sidecar
+        tag: 2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc

@@ -1,0 +1,89 @@
+# Jenkins — flavor-agnostic values (chart https://charts.jenkins.io).
+# Image provenance lives in values/jenkins-upstream-values.yaml.
+
+controller:
+  admin:
+    username: admin
+    # Trusted-operator threat model (ADR 0005). Moves to a cf-config Secret in step 3.
+    password: CHANGEME-jenkins
+
+  serviceType: ClusterIP
+  servicePort: 8080
+  ingress:
+    enabled: false
+
+  # Airgap: plugins come from the pre-bundled volume (ADR 0006, step 4),
+  # never from the update centre.
+  installPlugins: []
+  initializeOnce: true
+  javaOpts: >-
+    -Djenkins.install.runSetupWizard=false
+    -Dhudson.model.UpdateCenter.never=true
+    -Dhudson.model.DownloadService.never=true
+    -Dhudson.model.UsageStatistics.disabled=true
+
+  JCasC:
+    defaultConfig: true
+    configScripts: {}
+
+  # PSA restricted
+  usePodSecurityContext: true
+  podSecurityContextOverride:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+    fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+
+  sidecars:
+    configAutoReload:
+      enabled: true
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+  # Health probes: give the JVM time to boot on small CI nodes.
+  probes:
+    startupProbe:
+      failureThreshold: 30
+      periodSeconds: 10
+
+persistence:
+  enabled: true
+  size: 8Gi
+
+agent:
+  # Pod agents in cf-build arrive with Kaniko in step 8.
+  enabled: false
+
+rbac:
+  create: true
+  readSecrets: false
