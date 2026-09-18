@@ -62,3 +62,6 @@ components:
       - docker.gitea.com/gitea:1.23.6-rootless@sha256:e3ae417c87fd0e2345cbe4da5f597ffeb6d0872490c74bbb6e988beb1561ff14
       - docker.io/jenkins/jenkins:2.541.3-jdk21@sha256:827f56f02e09332a06638afa84068af39946066947e03cce95930ca598064384
       - docker.io/kiwigrid/k8s-sidecar:2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc
+      # Data-only image built locally at create time (make plugins-image);
+      # tag = package version, never pushed - Zarf reads it from the Docker daemon.
+      - ghcr.io/clusterfactory/jenkins-plugins:0.4.0

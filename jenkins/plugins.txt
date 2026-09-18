@@ -1,0 +1,10 @@
+# Top-level Jenkins plugins, pinned (ADR 0006). `make plugins` resolves the
+# transitive closure with jenkins-plugin-cli into jenkins/plugins/ (generated,
+# gitignored, built at package-create time) and records it in plugins.lock.
+# Renovate bumps these lines (renovate.json, jenkins-plugins datasource).
+configuration-as-code:2121.v86fe99d4b_b_a_b_
+credentials-binding:728.v902a_273b_8947
+git:5.10.1
+gitea:283.v14b_179495971
+kubernetes:4557.ve746270f672f
+workflow-aggregator:608.v67378e9d3db_1

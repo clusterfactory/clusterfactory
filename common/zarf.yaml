@@ -56,7 +56,17 @@ components:
         valuesFiles:
           - ../values/common-values.yaml
 
+    # Jenkins plugin closure (ADR 0006): resolved on the connected side at
+    # create time from jenkins/plugins.txt into a data-only OCI image (Zarf's
+    # recommended replacement for the deprecated dataInjections). The image
+    # is listed per flavor in the root zarf.yaml; an init container copies
+    # the plugins into the controller's plugin volume (values/jenkins-common-values.yaml).
     actions:
+      onCreate:
+        before:
+          - description: Resolve the Jenkins plugin closure and build the plugins data image
+            cmd: make plugins plugins-image
+            dir: ..
       onDeploy:
         before:
           # The API server is not a pod, so the cf-config deny-all-egress

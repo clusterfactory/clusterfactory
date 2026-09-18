@@ -14,10 +14,40 @@ controller:
   ingress:
     enabled: false
 
-  # Airgap: plugins come from the pre-bundled volume (ADR 0006, step 4),
-  # never from the update centre.
+  # Airgap: plugins come from the data-only plugins image (ADR 0006), never
+  # from the update centre. The init container copies /plugins from that
+  # image into an emptyDir mounted over $JENKINS_HOME/plugins, so every pod
+  # start gets exactly the closure shipped in the package. The image
+  # reference is flavor-specific: `pluginsImage` in values/jenkins-<flavor>-values.yaml.
   installPlugins: []
   initializeOnce: true
+  customInitContainers:
+    - name: plugins-loader
+      image: "{{ .Values.pluginsImage }}"
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          set -e
+          rm -rf /var/jenkins_plugins/*
+          cp /plugins/*.jpi /var/jenkins_plugins/
+          cp /plugins.lock /var/jenkins_plugins/.plugins.lock
+          echo "plugins staged: $(ls /var/jenkins_plugins/*.jpi | wc -l)"
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault
+      volumeMounts:
+        - name: jenkins-plugins
+          mountPath: /var/jenkins_plugins
   javaOpts: >-
     -Djenkins.install.runSetupWizard=false
     -Dhudson.model.UpdateCenter.never=true
@@ -81,6 +111,13 @@ controller:
 persistence:
   enabled: true
   size: 8Gi
+  # Plugin volume, repopulated from the plugins image on every pod start.
+  volumes:
+    - name: jenkins-plugins
+      emptyDir: {}
+  mounts:
+    - name: jenkins-plugins
+      mountPath: /var/jenkins_home/plugins
 
 agent:
   # Pod agents in cf-build arrive with Kaniko in step 8.

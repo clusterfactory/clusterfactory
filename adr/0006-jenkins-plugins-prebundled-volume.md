@@ -18,9 +18,16 @@ violating the "unmodified upstream images" principle (ADR 0001).
 - `make plugins` runs `jenkins-plugin-cli` in a throwaway container on
   the connected side to resolve the full transitive closure into
   `jenkins/plugins/`.
-- A Zarf component `jenkins-plugins` ships that directory as `files:`
-  into a PVC via an initContainer (ConfigMaps are too small), mounted at
-  `$JENKINS_HOME/plugins`.
+- The closure is shipped as a **data-only OCI image** (`jenkins/Dockerfile`:
+  busybox + `/plugins`, tag = package version, built into the local Docker
+  daemon at `zarf package create` time and never pushed). An init container
+  from that image copies the `.jpi` files into an `emptyDir` mounted at
+  `$JENKINS_HOME/plugins` on every pod start.
+  *Amended 2026-09-18:* the original plan (`files:` + Zarf `dataInjections`
+  into a PVC) was dropped because Zarf deprecates `dataInjections` and
+  recommends exactly this image-based delivery. This is the one image the
+  repo builds; it carries no application code and is derived
+  deterministically from `plugins.txt` / `plugins.lock`.
 - Upstream chart values: `controller.installPlugins: []`,
   `controller.initializeOnce: true`, update centre disabled.
 - CI gate: Jenkins must reach Ready in an egress-blocked cluster with

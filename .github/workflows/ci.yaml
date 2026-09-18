@@ -120,6 +120,9 @@ jobs:
           chmod +x /usr/local/bin/zarf
           zarf version
 
+      - name: Jenkins plugin lock is current (jenkins/plugins.txt -> plugins.lock)
+        run: make plugins-lock-check
+
       - name: zarf package create -f upstream
         run: |
           mkdir -p build
