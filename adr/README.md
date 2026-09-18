@@ -18,5 +18,6 @@ Decision / Consequences / Date.
 | [0010](0010-plain-http-port-forward.md) | Plain HTTP + port-forward; cert-manager as upgrade path | Accepted |
 | [0011](0011-rke2-cis-canal-local-path.md) | RKE2 CIS profile, Canal, local-path storage | Accepted |
 | 0012 | Single package vs per-app packages + bundle | Open |
+| [0013](0013-argocd-optional-component.md) | Argo CD as an optional component | Proposed |
 
 Source design document: [`uds-way.md`](../uds-way.md).
