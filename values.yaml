@@ -50,12 +50,12 @@ wire:
   org: clusterfactory
   # Engine selection: "bash" (default, stable) or "python" (new, experimental)
   engine: bash
-  
+
   # Image overrides per engine
   image:
     bash: alpine:3.19
     python: ghcr.io/kube-tarian/clusterfactory-wire:0.2.0
-  
+
   repo:
     name: hello-world
 
@@ -81,17 +81,17 @@ images:
     tag: "1.23.6"
     # Verify: docker pull gitea/gitea:1.23.6 && docker inspect gitea/gitea:1.23.6 | grep -A1 RepoDigests
     digest: ""  # Set to sha256:... for digest pinning (recommended for production/airgap)
-    
+
   jenkins:
     repository: jenkins/jenkins
     tag: "2.541.3-jdk21"
     digest: ""  # Set to sha256:... for digest pinning
-    
+
   actRunner:
     repository: gitea/act_runner
     tag: "0.3.1"
     digest: ""  # Set to sha256:... for digest pinning
-    
+
   # Wire job images (bootstrap containers)
   wire:
     bash:

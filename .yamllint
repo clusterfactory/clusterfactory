@@ -1,0 +1,30 @@
+extends: default
+
+ignore: |
+  charts/*/templates/
+  templates/
+  charts/*.tgz
+  docs/index.yaml
+  *.bak
+  engine/
+  # legacy Helm-repo release flow; rewritten in uds-way.md §13 step 9/12
+  .github/workflows/release.yaml
+  .git/
+
+rules:
+  line-length:
+    max: 160
+    level: warning
+  document-start: disable
+  truthy:
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  indentation:
+    spaces: 2
+    indent-sequences: consistent
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1

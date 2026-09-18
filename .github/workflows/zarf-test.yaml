@@ -294,7 +294,7 @@ jobs:
           fi
           echo "📦 Package: $PACKAGE"
           ls -lh "$PACKAGE"
-          
+
           echo ""
           echo "📋 Package contents:"
           zarf package inspect "$PACKAGE"
@@ -315,7 +315,7 @@ jobs:
           SIZE=$(stat -c%s "$PACKAGE" 2>/dev/null || stat -f%z "$PACKAGE")
           SIZE_MB=$((SIZE / 1024 / 1024))
           echo "📊 Package size: ${SIZE_MB} MB"
-          
+
           if [ $SIZE_MB -gt 1000 ]; then
             echo "⚠️ Warning: Package is quite large (${SIZE_MB} MB)"
           else
