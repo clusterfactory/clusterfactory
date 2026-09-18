@@ -1,0 +1,35 @@
+# clusterfactory — flavor-agnostic package definition (ADR 0001).
+#
+# Imported by every flavor component in the root zarf.yaml. Charts deploy
+# in the listed order; that ordering is the sequencing mechanism (uds-way.md §3):
+#
+#   1. cf-config    namespaces + PSA labels, NetworkPolicies, admin Secrets
+#   2. postgresql   (step 7)
+#   3. gitea        (step 2)
+#   4. jenkins      (step 2)
+#   5. nexus        (step 7)
+#   6. cf-settings  wire-engine Job + RBAC (step 5)
+#
+# Nothing flavor-specific belongs here: no images:, no flavor values files.
+kind: ZarfPackageConfig
+metadata:
+  name: clusterfactory-common
+  description: Flavor-agnostic clusterfactory package definition; imported by the root zarf.yaml.
+
+components:
+  - name: clusterfactory
+    required: true
+    description: Gitea + Jenkins + Nexus with clusterfactory config/settings helper charts.
+    charts:
+      - name: cf-config
+        namespace: clusterfactory
+        localPath: ../charts/config
+        version: 0.1.0
+        valuesFiles:
+          - ../values/config-values.yaml
+      - name: cf-settings
+        namespace: clusterfactory
+        localPath: ../charts/settings
+        version: 0.1.0
+        valuesFiles:
+          - ../values/common-values.yaml

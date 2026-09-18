@@ -4,3 +4,8 @@ docs/
 *.md
 /*.tgz
 /dist/
+
+# clusterfactory helper charts (uds-way.md) are Zarf-deployed, not umbrella subcharts.
+# The umbrella chart itself is deleted at migration step 2.
+charts/config/
+charts/settings/

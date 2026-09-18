@@ -1,0 +1,10 @@
+# cf-settings — filled in at uds-way.md §13 step 5 (wire-engine Job + RBAC).
+# Values here are the chart defaults. Flavor-agnostic overrides live in
+# values/common-values.yaml; image provenance lives in values/<flavor>-values.yaml.
+namespace: clusterfactory
+
+wireEngine:
+  image:
+    repository: ""
+    tag: ""
+    digest: ""

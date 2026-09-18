@@ -1,0 +1,7 @@
+# Flavor `upstream`: image provenance for charts/settings (ADR 0003).
+# Pin by digest; Renovate updates the tag+digest pair via the annotation.
+wireEngine:
+  image:
+    repository: ""
+    tag: ""
+    digest: ""

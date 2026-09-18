@@ -1,34 +1,27 @@
-.PHONY: help clean wire-image jenkins-image package deploy test
+.PHONY: help clean lint package deploy test
 
-JENKINS_VERSION ?= 2.541.3-jdk21
+FLAVOR ?= upstream
+VERSION := $(shell awk '/^  version:/ {print $$2; exit}' zarf.yaml)
+PACKAGE := zarf-package-clusterfactory-amd64-$(VERSION)-$(FLAVOR).tar.zst
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 clean:  ## Clean build artifacts
-	rm -rf clusterfactory-ci-*.tar.zst
-	rm -rf zarf-sbom/
+	rm -rf zarf-package-clusterfactory-*.tar.zst zarf-sbom/ sboms/ build/
 
-wire-image:  ## Build and load wire engine image into k3d
-	docker build -t ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 engine/
-	k3d image import ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 -c cf-test || true
+lint:  ## CI gate 1 locally: zarf dev lint, helm lint helper charts, yamllint
+	zarf dev lint . -f $(FLAVOR)
+	for c in charts/*/; do helm lint "$$c" --strict && helm template cf "$$c" >/dev/null; done
+	yamllint --strict -c .yamllint .
 
-jenkins-image:  ## Build Jenkins image with pre-installed plugins
-	docker build -t clusterfactory/jenkins-cf:$(JENKINS_VERSION) images/jenkins/
+package:  ## CI gate 2 locally: create the Zarf package for FLAVOR (default: upstream)
+	zarf package create . -f $(FLAVOR) --confirm
 
-package:  ## Create Zarf package
-	zarf package create . --confirm
+deploy:  ## Deploy the package to the current kube context
+	zarf package deploy $(PACKAGE) --confirm
 
-deploy:  ## Deploy package to k8s (requires GITEA_ADMIN_PASSWORD env var)
-	@test -n "$(GITEA_ADMIN_PASSWORD)" || (echo "ERROR: GITEA_ADMIN_PASSWORD not set" && exit 1)
-	zarf package deploy zarf-package-clusterfactory-ci-amd64-0.3.0.tar.zst \
-		--confirm \
-		--set GITEA_ADMIN_PASSWORD=$(GITEA_ADMIN_PASSWORD)
-
-test:  ## Run tests
+test:  ## Run wire-engine unit tests (legacy engine/ until step 5)
 	cd engine && pytest tests/
-
-lint:  ## Lint Python code
-	cd engine && pylint src/clusterfactory_engine/
 
 .DEFAULT_GOAL := help

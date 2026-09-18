@@ -1,0 +1,4 @@
+# cf-config — filled in at uds-way.md §13 step 3 (namespaces, PSA labels,
+# NetworkPolicies, admin Secrets). Values here are the chart defaults;
+# package-level overrides live in values/config-values.yaml.
+namespace: clusterfactory

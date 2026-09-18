@@ -1,0 +1,2 @@
+# Package-level values for charts/config. Flavor-agnostic (no images here).
+namespace: clusterfactory

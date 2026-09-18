@@ -1,0 +1,3 @@
+# Package-level values for charts/settings that are identical across flavors:
+# service hosts/ports, demo org/repo names, feature flags. Never images.
+namespace: clusterfactory

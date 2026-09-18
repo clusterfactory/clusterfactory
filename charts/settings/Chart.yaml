@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cf-settings
+description: clusterfactory helper chart deployed AFTER the apps — templates the wire-engine Job and its RBAC. No wiring logic lives in Helm (ADR 0002).
+type: application
+version: 0.1.0
