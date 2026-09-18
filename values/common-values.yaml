@@ -1,3 +1,11 @@
 # Package-level values for charts/settings that are identical across flavors:
-# service hosts/ports, demo org/repo names, feature flags. Never images.
+# service endpoints, demo org/repo names, feature flags. Never images.
 namespace: clusterfactory
+gitea:
+  url: http://gitea-http.clusterfactory.svc.cluster.local:3000
+jenkins:
+  url: http://jenkins.clusterfactory.svc.cluster.local:8080
+demo:
+  org: cf-demo
+  repo: hello-world
+  jenkinsJob: cf-demo-hello-world

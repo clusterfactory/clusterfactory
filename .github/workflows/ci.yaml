@@ -123,10 +123,10 @@ jobs:
       - name: Jenkins plugin lock is current (jenkins/plugins.txt -> plugins.lock)
         run: make plugins-lock-check
 
-      - name: zarf package create -f upstream
+      - name: zarf package create -f upstream via make (builds the plugins and wire-engine images)
         run: |
           mkdir -p build
-          zarf package create . -f upstream --confirm --no-color -o build
+          make package OUT=build ZARF_CREATE_ARGS=--no-color
           ls -lh build/
 
       - name: Inspect package definition
@@ -211,6 +211,11 @@ jobs:
 
       - name: Gate 3 checks
         run: tests/deploy-check.sh clusterfactory
+
+      - name: Redeploy over the converged cluster (wire engine must be idempotent)
+        run: |
+          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m
+          EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
 
       - name: Diagnostics on failure
         if: failure()

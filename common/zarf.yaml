@@ -64,8 +64,16 @@ components:
     actions:
       onCreate:
         before:
+          # Locally built images use content-addressed tags. Zarf forbids
+          # setVariables in onCreate, so the tags reach the images: list and
+          # flavor values as package templates (###ZARF_PKG_TMPL_*###) passed
+          # by `make package` (--set PLUGINS_TAG/WIRE_ENGINE_TAG). Always
+          # create through make.
           - description: Resolve the Jenkins plugin closure and build the plugins data image
             cmd: make plugins plugins-image
+            dir: ..
+          - description: Build the wire-engine image
+            cmd: make wire-engine-image
             dir: ..
       onDeploy:
         before:
@@ -87,8 +95,31 @@ components:
             setVariables:
               - name: APISERVER_PORT
 
+        after:
+          # The wire Job is named per Helm revision (Job templates are
+          # immutable), so wait by label. Fail fast on a Failed condition
+          # instead of sitting out the timeout.
+          - description: Wait for wiring to converge (cf-wire-engine Job)
+            maxTotalSeconds: 900
+            cmd: |
+              sel="app.kubernetes.io/name=cf-wire-engine"
+              while true; do
+                st=$(./zarf tools kubectl get job -n clusterfactory -l "$sel" \
+                  -o jsonpath='{range .items[*]}{.metadata.name}={range .status.conditions[*]}{.type}:{.status},{end};{end}')
+                case "$st" in
+                  *Complete:True*) echo "wire engine: $st"; exit 0 ;;
+                  *Failed:True*)   echo "wire engine FAILED: $st"; exit 1 ;;
+                esac
+                sleep 5
+              done
+        onFailure:
+          - description: Dump wire-engine logs
+            cmd: |
+              ./zarf tools kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=200 || true
+              ./zarf tools kubectl get job,pod -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine || true
+
     # Readiness gating (uds-way.md §3): kstatus-based healthChecks on the
-    # workloads. The wire Job wait/onFailure actions land in step 5.
+    # workloads; the wire Job is gated by the action above.
     healthChecks:
       - apiVersion: apps/v1
         kind: Deployment

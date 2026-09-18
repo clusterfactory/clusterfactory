@@ -9,6 +9,10 @@ controller:
     userKey: jenkins-admin-user
     passwordKey: jenkins-admin-password
 
+  # One built-in executor so the demo pipeline (`agent any`) can run before
+  # Kubernetes pod agents arrive in step 8.
+  numExecutors: 1
+
   serviceType: ClusterIP
   servicePort: 8080
   ingress:

@@ -10,4 +10,4 @@ on failure and prints one line per assertion. Planned (uds-way.md §11):
 | 4 functional | push to `cf-demo/hello-world`, pipeline runs, Kaniko builds, image lands in Nexus |
 | 5 upgrade N-1 → N | PVC data survives, wire Job converges with only `ok`/`skipped` lines |
 
-- `deploy-check.sh [namespace]` — gate 3: all pods Ready, every image served by the Zarf registry, Gitea/Jenkins reachable in-cluster, cf-config admin credentials accepted, internet egress blocked.
+- `deploy-check.sh [namespace]` — gate 3: all pods Ready, every image served by the Zarf registry, Gitea/Jenkins reachable in-cluster, cf-config admin credentials accepted, wire Job converged (set `EXPECT_IDEMPOTENT=1` after a redeploy to require only `ok` lines), demo pipeline builds green from Gitea, internet egress blocked.

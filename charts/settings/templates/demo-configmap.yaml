@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cf-demo-pipeline
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "cf-settings.labels" . | nindent 4 }}
+data:
+  Jenkinsfile: |-
+{{ .Files.Get "demo/Jenkinsfile" | indent 4 }}

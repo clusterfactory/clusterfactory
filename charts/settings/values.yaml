@@ -1,6 +1,7 @@
-# cf-settings — filled in at uds-way.md §13 step 5 (wire-engine Job + RBAC).
-# Values here are the chart defaults. Flavor-agnostic overrides live in
-# values/common-values.yaml; image provenance lives in values/<flavor>-values.yaml.
+# cf-settings — deployed AFTER the apps (uds-way.md §4, ADR 0002). Its only
+# job is to template the wire-engine Job and its RBAC. Package-level
+# overrides live in values/common-values.yaml (flavor-agnostic) and
+# values/<flavor>-values.yaml (image only).
 namespace: clusterfactory
 
 wireEngine:
@@ -8,3 +9,31 @@ wireEngine:
     repository: ""
     tag: ""
     digest: ""
+    pullPolicy: IfNotPresent
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  readyTimeoutSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# Service endpoints (in-cluster DNS) and the admin Secrets cf-config created.
+gitea:
+  url: http://gitea-http.clusterfactory.svc.cluster.local:3000
+  adminSecret: cf-gitea-admin
+jenkins:
+  url: http://jenkins.clusterfactory.svc.cluster.local:8080
+  adminSecret: cf-jenkins-admin
+
+demo:
+  org: cf-demo
+  repo: hello-world
+  branch: main
+  integrationUser: jenkins-ci
+  jenkinsCredentialId: gitea-token
+  jenkinsJob: cf-demo-hello-world
+  # Secret the wire engine owns; holds the Gitea token it minted.
+  tokenSecret: cf-wire-gitea-token

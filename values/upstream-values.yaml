@@ -1,7 +1,8 @@
 # Flavor `upstream`: image provenance for charts/settings (ADR 0003).
-# Pin by digest; Renovate updates the tag+digest pair via the annotation.
+# The wire-engine image is built locally at create time (wire-engine/Dockerfile)
+# with a content-addressed tag; never pushed - Zarf reads it from the daemon.
 wireEngine:
   image:
-    repository: ""
-    tag: ""
+    repository: ghcr.io/clusterfactory/wire-engine
+    tag: "###ZARF_CONST_WIRE_ENGINE_TAG###"
     digest: ""

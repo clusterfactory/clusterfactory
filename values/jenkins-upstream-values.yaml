@@ -16,6 +16,6 @@ controller:
         # renovate: datasource=docker depName=kiwigrid/k8s-sidecar
         tag: 2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc
 
-# Data-only plugins image built at create time (jenkins/Dockerfile); tag =
-# package version. Consumed by the plugins-loader init container.
-pluginsImage: ghcr.io/clusterfactory/jenkins-plugins:0.4.0
+# Data-only plugins image built at create time (jenkins/Dockerfile) with a
+# content-addressed tag. Consumed by the plugins-loader init container.
+pluginsImage: "ghcr.io/clusterfactory/jenkins-plugins:###ZARF_CONST_PLUGINS_TAG###"

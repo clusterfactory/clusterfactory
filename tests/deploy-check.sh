@@ -12,8 +12,10 @@ ok() { echo "ok: $*"; }
 
 echo "== pods in ${NS}"
 $KUBECTL get pods -n "$NS" -o wide
-$KUBECTL wait --for=condition=Ready pod --all -n "$NS" --timeout=600s >/dev/null || fail "not all pods Ready in ${NS}"
-ok "all pods Ready"
+# Long-running workloads only; the wire-engine Job's pods finish (checked below).
+$KUBECTL wait --for=condition=Ready pod -l 'app.kubernetes.io/name!=cf-wire-engine' -n "$NS" --timeout=600s >/dev/null \
+  || fail "not all pods Ready in ${NS}"
+ok "all workload pods Ready"
 
 # Curl from inside the cluster using an image the package already ships -
 # the exact (agent-rewritten) reference the running Gitea pod uses, so the
@@ -70,6 +72,32 @@ PY
 <<<"$PLUGIN_JSON")
 [[ -z "$missing" ]] || fail "plugins not active: ${missing}"
 ok "$(grep -cv '^#' "$HERE/jenkins/plugins.txt") top-level plugins active"
+
+echo "== wire engine converged (latest Job Complete, no failed steps)"
+WIRE_POD=$($KUBECTL get pod -n "$NS" -l app.kubernetes.io/name=cf-wire-engine --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
+WIRE_LOG=$($KUBECTL logs -n "$NS" "$WIRE_POD")
+grep -q '^converged:' <<<"$WIRE_LOG" || fail "wire engine did not converge:\n${WIRE_LOG}"
+grep -q 'failed' <<<"$WIRE_LOG" && fail "wire engine reported failed steps:\n${WIRE_LOG}"
+ok "$(grep '^converged:' <<<"$WIRE_LOG")"
+if [[ "${EXPECT_IDEMPOTENT:-}" == "1" ]]; then
+  # Gate: a redeploy over a converged cluster changes nothing.
+  grep -Eq '^\[ *(created|updated)\]' <<<"$WIRE_LOG" && fail "redeploy was not idempotent:\n${WIRE_LOG}"
+  ok "redeploy idempotent (only ok/skipped)"
+fi
+
+echo "== demo pipeline builds from Gitea"
+JCURL() { $KUBECTL exec -n "$NS" jenkins-0 -c jenkins -- curl -sg -u "admin:${JENKINS_PW}" "$@"; }
+CRUMB=$(JCURL -c /tmp/cf-cj http://localhost:8080/crumbIssuer/api/json | python3 -c 'import json,sys;print(json.load(sys.stdin)["crumb"])')
+JCURL -b /tmp/cf-cj -H "Jenkins-Crumb: ${CRUMB}" -X POST -o /dev/null http://localhost:8080/job/cf-demo-hello-world/build
+result=""
+for _ in $(seq 1 60); do
+  result=$(JCURL "http://localhost:8080/job/cf-demo-hello-world/lastBuild/api/json?tree=result" 2>/dev/null \
+    | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("result") or "")' 2>/dev/null || true)
+  [[ -n "$result" ]] && break
+  sleep 5
+done
+[[ "$result" == "SUCCESS" ]] || fail "demo pipeline result: '${result}'"
+ok "cf-demo-hello-world build SUCCESS"
 
 echo "== egress is blocked"
 probe egress "http://example.com/" 000  # curl reports 000 when it cannot connect
