@@ -1,0 +1,94 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- range $name, $ns := .Values.namespaces }}
+---
+# Deny all egress from every pod in the namespace; the allow rules below
+# are separate policies so each one is auditable on its own.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cf-default-deny-egress
+  namespace: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cf-allow-egress-dns
+  namespace: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.networkPolicy.dns.namespace }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cf-allow-egress-in-namespace
+  namespace: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector: {}
+{{- if $.Values.networkPolicy.apiServer.cidr }}
+---
+# Jenkins (config-reload sidecar, kubernetes plugin) and the wire engine
+# talk to the API server.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cf-allow-egress-kube-apiserver
+  namespace: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ $.Values.networkPolicy.apiServer.cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.networkPolicy.apiServer.port | int }}
+{{- end }}
+{{- range $i, $rule := $.Values.networkPolicy.additionalEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cf-allow-egress-{{ $rule.name }}
+  namespace: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {{ $rule.podSelector | default dict | toYaml | nindent 4 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- toYaml $rule.egress | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}

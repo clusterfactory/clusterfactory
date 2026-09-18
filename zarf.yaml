@@ -15,6 +15,24 @@ metadata:
   url: https://github.com/clusterfactory/clusterfactory
   architecture: amd64
 
+# Deploy-time knobs. Trusted-operator threat model (ADR 0005): defaults are
+# CHANGEME strings, never prompts; override with --set NAME=value.
+variables:
+  - name: GITEA_ADMIN_PASSWORD
+    description: Gitea admin password (user gitea-admin), written to Secret cf-gitea-admin.
+    default: CHANGEME-gitea
+    sensitive: true
+  - name: JENKINS_ADMIN_PASSWORD
+    description: Jenkins admin password (user admin), written to Secret cf-jenkins-admin.
+    default: CHANGEME-jenkins
+    sensitive: true
+  - name: APISERVER_CIDR
+    description: Kubernetes API server endpoint CIDR allowed as egress. Resolved automatically at deploy; set explicitly for HA control planes.
+    default: ""
+  - name: APISERVER_PORT
+    description: Kubernetes API server port.
+    default: "6443"
+
 components:
   - name: clusterfactory
     required: true

@@ -5,10 +5,9 @@ replicaCount: 1
 
 gitea:
   admin:
-    # Trusted-operator threat model (ADR 0005): CHANGEME defaults are
-    # acceptable; override at deploy time. Moves to a cf-config Secret in step 3.
-    username: gitea-admin
-    password: CHANGEME-gitea
+    # Created by cf-config (keys: username, password); password comes from
+    # the GITEA_ADMIN_PASSWORD package variable.
+    existingSecret: cf-gitea-admin
     email: gitea-admin@clusterfactory.local
   config:
     database:

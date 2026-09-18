@@ -1,2 +1,21 @@
 # Package-level values for charts/config. Flavor-agnostic (no images here).
-namespace: clusterfactory
+# ###ZARF_VAR_*### placeholders are filled from the root zarf.yaml variables.
+namespaces:
+  clusterfactory:
+    podSecurity: restricted
+
+networkPolicy:
+  enabled: true
+  apiServer:
+    cidr: "###ZARF_VAR_APISERVER_CIDR###"
+    port: "###ZARF_VAR_APISERVER_PORT###"
+
+secrets:
+  gitea:
+    name: cf-gitea-admin
+    username: gitea-admin
+    password: "###ZARF_VAR_GITEA_ADMIN_PASSWORD###"
+  jenkins:
+    name: cf-jenkins-admin
+    username: admin
+    password: "###ZARF_VAR_JENKINS_ADMIN_PASSWORD###"

@@ -20,11 +20,11 @@ ok "all pods Ready"
 # probe pod pulls from the Zarf registry too.
 PROBE_IMAGE=$($KUBECTL get deploy gitea -n "$NS" -o jsonpath='{.spec.template.spec.containers[0].image}')
 probe() {
-  local name="$1" url="$2" expect="$3"
+  local name="$1" url="$2" expect="$3" curlargs="${4:-}"
   local out
   out=$($KUBECTL run "probe-${name}-$RANDOM" -n "$NS" --rm -i --restart=Never --quiet \
       --image="$PROBE_IMAGE" --image-pull-policy=IfNotPresent \
-      --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"p","image":"'"$PROBE_IMAGE"'","command":["sh","-c","curl -s -o /dev/null -m 10 -w \"%{http_code}\n\" '"$url"'"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' \
+      --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":1000,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"p","image":"'"$PROBE_IMAGE"'","command":["sh","-c","curl -s -o /dev/null -m 10 '"$curlargs"' -w \"%{http_code}\n\" '"$url"'"],"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}' \
       2>/dev/null | tr -d '\r' | tail -1 || true)  # kubectl run exits non-zero when curl does
   [[ "$out" == "$expect" ]] || fail "${name}: expected ${expect}, got '${out}' (${url})"
   ok "${name}: ${out}"
@@ -39,6 +39,12 @@ ok "all images from ${REGISTRY}"
 echo "== service reachability"
 probe gitea   "http://gitea-http.${NS}.svc.cluster.local:3000/api/healthz" 200
 probe jenkins "http://jenkins.${NS}.svc.cluster.local:8080/login" 200
+
+echo "== admin credentials from the cf-config Secrets work"
+GITEA_PW=$($KUBECTL get secret cf-gitea-admin -n "$NS" -o jsonpath='{.data.password}' | base64 -d)
+JENKINS_PW=$($KUBECTL get secret cf-jenkins-admin -n "$NS" -o jsonpath='{.data.jenkins-admin-password}' | base64 -d)
+probe gitea-auth   "http://gitea-http.${NS}.svc.cluster.local:3000/api/v1/user" 200 "-u gitea-admin:${GITEA_PW}"
+probe jenkins-auth "http://jenkins.${NS}.svc.cluster.local:8080/api/json" 200 "-u admin:${JENKINS_PW}"
 
 echo "== egress is blocked"
 probe egress "http://example.com/" 000  # curl reports 000 when it cannot connect

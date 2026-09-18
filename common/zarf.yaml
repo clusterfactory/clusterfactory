@@ -24,8 +24,10 @@ components:
     required: true
     description: Gitea + Jenkins + Nexus with clusterfactory config/settings helper charts.
     charts:
+      # cf-config lives in its own namespace so it can *own* the application
+      # namespaces (Helm cannot adopt a namespace Zarf already created).
       - name: cf-config
-        namespace: clusterfactory
+        namespace: cf-system
         localPath: ../charts/config
         version: 0.1.0
         valuesFiles:
@@ -53,6 +55,27 @@ components:
         version: 0.1.0
         valuesFiles:
           - ../values/common-values.yaml
+
+    actions:
+      onDeploy:
+        before:
+          # The API server is not a pod, so the cf-config deny-all-egress
+          # policy needs its endpoint as an ipBlock. Resolve it from the
+          # target cluster at deploy time (single endpoint; HA control planes
+          # override APISERVER_CIDR explicitly).
+          - description: Resolve the Kubernetes API server endpoint for the cf-config NetworkPolicy
+            cmd: |
+              ./zarf tools kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes \
+                -o jsonpath='{.items[0].endpoints[0].addresses[0]}/32'
+            mute: true
+            setVariables:
+              - name: APISERVER_CIDR
+          - cmd: |
+              ./zarf tools kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes \
+                -o jsonpath='{.items[0].ports[0].port}'
+            mute: true
+            setVariables:
+              - name: APISERVER_PORT
 
     # Readiness gating (uds-way.md §3): kstatus-based healthChecks on the
     # workloads. The wire Job wait/onFailure actions land in step 5.

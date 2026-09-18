@@ -31,12 +31,15 @@ kubectl wait --for=condition=Ready node --all --timeout=300s >/dev/null
 echo "== zarf init"
 (cd "$INIT_DIR" && zarf init --confirm --no-color)
 
-echo "== default-deny egress"
+echo "== default-deny egress (namespaces the package does not manage)"
+# Application namespaces are created and locked down by cf-config itself -
+# that policy is what the deploy gate tests. Pre-creating them here would
+# also break Helm's ownership of the Namespace objects.
 # The API server is reached at its node IP after DNAT, so allow it by ipBlock.
 API_IP=$(kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes -o jsonpath='{.items[0].endpoints[0].addresses[0]}')
 API_PORT=$(kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes -o jsonpath='{.items[0].ports[0].port}')
 echo "   apiserver ${API_IP}:${API_PORT}"
-for ns in default zarf clusterfactory cf-build argocd; do
+for ns in default zarf; do
   kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
   sed -e "s#__APISERVER_IP__#${API_IP}#" -e "s#__APISERVER_PORT__#${API_PORT}#" "$HERE/default-deny-egress.yaml" \
     | kubectl apply -n "$ns" -f - >/dev/null

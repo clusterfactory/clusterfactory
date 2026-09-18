@@ -3,9 +3,11 @@
 
 controller:
   admin:
-    username: admin
-    # Trusted-operator threat model (ADR 0005). Moves to a cf-config Secret in step 3.
-    password: CHANGEME-jenkins
+    # Created by cf-config; password comes from the JENKINS_ADMIN_PASSWORD
+    # package variable.
+    existingSecret: cf-jenkins-admin
+    userKey: jenkins-admin-user
+    passwordKey: jenkins-admin-password
 
   serviceType: ClusterIP
   servicePort: 8080

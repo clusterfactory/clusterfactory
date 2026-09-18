@@ -1,0 +1,16 @@
+{{- range $name, $ns := .Values.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+    pod-security.kubernetes.io/enforce: {{ $ns.podSecurity }}
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: {{ $ns.podSecurity }}
+    pod-security.kubernetes.io/audit: {{ $ns.podSecurity }}
+  annotations:
+    # Uninstalling cf-config must never delete application data.
+    helm.sh/resource-policy: keep
+{{- end }}
