@@ -12,8 +12,8 @@ Decision / Consequences / Date.
 | [0004](0004-keep-cosign-sbom-drop-structural-sha.md) | Keep cosign + SBOM, drop structural SHA | Accepted |
 | [0005](0005-trusted-operator-threat-model.md) | Trusted-operator threat model; CHANGEME defaults acceptable | Accepted |
 | [0006](0006-jenkins-plugins-prebundled-volume.md) | Jenkins plugins via pre-bundled volume, `installPlugins: []` | Accepted |
-| 0007 | Nexus `nxrm-ha` single replica CE | Pending spike (§6) |
-| 0008 | Postgres chart choice | Pending spike (§6) |
+| [0007](0007-nexus-ce-embedded-h2.md) | Nexus CE on embedded H2, own helper chart (supersedes the `nxrm-ha` plan) | Accepted |
+| [0008](0008-no-postgres-component.md) | No Postgres component; deferred until a real need | Accepted |
 | [0009](0009-kaniko-cf-build-baseline-exemption.md) | Kaniko + `cf-build` baseline exemption | Accepted |
 | [0010](0010-plain-http-port-forward.md) | Plain HTTP + port-forward; cert-manager as upgrade path | Accepted |
 | [0011](0011-rke2-cis-canal-local-path.md) | RKE2 CIS profile, Canal, local-path storage | Accepted |
