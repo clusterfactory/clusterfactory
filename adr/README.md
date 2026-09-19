@@ -20,4 +20,4 @@ Decision / Consequences / Date.
 | 0012 | Single package vs per-app packages + bundle | Open |
 | [0013](0013-argocd-optional-component.md) | Argo CD as an optional component | Proposed |
 
-Source design document: [`uds-way.md`](../uds-way.md).
+Source design document: [`uds-way.md`](../uds-way.md). Pre-refactor decision table: [`docs/archive/rafactor-vanilla-way.md`](../docs/archive/rafactor-vanilla-way.md).

@@ -1,35 +1,162 @@
 # clusterfactory
 
-**Airgap CI platform: Gitea (git) + Jenkins (workflow engine), auto-wired, delivered as a Zarf package.**
+**A transparent way to package a software forge for disconnected environments.**
 
-Zarf handles supply chain: signed bundle, SBOMs, image transport, Helm installs. clusterfactory handles what Zarf doesn't — cross-service credential wiring. After Zarf installs Gitea and Jenkins, a small Python wire engine mints an API token from Gitea, stores it in Jenkins as a credential, creates a `cf-demo/hello-world` repo, commits a Jenkinsfile, and creates a matching Jenkins pipeline. It emits a structural SHA proving the wiring graph executed as declared.
+One signed [Zarf](https://zarf.dev) package that stands up **Gitea** (git), **Jenkins**
+(CI), **Nexus Repository CE** (container registry) — and optionally **Argo CD** — on any
+Kubernetes cluster with no internet access, and wires them together so that a
+push to a repo builds an image in-cluster and lands it in the registry.
+Nothing in the package phones home; CI proves it on every change by deploying
+into a cluster with all egress denied.
 
-## Demo
+The repo layout and conventions are borrowed from Defense Unicorns'
+[UDS packages](https://uds.defenseunicorns.com/structure/packages/) — the
+people who have shipped this kind of thing into air-gapped environments for
+years — without taking on UDS Core, Istio or the UDS operator. Every decision
+is an [ADR](adr/README.md).
 
-On a connected machine:
-```bash
-zarf package create .
+## What "transparent" means here
+
+| Claim | How you can check it |
+|---|---|
+| **Unmodified upstream** | The package contains the upstream Helm charts and images of Gitea, Jenkins and Nexus, pinned by digest in [`zarf.yaml`](zarf.yaml). clusterfactory adds only values files, two tiny helper charts and one Python file. |
+| **No custom application images** | The only images built here are a data-only image carrying the resolved Jenkins plugin closure ([`jenkins/`](jenkins/)) and the wire-engine image (`python:slim` + one stdlib script, [`wire-engine/`](wire-engine/)). Both are built at package-create time with content-addressed tags and never pushed anywhere. |
+| **Wiring you can read** | All cross-service setup is a post-deploy Kubernetes Job running [`wire-engine/wire.py`](wire-engine/wire.py): check-then-act, one `[ok\|created\|updated]` line per step, exit 0 only when converged. A redeploy on a converged cluster prints only `ok`. No Helm hooks, no operators, no CRDs. |
+| **Airgap is enforced, not assumed** | [`charts/config`](charts/config) ships deny-all-egress NetworkPolicies (DNS, in-namespace and the API server only), Pod Security `restricted` on every namespace but one, and every update-checker/telemetry switch off. |
+| **One declared exception** | Kaniko builds run as uid 0 in the `cf-build` namespace at PSA `baseline`. It is written down in [`docs/exemptions/kaniko.md`](docs/exemptions/kaniko.md) with scope, justification and a review date, UDS-style. |
+| **Auditable artifacts** | Zarf signs the package (cosign) and generates an SBOM per image; CI scans them with grype. `oscal-component.yaml` maps what is actually enforced to NIST 800-53 (in progress, see below). |
+| **Everything tested in the open** | [`ci.yaml`](.github/workflows/ci.yaml): lint → create → deploy into kind + Calico with default-deny egress → the full gate ([`tests/deploy-check.sh`](tests/deploy-check.sh)) including an idempotent redeploy and a real Kaniko build pushed to Nexus. |
+
+## What you get
+
+```
+                    ┌──────────────────── clusterfactory namespace (PSA restricted) ───────────────────┐
+  push ──────────▶  │  Gitea ──token──▶ Jenkins ──credential──▶ Nexus (docker-hosted, :5000)          │
+                    │     ▲                 │                       ▲          ▲                         │
+                    │     │ clone           │ pod agent             │ push     │ pre-seeded base image   │
+                    └─────┼─────────────────┼───────────────────────┼──────────┼─────────────────────────┘
+                          │        ┌────────▼──────── cf-build (PSA baseline) ─┐  │
+                          └────────┤  jnlp + Kaniko  (FROM nexus:5000/alpine)  ├──┘
+                                   └───────────────────────────────────────────┘
+                    wire engine Job (charts/settings) creates: org cf-demo, repo hello-world,
+                    Jenkinsfile + Dockerfile, integration user + token, Jenkins credentials and
+                    pipeline, Nexus repo/role/deploy user, Kaniko docker config, base image copy.
 ```
 
-Transfer `clusterfactory-ci-0.3.0-amd64.tar.zst` to the airgapped cluster. Then:
+Deploy order is the chart order in [`common/zarf.yaml`](common/zarf.yaml):
+`cf-config` → `gitea` → `jenkins` → `nexus` → (`argocd`, optional, planned) → `cf-settings`.
+
+## Usage
+
+### Build the package (connected machine)
+
+Needs `zarf`, `helm`, `docker`, `make`, `python3`, `skopeo` (only for re-pinning digests).
+
 ```bash
-zarf package deploy clusterfactory-ci-0.3.0-amd64.tar.zst \
-    --key cosign.pub \
-    --set GITEA_ADMIN_PASSWORD=<yourpassword>
+make package            # = zarf package create . -f upstream (resolves Jenkins plugins,
+                        #   builds the two local images, generates SBOMs)
+# → zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst
 ```
 
-At the end, Zarf prints the structural SHA and the port-forward commands. Push to `cf-demo/hello-world` to trigger a build.
+Always build through `make` — it passes the content-addressed tags of the locally
+built images to Zarf.
+
+### Deploy (disconnected cluster)
+
+Prerequisites on the target: a Kubernetes cluster with a CNI that enforces
+NetworkPolicy (Calico/Cilium/Canal — kindnet does not), a default StorageClass,
+and a `zarf init` (the init package matches the pinned Zarf version in
+[`ci.yaml`](.github/workflows/ci.yaml)). Nexus wants ~1.5 GiB RAM.
+
+```bash
+zarf init --confirm
+zarf package deploy zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst \
+  --key cosign.pub \
+  --set NEXUS_ACCEPT_CE_EULA=true \                # you are accepting Sonatype's CE EULA
+  --set GITEA_ADMIN_PASSWORD=... \                 # defaults are CHANGEME-*; see ADR 0005
+  --set JENKINS_ADMIN_PASSWORD=... \
+  --set NEXUS_ADMIN_PASSWORD=...
+```
+
+The deploy fails loudly if the wire engine does not converge and prints its
+logs. Redeploying the same or a newer package over an existing install is the
+upgrade path.
+
+### Use it
+
+Everything is cluster-internal over plain HTTP (ADR 0010); reach it with
+port-forward:
+
+```bash
+kubectl port-forward -n clusterfactory svc/gitea-http 3000:3000   # http://localhost:3000  gitea-admin
+kubectl port-forward -n clusterfactory svc/jenkins    8080:8080   # http://localhost:8080  admin
+kubectl port-forward -n clusterfactory svc/nexus      8081:8081   # http://localhost:8081  admin
+```
+
+Push to `cf-demo/hello-world` (or trigger `cf-demo-hello-world` in Jenkins): a pod
+agent in `cf-build` builds the `Dockerfile` with Kaniko from the Nexus-hosted
+base image and pushes `cf-demo/hello-world:<build>` to Nexus `docker-hosted`.
+
+Inspect the wiring: `kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine`.
+
+### Run the CI gate locally
+
+```bash
+bundle/up.sh <dir containing zarf-init-*.tar.zst>   # kind + Calico + zarf init + deny egress
+make package OUT=build && zarf package deploy build/*.tar.zst --confirm --set NEXUS_ACCEPT_CE_EULA=true
+tests/deploy-check.sh                                 # EXPECT_IDEMPOTENT=1 after a redeploy
+```
+
+## Repo layout
+
+```
+zarf.yaml              root: variables, one component per flavor (upstream), pinned images
+common/zarf.yaml       flavor-agnostic: charts in deploy order, health checks, wire-Job gating
+charts/config          BEFORE the apps: namespaces + PSA, NetworkPolicies, admin Secrets
+charts/nexus           Nexus CE on embedded H2 (the one chart we own, ADR 0007)
+charts/settings        AFTER the apps: the wire-engine Job, RBAC, demo Jenkinsfile/Dockerfile
+values/                <app>-common-values.yaml (behaviour) / <app>-upstream-values.yaml (images)
+wire-engine/           wire.py + Dockerfile (stdlib only)
+jenkins/               plugins.txt → plugins.lock → data-only plugins image
+bundle/ tests/         CI cluster scaffolding and the gate script
+adr/                   why things are the way they are
+docs/exemptions/       every deviation from PSA restricted
+```
+
+**Flavor = image provenance only** (ADR 0003). Behaviour, charts, ordering and
+wiring are identical across flavors; only `values/*-<flavor>-values.yaml` and the
+`images:` list change. `upstream` is the only flavor shipped today; a `registry1`
+(Iron Bank) flavor is the intended next one.
+
+## Fork it, customize it
+
+This is meant to be forked. The seams are deliberate:
+
+- **Different apps or versions** — change the chart block in `common/zarf.yaml`
+  and its two values files; re-pin digests with `hack/pin-images.sh`. Nothing
+  else knows the app exists except the wire engine.
+- **Different wiring** — add a check-then-act step to `wire-engine/wire.py`.
+  Keep it idempotent; the CI gate fails a redeploy that reports `created` or `updated`.
+- **Hardened images** — add a flavor: one values file per app, one component in
+  `zarf.yaml`, one CI matrix entry.
+- **Your own policy** — `charts/config` is where namespaces, NetworkPolicies and
+  Secrets live; extend it rather than the app charts.
+- **Per-app packages / a UDS bundle** — each app block is self-contained so it
+  can be lifted into its own package later (ADR 0012, still open).
+
+If you build something on top, an ADR in your fork explaining what you changed
+and why is the whole point.
 
 ## Status
 
-v0.3 is a demo. One deployment mode (Gitea as git, Jenkins as CI). Additional components (Harbor, OpenBao) and third-party extensibility are planned for v0.4+. See `refactor-to-zarf.md` for the roadmap.
-
-## Requirements
-
-- [Zarf](https://zarf.dev/) 0.32.0+
-- Kubernetes 1.28+
-- kubectl
+Steps 0–8 of the migration plan ([`uds-way.md`](uds-way.md) §13) are done and
+CI-green. Remaining: Argo CD optional component ([ADR 0013](adr/0013-argocd-optional-component.md)),
+signing/SBOM publishing/OSCAL and the N-1→N upgrade gate, the `rke2/` platform
+bundle, and a first release. Known gap: the pinned upstream images carry
+critical CVEs with fixes available — the CVE gate is blocking for images built
+here and report-only for upstream until versions are bumped (see
+[SECURITY.md](SECURITY.md)).
 
 ## License
 
-MIT - see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).

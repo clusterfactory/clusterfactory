@@ -1,56 +1,54 @@
-# Security Policy
+# Security
 
-## Supported Versions
+## Threat model (ADR 0005)
 
-| Version | Supported |
-|---------|-----------|
-| latest  | Yes       |
+**Trusted operator, untrusted network.** The person who deploys the package
+holds cluster-admin `kubectl`; they can already read every Secret. We defend the
+cluster boundary, not the operator:
 
-## Reporting a Vulnerability
+- Deny-all egress in every application namespace; only DNS, in-namespace
+  traffic and the Kubernetes API server are allowed (`charts/config`). CI
+  deploys into a cluster with egress denied and asserts the demo still works.
+- Pod Security Admission `restricted` on every namespace except `cf-build`
+  (`baseline`, for Kaniko — [`docs/exemptions/kaniko.md`](docs/exemptions/kaniko.md)).
+- No Ingress, no TLS in-cluster; access is `kubectl port-forward` (ADR 0010).
+  cert-manager with a cluster CA is the documented upgrade path.
+- Update checkers, telemetry and the Jenkins update centre are off; Jenkins
+  plugins are shipped pinned in the package.
+- Admin passwords default to `CHANGEME-*` and are meant to be overridden with
+  `--set`; there is deliberately no secret-management machinery.
 
-Please **do not** open a public GitHub issue for security vulnerabilities.
+## What is verified on every change
 
-Report vulnerabilities by emailing the maintainers or opening a
-[GitHub Security Advisory](https://github.com/clusterfactory/clusterfactory/security/advisories/new).
+- `zarf dev lint`, `helm lint --strict`, `yamllint`, OSCAL schema check.
+- Package build with SBOM per image; **grype** on every SBOM — blocking for the
+  images this repo builds, report-only for upstream images (see below).
+- Airgapped deploy on kind + Calico: every container image served from the
+  in-cluster Zarf registry, all workloads Ready, admin credentials work, all
+  Jenkins plugins active, wire Job converged, redeploy idempotent, Kaniko build
+  pushed to Nexus, internet egress `000`.
+- Trivy config scan and OSSF Scorecard (`scan.yaml`).
 
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Affected versions
-- Suggested fix (if known)
+## Known gaps (honest list)
 
-You will receive a response within 72 hours. We aim to release a patch within 14 days of confirmation.
+- **Upstream image CVEs.** The pinned Jenkins, Gitea, inbound-agent and
+  k8s-sidecar images carry critical CVEs with fixes available, and Kaniko is
+  archived upstream (never fixed). Bumping versions and adding a reviewed grype
+  ignore policy with expiry dates is the next step; until then the CVE gate does
+  not block on upstream images.
+- **Nexus CE on embedded H2** is single-node and not what Sonatype recommends
+  for production loads (ADR 0007). Moving to Postgres is additive.
+- **Plain HTTP** everywhere in-cluster; Kaniko pushes with `--insecure`.
+- **Kaniko runs as root** (default capability set, nothing added) in `cf-build`.
+- **Gitea API tokens** are SHA-1 hashed upstream; the wire engine mints a
+  read-only token for a dedicated integration user and persists it in a Secret.
+- **Package signing** is wired in Zarf but the release flow (cosign key,
+  published `cosign.pub`, SBOMs attached to releases) is not finished.
+- The `oscal-component.yaml` control mapping is not written yet.
 
-## Security Scanning
+## Reporting a vulnerability
 
-This repository runs automated security scans on every push:
-- **Trivy** — Helm/K8s misconfiguration scanning
-- **OSSF Scorecard** — supply chain security score
-
-Results are visible in the [GitHub Security tab](https://github.com/clusterfactory/clusterfactory/security/code-scanning).
-
-## Known Limitations
-
-### Gitea API Token Storage (SHA-1)
-
-**Issue**: Gitea's API uses SHA-1 for token hashing (`sha1` field in API responses).
-
-**Risk**: SHA-1 is cryptographically deprecated and vulnerable to collision attacks.
-
-**Mitigation**:
-1. **Token Rotation**: Rotate Gitea API tokens regularly (recommended: 30-day TTL)
-2. **Network Isolation**: Run Gitea in isolated network segments
-3. **Monitor Upstream**: We track [Gitea upstream](https://github.com/go-gitea/gitea/issues) for SHA-256 migration
-4. **Audit Access**: Review token usage in Gitea admin panel regularly
-
-**Implementation**:
-```bash
-# Manual token rotation (run monthly)
-kubectl exec -n cicd deploy/gitea -- \
-  gitea admin user regenerate-secret --username gitea-admin
-```
-
-For production deployments requiring stronger cryptographic guarantees, consider:
-- Using Gitea behind mTLS/VPN
-- Implementing token expiry automation
-- Regular security audits of token access patterns
+Do not open a public issue. Use a
+[GitHub Security Advisory](https://github.com/clusterfactory/clusterfactory/security/advisories/new)
+with a description, reproduction steps and affected versions. You will get a
+response within 72 hours.
