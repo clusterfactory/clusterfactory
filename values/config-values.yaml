@@ -19,3 +19,7 @@ secrets:
     name: cf-jenkins-admin
     username: admin
     password: "###ZARF_VAR_JENKINS_ADMIN_PASSWORD###"
+  nexus:
+    name: cf-nexus-admin
+    username: admin
+    password: "###ZARF_VAR_NEXUS_ADMIN_PASSWORD###"

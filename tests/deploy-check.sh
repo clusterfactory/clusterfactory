@@ -51,6 +51,7 @@ ok "all images from ${REGISTRY}"
 echo "== service reachability"
 probe gitea   "http://gitea-http.${NS}.svc.cluster.local:3000/api/healthz" 200
 probe jenkins "http://jenkins.${NS}.svc.cluster.local:8080/login" 200
+probe nexus   "http://nexus.${NS}.svc.cluster.local:8081/service/rest/v1/status" 200
 
 echo "== admin credentials from the cf-config Secrets work"
 GITEA_PW=$($KUBECTL get secret cf-gitea-admin -n "$NS" -o jsonpath='{.data.password}' | base64 -d)

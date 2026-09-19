@@ -43,3 +43,7 @@ secrets:
     name: cf-jenkins-admin
     username: admin
     password: CHANGEME-jenkins
+  nexus:
+    name: cf-nexus-admin
+    username: admin
+    password: CHANGEME-nexus

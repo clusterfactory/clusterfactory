@@ -29,9 +29,17 @@ kubectl -n kube-system rollout status ds/calico-node --timeout=300s
 kubectl wait --for=condition=Ready node --all --timeout=300s >/dev/null
 
 echo "== zarf init"
-(cd "$INIT_DIR" && zarf init --confirm --no-color)
+if kubectl get secret zarf-state -n zarf >/dev/null 2>&1; then
+  echo "   already initialized"
+else
+  (cd "$INIT_DIR" && zarf init --confirm --no-color)
+fi
 
 echo "== default-deny egress (namespaces the package does not manage)"
+# Re-runnable: the API server IP changes when a kind node restarts, which
+# strands every ipBlock rule (the Zarf agent then cannot reach the API and
+# blocks all pod creation). Re-running this script refreshes the CI rules;
+# a package redeploy refreshes cf-config's.
 # Application namespaces are created and locked down by cf-config itself -
 # that policy is what the deploy gate tests. Pre-creating them here would
 # also break Helm's ownership of the Namespace objects.

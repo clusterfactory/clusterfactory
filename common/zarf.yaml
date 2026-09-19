@@ -4,12 +4,12 @@
 # in the listed order; that ordering is the sequencing mechanism (uds-way.md §3):
 #
 #   1. cf-config    namespaces + PSA labels, NetworkPolicies, admin Secrets
-#   2. postgresql   (step 7)
+#   2. (reserved: database component, none shipped - ADR 0008)
 #   3. gitea
 #   4. jenkins
-#   5. nexus        (step 7)
+#   5. nexus        CE on embedded H2, own helper chart (ADR 0007)
 #   6. argocd       (optional, ADR 0013)
-#   7. cf-settings  wire-engine Job + RBAC (step 5)
+#   7. cf-settings  wire-engine Job + RBAC
 #
 # Nothing flavor-specific belongs here: no images:, no flavor values files.
 # Each app block (chart + common values) is self-contained so it can be
@@ -48,6 +48,14 @@ components:
         releaseName: jenkins
         valuesFiles:
           - ../values/jenkins-common-values.yaml
+
+      - name: nexus
+        namespace: clusterfactory
+        localPath: ../charts/nexus
+        version: 0.1.0
+        releaseName: nexus
+        valuesFiles:
+          - ../values/nexus-common-values.yaml
 
       - name: cf-settings
         namespace: clusterfactory
@@ -128,4 +136,8 @@ components:
       - apiVersion: apps/v1
         kind: StatefulSet
         name: jenkins
+        namespace: clusterfactory
+      - apiVersion: apps/v1
+        kind: StatefulSet
+        name: nexus
         namespace: clusterfactory

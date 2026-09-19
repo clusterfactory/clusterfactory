@@ -207,14 +207,14 @@ jobs:
         run: bundle/up.sh .
 
       - name: zarf package deploy
-        run: zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m
+        run: zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
 
       - name: Gate 3 checks
         run: tests/deploy-check.sh clusterfactory
 
       - name: Redeploy over the converged cluster (wire engine must be idempotent)
         run: |
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m
+          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
           EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
 
       - name: Diagnostics on failure

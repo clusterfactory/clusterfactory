@@ -1,0 +1,7 @@
+# Nexus — flavor `upstream`: image provenance only (ADR 0003).
+# Keep tag+digest in sync with the images: list in the root zarf.yaml.
+image:
+  repository: docker.io/sonatype/nexus3
+  # renovate: datasource=docker depName=sonatype/nexus3
+  tag: 3.96.2
+  digest: sha256:a6a2d43487ba92581d5169b3d4d5b4ba17b87d1f95ab593094d6da7f835719b6
