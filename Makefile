@@ -20,7 +20,7 @@ lint:  ## CI gate 1 locally: zarf dev lint, helm lint helper charts, yamllint
 	yamllint --strict -c .yamllint .
 
 plugins:  ## Resolve jenkins/plugins.txt into jenkins/plugins/ (needs docker + internet) and refresh plugins.lock
-	rm -rf jenkins/plugins && mkdir -p jenkins/plugins
+	rm -rf jenkins/plugins && mkdir -p jenkins/plugins && chmod 777 jenkins/plugins  # container runs as uid 1000
 	set -o pipefail; docker run --rm -v "$(CURDIR)/jenkins:/j" $(JENKINS_IMAGE) \
 		jenkins-plugin-cli --plugin-file /j/plugins.txt --plugin-download-directory /j/plugins --list \
 		| sed -n '/Resulting plugin list/,/^$$/p' | grep -E '^[a-z0-9_-]+ ' | sort > jenkins/plugins.lock
