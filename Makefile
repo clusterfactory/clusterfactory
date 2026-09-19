@@ -39,7 +39,7 @@ plugins-update:  ## Re-resolve jenkins/plugins.txt into a new jenkins/plugins.lo
 
 plugins:  ## Install exactly jenkins/plugins.lock into jenkins/plugins/ (needs docker + internet)
 	@test -s jenkins/plugins.lock || { echo "jenkins/plugins.lock missing - run make plugins-update"; exit 1; }
-	awk '{print $$1":"$$2}' jenkins/plugins.lock > jenkins/.plugins.lock.txt
+	awk '{print $$1":"$$2}' jenkins/plugins.lock > jenkins/.plugins.lock.txt && chmod 644 jenkins/.plugins.lock.txt  # read by uid 1000 in the container
 	$(call resolve_plugins,.plugins.lock.txt,jenkins/.plugins.lock.resolved)
 	@rm -f jenkins/.plugins.lock.txt
 	@echo "installed $$(ls jenkins/plugins/*.jpi | wc -l | tr -d ' ') plugins from jenkins/plugins.lock"
