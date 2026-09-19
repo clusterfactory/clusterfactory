@@ -123,7 +123,7 @@ jobs:
           chmod +x /usr/local/bin/zarf
           zarf version
 
-      - name: Jenkins plugin lock is current (jenkins/plugins.txt -> plugins.lock)
+      - name: Jenkins plugin lock is self-consistent (installs exactly plugins.lock)
         run: make plugins-lock-check
 
       - name: zarf package create -f upstream via make (builds the plugins and wire-engine images)

@@ -37,8 +37,9 @@ API server IP (every ipBlock NetworkPolicy goes stale).
 - **Bump an upstream chart/image:** edit the chart `version:` in `common/zarf.yaml`
   and/or the tag in `values/<app>-upstream-values.yaml`, re-pin the digest, update
   the root `images:` list, run the gate.
-- **Add a Jenkins plugin:** add `name:version` to `jenkins/plugins.txt`, run
-  `make plugins`, commit `plugins.lock`. CI fails if the lock drifts.
+- **Add or bump a Jenkins plugin:** edit `jenkins/plugins.txt`, run
+  `make plugins-update`, review and commit `plugins.lock`. `make plugins`
+  installs the lock; CI fails if the lock is not self-consistent.
 - **Add a flavor:** `values/<app>-<flavor>-values.yaml` per app, a component in
   `zarf.yaml` with `only.flavor`, a CI matrix entry. Behaviour must not change.
 - **Add a namespace or policy:** `charts/config/values.yaml` (`namespaces`,

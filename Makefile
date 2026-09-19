@@ -1,4 +1,4 @@
-.PHONY: help clean lint plugins plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
+.PHONY: help clean lint plugins plugins-update plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
 
 SHELL := /bin/bash
 FLAVOR ?= upstream
@@ -19,16 +19,31 @@ lint:  ## CI gate 1 locally: zarf dev lint, helm lint helper charts, yamllint
 	for c in charts/*/; do helm lint "$$c" --strict && helm template cf "$$c" >/dev/null; done
 	yamllint --strict -c .yamllint .
 
-plugins:  ## Resolve jenkins/plugins.txt into jenkins/plugins/ (needs docker + internet) and refresh plugins.lock
+# Plugin resolution is two-phase so the closure is reproducible:
+#   plugins-update  resolve jenkins/plugins.txt (top-level pins) against the
+#                   update centre -> jenkins/plugins.lock (full closure). Run on
+#                   purpose; transitive versions move whenever upstream releases.
+#   plugins         install exactly jenkins/plugins.lock -> jenkins/plugins/.
+#                   This is what `make package` and CI use.
+PLUGIN_CLI = docker run --rm -v "$(CURDIR)/jenkins:/j" $(JENKINS_IMAGE) jenkins-plugin-cli
+define resolve_plugins
 	rm -rf jenkins/plugins && mkdir -p jenkins/plugins && chmod 777 jenkins/plugins  # container runs as uid 1000
-	set -o pipefail; docker run --rm -v "$(CURDIR)/jenkins:/j" $(JENKINS_IMAGE) \
-		jenkins-plugin-cli --plugin-file /j/plugins.txt --plugin-download-directory /j/plugins --list \
-		| sed -n '/Resulting plugin list/,/^$$/p' | grep -E '^[a-z0-9_-]+ ' | sort > jenkins/plugins.lock
-	@test -s jenkins/plugins.lock && ls jenkins/plugins/*.jpi >/dev/null || { echo "plugin resolution produced nothing"; exit 1; }
-	@echo "resolved $$(wc -l < jenkins/plugins.lock | tr -d ' ') plugins into jenkins/plugins/"
+	set -o pipefail; $(PLUGIN_CLI) --plugin-file /j/$(1) --plugin-download-directory /j/plugins --list \
+		| sed -n '/Resulting plugin list/,/^$$/p' | grep -E '^[a-z0-9_-]+ ' | sort > $(2)
+	@test -s $(2) && ls jenkins/plugins/*.jpi >/dev/null || { echo "plugin resolution produced nothing"; exit 1; }
+endef
 
-# Locally built images get content-addressed tags: a kubelet caches by tag
-# (IfNotPresent), so re-using "0.4.0" for new content silently runs old bits.
+plugins-update:  ## Re-resolve jenkins/plugins.txt into a new jenkins/plugins.lock (needs docker + internet)
+	$(call resolve_plugins,plugins.txt,jenkins/plugins.lock)
+	@echo "resolved $$(wc -l < jenkins/plugins.lock | tr -d ' ') plugins into jenkins/plugins.lock"
+
+plugins:  ## Install exactly jenkins/plugins.lock into jenkins/plugins/ (needs docker + internet)
+	@test -s jenkins/plugins.lock || { echo "jenkins/plugins.lock missing - run make plugins-update"; exit 1; }
+	awk '{print $$1":"$$2}' jenkins/plugins.lock > jenkins/.plugins.lock.txt
+	$(call resolve_plugins,.plugins.lock.txt,jenkins/.plugins.lock.resolved)
+	@rm -f jenkins/.plugins.lock.txt
+	@echo "installed $$(ls jenkins/plugins/*.jpi | wc -l | tr -d ' ') plugins from jenkins/plugins.lock"
+
 # Hash the actual .jpi payload (not just the lock): an empty or partial
 # resolution must never reuse the tag of a good image.
 PLUGINS_TAG := $(VERSION)-$(shell cat jenkins/plugins.lock jenkins/Dockerfile jenkins/plugins/*.jpi 2>/dev/null | shasum -a 256 | cut -c1-12)
@@ -51,10 +66,11 @@ wire-engine-image:  ## Build the wire-engine image (local daemon only, never pus
 	docker build --platform linux/amd64 -t $(WIRE_IMAGE) wire-engine/
 	@echo "built $(WIRE_IMAGE)"
 
-plugins-lock-check:  ## Fail if plugins.lock is stale relative to plugins.txt
-	cp jenkins/plugins.lock /tmp/plugins.lock.before
+plugins-lock-check:  ## Fail if installing plugins.lock does not reproduce plugins.lock exactly
 	$(MAKE) plugins
-	diff -u /tmp/plugins.lock.before jenkins/plugins.lock
+	diff -u jenkins/plugins.lock jenkins/.plugins.lock.resolved
+	@echo "plugins.lock is self-consistent"
+	@for p in $$(grep -v '^#' jenkins/plugins.txt | grep -o '^[^:]*'); do grep -q "^$$p " jenkins/plugins.lock || { echo "$$p from plugins.txt missing in plugins.lock - run make plugins-update"; exit 1; }; done
 
 package:  ## CI gate 2 locally: create the Zarf package for FLAVOR (default: upstream); OUT=dir
 	zarf package create . -f $(FLAVOR) --confirm $(ZARF_TMPL) $(if $(OUT),-o $(OUT),) $(ZARF_CREATE_ARGS)
