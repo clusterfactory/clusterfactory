@@ -30,6 +30,10 @@ but runs as uid 0 and writes to `/`, which violates PSA `restricted`
 
 - One namespace in the cluster is `baseline` instead of `restricted`, and
   that fact is written down where an assessor will find it.
+- **Supply risk:** the executor is published only on `gcr.io`, which Google is
+  retiring in favour of Artifact Registry; package *creation* pulls it from
+  there (deployment never does). If the pull starts failing, mirror the pinned
+  digest into a registry we control or move to the alternative below.
 - **Recorded alternative:** `ko` / Jib / `apko` need no root and would
   remove the exemption at the cost of a language-specific demo. Revisit if
   the exemption becomes a blocker for an assessor.
