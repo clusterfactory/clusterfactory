@@ -1,0 +1,102 @@
+# Gitea — flavor-agnostic values (chart https://dl.gitea.com/charts/).
+# Image provenance lives in values/gitea-upstream-values.yaml.
+
+replicaCount: 1
+
+gitea:
+  admin:
+    # Created by cf-config (keys: username, password); password comes from
+    # the GITEA_ADMIN_PASSWORD package variable.
+    existingSecret: cf-gitea-admin
+    email: gitea-admin@clusterfactory.local
+  config:
+    database:
+      DB_TYPE: sqlite3
+    session:
+      PROVIDER: memory
+    cache:
+      ADAPTER: memory
+    queue:
+      TYPE: level
+    indexer:
+      ISSUE_INDEXER_TYPE: bleve
+      REPO_INDEXER_ENABLED: false
+    actions:
+      ENABLED: false
+    server:
+      PROTOCOL: http
+      DOMAIN: gitea-http.clusterfactory.svc.cluster.local
+      ROOT_URL: http://gitea-http.clusterfactory.svc.cluster.local:3000/
+      HTTP_PORT: 3000
+      DISABLE_SSH: true
+      OFFLINE_MODE: true
+    # Airgap: no update checks, no outbound webhooks by default, no
+    # federation/avatars fetched from the internet.
+    cron.update_checker:
+      ENABLED: false
+    federation:
+      ENABLED: false
+    picture:
+      ENABLE_FEDERATED_AVATAR: false
+      DISABLE_GRAVATAR: true
+    webhook:
+      ALLOWED_HOST_LIST: private,loopback,*.svc.cluster.local
+    service:
+      DISABLE_REGISTRATION: true
+      REQUIRE_SIGNIN_VIEW: false
+
+# Rootless image (uds-way.md §3) — PSA restricted.
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+
+persistence:
+  enabled: true
+  size: 5Gi
+  claimName: gitea-data
+
+service:
+  http:
+    type: ClusterIP
+    port: 3000
+  ssh:
+    type: ClusterIP
+    port: 22
+
+ingress:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# Bundled dependencies stay off: Postgres is its own component (§6),
+# and the demo runs fine on SQLite + memory cache.
+redis-cluster:
+  enabled: false
+redis:
+  enabled: false
+postgresql:
+  enabled: false
+postgresql-ha:
+  enabled: false
+
+test:
+  enabled: false

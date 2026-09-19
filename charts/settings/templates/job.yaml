@@ -1,0 +1,138 @@
+{{- $img := .Values.wireEngine.image -}}
+{{- $ref := printf "%s:%s" $img.repository $img.tag -}}
+{{- if $img.digest }}{{ $ref = printf "%s@%s" $ref $img.digest }}{{ end -}}
+# One Job per Helm revision: Job templates are immutable, so an upgrade
+# must create a new Job (Helm removes the previous revision's). Logs of the
+# current run stay available until the next deploy; ttlSecondsAfterFinished
+# is deliberately unset.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cf-wire-engine-r{{ .Release.Revision }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "cf-settings.labels" . | nindent 4 }}
+    app.kubernetes.io/name: cf-wire-engine
+    clusterfactory.io/revision: {{ .Release.Revision | quote }}
+spec:
+  backoffLimit: {{ .Values.wireEngine.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.wireEngine.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cf-wire-engine
+        clusterfactory.io/revision: {{ .Release.Revision | quote }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: cf-wire-engine
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: wire
+          image: {{ $ref | quote }}
+          imagePullPolicy: {{ $img.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: GITEA_URL
+              value: {{ .Values.gitea.url | quote }}
+            - name: GITEA_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gitea.adminSecret }}
+                  key: username
+            - name: GITEA_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gitea.adminSecret }}
+                  key: password
+            - name: JENKINS_URL
+              value: {{ .Values.jenkins.url | quote }}
+            - name: JENKINS_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jenkins.adminSecret }}
+                  key: jenkins-admin-user
+            - name: JENKINS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.jenkins.adminSecret }}
+                  key: jenkins-admin-password
+            - name: DEMO_ORG
+              value: {{ .Values.demo.org | quote }}
+            - name: DEMO_REPO
+              value: {{ .Values.demo.repo | quote }}
+            - name: DEMO_BRANCH
+              value: {{ .Values.demo.branch | quote }}
+            - name: GITEA_INTEGRATION_USER
+              value: {{ .Values.demo.integrationUser | quote }}
+            - name: JENKINS_CREDENTIAL_ID
+              value: {{ .Values.demo.jenkinsCredentialId | quote }}
+            - name: JENKINS_JOB
+              value: {{ .Values.demo.jenkinsJob | quote }}
+            - name: TOKEN_SECRET_NAME
+              value: {{ .Values.demo.tokenSecret | quote }}
+            - name: READY_TIMEOUT_SECONDS
+              value: {{ .Values.wireEngine.readyTimeoutSeconds | quote }}
+            - name: NEXUS_URL
+              value: {{ .Values.nexus.url | quote }}
+            - name: NEXUS_DOCKER_HOST
+              value: {{ .Values.nexus.dockerHost | quote }}
+            - name: NEXUS_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nexus.adminSecret }}
+                  key: username
+            - name: NEXUS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nexus.adminSecret }}
+                  key: password
+            - name: NEXUS_INITIAL_ADMIN_PASSWORD
+              value: {{ .Values.nexus.initialAdminPassword | quote }}
+            - name: NEXUS_DOCKER_REPOSITORY
+              value: {{ .Values.nexus.dockerRepository | quote }}
+            - name: NEXUS_ACCEPT_CE_EULA
+              value: {{ .Values.nexus.acceptCeEula | quote }}
+            - name: NEXUS_DEPLOY_USER
+              value: {{ .Values.demo.nexusDeployUser | quote }}
+            - name: NEXUS_DEPLOY_SECRET_NAME
+              value: {{ .Values.demo.nexusDeploySecret | quote }}
+            - name: JENKINS_NEXUS_CREDENTIAL_ID
+              value: {{ .Values.demo.jenkinsNexusCredentialId | quote }}
+            - name: BUILD_NAMESPACE
+              value: {{ .Values.build.namespace | quote }}
+            - name: DOCKER_CONFIG_SECRET_NAME
+              value: {{ .Values.build.dockerConfigSecret | quote }}
+            - name: ZARF_REGISTRY_HOST
+              value: {{ .Values.zarfRegistry.host | quote }}
+            - name: ZARF_REGISTRY_PULL_SECRET
+              value: {{ .Values.zarfRegistry.pullSecret | quote }}
+            - name: BASE_IMAGE_REF
+              value: {{ .Values.build.baseImage.ref | quote }}
+            - name: BASE_IMAGE_NEXUS_NAME
+              value: {{ .Values.build.baseImage.nexusName | quote }}
+            - name: BASE_IMAGE_NEXUS_TAG
+              value: {{ .Values.build.baseImage.nexusTag | quote }}
+          volumeMounts:
+            - name: demo
+              mountPath: /etc/clusterfactory/demo
+              readOnly: true
+          resources:
+            {{- toYaml .Values.wireEngine.resources | nindent 12 }}
+      volumes:
+        - name: demo
+          configMap:
+            name: cf-demo-pipeline

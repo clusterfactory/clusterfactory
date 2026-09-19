@@ -1,0 +1,52 @@
+# cf-nexus (ADR 0007). Image provenance comes from values/nexus-<flavor>-values.yaml.
+image:
+  repository: docker.io/sonatype/nexus3
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# Nexus runs as the `nexus` user in the upstream image.
+securityContext:
+  runAsUser: 200
+  runAsGroup: 200
+  fsGroup: 200
+
+service:
+  http: 8081
+  docker: 5000  # Docker connector of the docker-hosted repository (created by the wire engine)
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1536Mi
+  limits:
+    memory: 2560Mi
+
+# JVM sizing; the upstream image reads INSTALL4J_ADD_VM_PARAMS.
+jvm:
+  xms: 1g
+  xmx: 1g
+  maxDirectMemory: 1g
+
+# Known initial admin password so the wire engine can rotate it to the
+# cf-config Secret on first run (ADR 0005: trusted operator).
+initialAdminPassword: admin123
+
+# nexus.properties dropped into /nexus-data/etc. Airgap: no update/outreach
+# calls (they would be blocked by NetworkPolicy anyway).
+properties:
+  nexus.onboarding.enabled: "false"
+  nexus.scripts.allowCreation: "false"
+
+startupProbe:
+  periodSeconds: 10
+  failureThreshold: 60   # cold start on small nodes takes a few minutes
+readinessProbe:
+  periodSeconds: 10

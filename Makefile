@@ -1,34 +1,87 @@
-.PHONY: help clean wire-image jenkins-image package deploy test
+.PHONY: help clean lint plugins plugins-update plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
 
-JENKINS_VERSION ?= 2.541.3-jdk21
+SHELL := /bin/bash
+FLAVOR ?= upstream
+VERSION := $(shell awk '/^  version:/ {print $$2; exit}' zarf.yaml)
+PACKAGE := zarf-package-clusterfactory-amd64-$(VERSION)-$(FLAVOR).tar.zst
+# Upstream Jenkins image from the flavor values (used only to run jenkins-plugin-cli)
+# (the tag that follows `repository: jenkins/jenkins`; the file also pins the agent image)
+JENKINS_IMAGE := $(shell awk '/repository: jenkins\/jenkins$$/{hit=1; next} hit && /tag:/{print "docker.io/jenkins/jenkins:" $$2; exit}' values/jenkins-$(FLAVOR)-values.yaml)
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 clean:  ## Clean build artifacts
-	rm -rf clusterfactory-ci-*.tar.zst
-	rm -rf zarf-sbom/
+	rm -rf zarf-package-clusterfactory-*.tar.zst zarf-sbom/ sboms/ build/
 
-wire-image:  ## Build and load wire engine image into k3d
-	docker build -t ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 engine/
-	k3d image import ghcr.io/clusterfactory/clusterfactory-wire:0.3.0 -c cf-test || true
+lint:  ## CI gate 1 locally: zarf dev lint, helm lint helper charts, yamllint
+	zarf dev lint . -f $(FLAVOR) $(ZARF_TMPL)
+	for c in charts/*/; do helm lint "$$c" --strict && helm template cf "$$c" >/dev/null; done
+	yamllint --strict -c .yamllint .
 
-jenkins-image:  ## Build Jenkins image with pre-installed plugins
-	docker build -t clusterfactory/jenkins-cf:$(JENKINS_VERSION) images/jenkins/
+# Plugin resolution is two-phase so the closure is reproducible:
+#   plugins-update  resolve jenkins/plugins.txt (top-level pins) against the
+#                   update centre -> jenkins/plugins.lock (full closure). Run on
+#                   purpose; transitive versions move whenever upstream releases.
+#   plugins         install exactly jenkins/plugins.lock -> jenkins/plugins/.
+#                   This is what `make package` and CI use.
+PLUGIN_CLI = docker run --rm -v "$(CURDIR)/jenkins:/j" $(JENKINS_IMAGE) jenkins-plugin-cli
+define resolve_plugins
+	rm -rf jenkins/plugins && mkdir -p jenkins/plugins && chmod 777 jenkins/plugins  # container runs as uid 1000
+	set -o pipefail; $(PLUGIN_CLI) --plugin-file /j/$(1) --plugin-download-directory /j/plugins --list \
+		| sed -n '/Resulting plugin list/,/^$$/p' | grep -E '^[a-z0-9_-]+ ' | sort > $(2)
+	@test -s $(2) && ls jenkins/plugins/*.jpi >/dev/null || { echo "plugin resolution produced nothing"; exit 1; }
+endef
 
-package:  ## Create Zarf package
-	zarf package create . --confirm
+plugins-update:  ## Re-resolve jenkins/plugins.txt into a new jenkins/plugins.lock (needs docker + internet)
+	$(call resolve_plugins,plugins.txt,jenkins/plugins.lock)
+	@echo "resolved $$(wc -l < jenkins/plugins.lock | tr -d ' ') plugins into jenkins/plugins.lock"
 
-deploy:  ## Deploy package to k8s (requires GITEA_ADMIN_PASSWORD env var)
-	@test -n "$(GITEA_ADMIN_PASSWORD)" || (echo "ERROR: GITEA_ADMIN_PASSWORD not set" && exit 1)
-	zarf package deploy zarf-package-clusterfactory-ci-amd64-0.3.0.tar.zst \
-		--confirm \
-		--set GITEA_ADMIN_PASSWORD=$(GITEA_ADMIN_PASSWORD)
+plugins:  ## Install exactly jenkins/plugins.lock into jenkins/plugins/ (needs docker + internet)
+	@test -s jenkins/plugins.lock || { echo "jenkins/plugins.lock missing - run make plugins-update"; exit 1; }
+	awk '{print $$1":"$$2}' jenkins/plugins.lock > jenkins/.plugins.lock.txt
+	$(call resolve_plugins,.plugins.lock.txt,jenkins/.plugins.lock.resolved)
+	@rm -f jenkins/.plugins.lock.txt
+	@echo "installed $$(ls jenkins/plugins/*.jpi | wc -l | tr -d ' ') plugins from jenkins/plugins.lock"
 
-test:  ## Run tests
-	cd engine && pytest tests/
+# Hash the actual .jpi payload (not just the lock): an empty or partial
+# resolution must never reuse the tag of a good image.
+PLUGINS_TAG := $(VERSION)-$(shell cat jenkins/plugins.lock jenkins/Dockerfile jenkins/plugins/*.jpi 2>/dev/null | shasum -a 256 | cut -c1-12)
+PLUGINS_IMAGE := ghcr.io/clusterfactory/jenkins-plugins:$(PLUGINS_TAG)
+plugins-tag:  ## Print the content-addressed plugins image tag (consumed by zarf onCreate)
+	@echo $(PLUGINS_TAG)
 
-lint:  ## Lint Python code
-	cd engine && pylint src/clusterfactory_engine/
+plugins-image:  ## Build the data-only plugins image from jenkins/plugins/ (local daemon only, never pushed)
+	@ls jenkins/plugins/*.jpi >/dev/null 2>&1 || { echo "jenkins/plugins/ is empty - run make plugins"; exit 1; }
+	docker build --platform linux/amd64 -t $(PLUGINS_IMAGE) jenkins/
+	@echo "built $(PLUGINS_IMAGE)"
+
+WIRE_TAG := $(VERSION)-$(shell shasum -a 256 wire-engine/wire.py wire-engine/Dockerfile | shasum -a 256 | cut -c1-12)
+WIRE_IMAGE := ghcr.io/clusterfactory/wire-engine:$(WIRE_TAG)
+ZARF_TMPL := --set PLUGINS_TAG=$(PLUGINS_TAG) --set WIRE_ENGINE_TAG=$(WIRE_TAG)
+wire-engine-tag:  ## Print the content-addressed wire-engine image tag (consumed by zarf onCreate)
+	@echo $(WIRE_TAG)
+
+wire-engine-image:  ## Build the wire-engine image (local daemon only, never pushed)
+	docker build --platform linux/amd64 -t $(WIRE_IMAGE) wire-engine/
+	@echo "built $(WIRE_IMAGE)"
+
+plugins-lock-check:  ## Fail if installing plugins.lock does not reproduce plugins.lock exactly
+	$(MAKE) plugins
+	diff -u jenkins/plugins.lock jenkins/.plugins.lock.resolved
+	@echo "plugins.lock is self-consistent"
+	@for p in $$(grep -v '^#' jenkins/plugins.txt | grep -o '^[^:]*'); do grep -q "^$$p " jenkins/plugins.lock || { echo "$$p from plugins.txt missing in plugins.lock - run make plugins-update"; exit 1; }; done
+
+package:  ## CI gate 2 locally: create the Zarf package for FLAVOR (default: upstream); OUT=dir
+	zarf package create . -f $(FLAVOR) --confirm $(ZARF_TMPL) $(if $(OUT),-o $(OUT),) $(ZARF_CREATE_ARGS)
+
+
+deploy:  ## Deploy the package to the current kube context
+	zarf package deploy $(PACKAGE) --confirm
+
+test:  ## Static checks on the wire engine (stdlib only: compile + import smoke)
+	python3 -m py_compile wire-engine/wire.py
+	@grep -nE '^(import|from) ' wire-engine/wire.py | grep -vE '^[0-9]+:(import|from) (base64|hashlib|http\.cookiejar|json|os|secrets|ssl|sys|time|urllib|xml|__future__)' \
+		&& { echo "wire.py must stay stdlib-only"; exit 1; } || echo "wire.py is stdlib-only"
 
 .DEFAULT_GOAL := help

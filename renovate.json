@@ -1,0 +1,125 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "separateMajorMinor": true,
+  "prConcurrentLimit": 6,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Zarf helm charts: name/url/version blocks in zarf.yaml files",
+      "managerFilePatterns": [
+        "/(^|/)zarf\\.yaml$/"
+      ],
+      "matchStrings": [
+        "-\\s+name:\\s*(?<depName>[\\w.-]+)\\s*\\n\\s+url:\\s*(?<registryUrl>https?://\\S+)\\s*\\n\\s+version:\\s*[\"']?(?<currentValue>[\\w.+-]+)[\"']?"
+      ],
+      "datasourceTemplate": "helm"
+    },
+    {
+      "customType": "regex",
+      "description": "Zarf images: lists under images: in zarf.yaml files (tag@digest)",
+      "managerFilePatterns": [
+        "/(^|/)zarf\\.yaml$/"
+      ],
+      "matchStrings": [
+        "-\\s+[\"']?(?<depName>[\\w./-]+):(?<currentValue>[\\w.-]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?[\"']?\\s*(?:#.*)?\\n"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Images in values files annotated with a renovate comment",
+      "managerFilePatterns": [
+        "/^values/.*\\.ya?ml$/",
+        "/^charts/.*/values\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+versioning=(?<versioning>\\S+))?\\s*\\n\\s*(?:tag|version):\\s*[\"']?(?<currentValue>[\\w.+-]+)[\"']?(?:\\s*#.*)?\\n(?:\\s*digest:\\s*[\"']?(?<currentDigest>sha256:[a-f0-9]{64})[\"']?)?"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "Jenkins plugins pinned in jenkins/plugins.txt (name:version)",
+      "managerFilePatterns": [
+        "/^jenkins/plugins\\.txt$/"
+      ],
+      "matchStrings": [
+        "^(?<depName>[\\w.-]+):(?<currentValue>[\\w.+-]+)\\s*$"
+      ],
+      "datasourceTemplate": "jenkins-plugins",
+      "versioningTemplate": "loose"
+    },
+    {
+      "customType": "regex",
+      "description": "Pinned CLI versions in workflows, Makefile and tasks (ZARF_VERSION, UDS_VERSION, RKE2_VERSION, ...)",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.*\\.ya?ml$/",
+        "/^Makefile$/",
+        "/^tasks\\.yaml$/",
+        "/^tasks/.*\\.ya?ml$/",
+        "/^rke2/.*$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+versioning=(?<versioning>\\S+))?\\s*\\n\\s*[\\w.-]+[:=?]+\\s*[\"']?(?<currentValue>v?[\\w.+-]+)[\"']?"
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group upstream Helm chart bumps",
+      "matchDatasources": [
+        "helm"
+      ],
+      "groupName": "helm charts",
+      "commitMessageTopic": "helm chart {{depName}}"
+    },
+    {
+      "description": "Group container image tag bumps. Digests are NOT pinned by Renovate: Zarf needs per-platform manifest digests, not index digests - run hack/pin-images.sh after a tag bump (CI checks the pair).",
+      "matchDatasources": [
+        "docker"
+      ],
+      "groupName": "container images",
+      "pinDigests": false
+    },
+    {
+      "description": "Group Jenkins plugin bumps",
+      "matchDatasources": [
+        "jenkins-plugins"
+      ],
+      "groupName": "jenkins plugins"
+    },
+    {
+      "description": "Group GitHub Actions bumps",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github actions"
+    },
+    {
+      "description": "CLI tool pins (zarf, uds, rke2, cosign, ...) are bumped one at a time, never grouped",
+      "matchDatasources": [
+        "github-releases",
+        "github-tags"
+      ],
+      "groupName": null,
+      "commitMessageTopic": "{{depName}} CLI"
+    },
+    {
+      "description": "Python stays stdlib-only in the wire engine; only the base image moves",
+      "matchFileNames": [
+        "wire-engine/**"
+      ],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "enabled": false
+    }
+  ]
+}

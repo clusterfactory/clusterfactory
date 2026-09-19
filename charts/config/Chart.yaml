@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cf-config
+description: clusterfactory helper chart deployed BEFORE the apps — namespaces with PSA labels, NetworkPolicies, admin Secrets.
+type: application
+version: 0.1.0

@@ -1,0 +1,10 @@
+# Gitea — flavor `upstream`: image provenance only (ADR 0003).
+# Keep tag+digest in sync with the images: list in the root zarf.yaml.
+image:
+  registry: docker.gitea.com
+  repository: gitea
+  # renovate: datasource=docker depName=docker.gitea.com/gitea
+  tag: 1.23.6  # chart appends -rootless when image.rootless is true
+  digest: sha256:e3ae417c87fd0e2345cbe4da5f597ffeb6d0872490c74bbb6e988beb1561ff14
+  rootless: true
+  pullPolicy: IfNotPresent

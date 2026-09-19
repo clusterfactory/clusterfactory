@@ -1,0 +1,4 @@
+# Nexus — flavor-agnostic values for charts/nexus (ADR 0007).
+persistence:
+  enabled: true
+  size: 10Gi

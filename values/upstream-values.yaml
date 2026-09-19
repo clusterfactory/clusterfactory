@@ -1,0 +1,16 @@
+# Flavor `upstream`: image provenance for charts/settings (ADR 0003).
+# The wire-engine image is built locally at create time (wire-engine/Dockerfile)
+# with a content-addressed tag; never pushed - Zarf reads it from the daemon.
+wireEngine:
+  image:
+    repository: ghcr.io/clusterfactory/wire-engine
+    tag: "###ZARF_CONST_WIRE_ENGINE_TAG###"
+    digest: ""
+
+# Demo base image, exactly as listed in the root zarf.yaml images: (the wire
+# engine reads it out of the Zarf registry by digest and pushes it to Nexus).
+build:
+  baseImage:
+    ref: docker.io/library/alpine:3.20@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e
+    nexusName: alpine
+    nexusTag: "3.20"

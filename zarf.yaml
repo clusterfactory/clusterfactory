@@ -1,105 +1,100 @@
+# clusterfactory — root Zarf package definition.
+#
+# One component per flavor; each imports the flavor-agnostic package in
+# common/. Flavor = image provenance only (ADR 0003): the only things that
+# differ per flavor are the flavor values files and the images: list.
+# Behaviour, charts, deploy order and wiring live in common/zarf.yaml.
+#
+# Build:   zarf package create . -f upstream --confirm
+# Deploy:  zarf package deploy zarf-package-clusterfactory-amd64-<ver>-upstream.tar.zst --key cosign.pub
 kind: ZarfPackageConfig
 metadata:
-  name: clusterfactory-ci
-  version: 0.3.0
-  description: 'Airgap CI demo: Gitea (git) + Jenkins (workflow), auto-wired.'
+  name: clusterfactory
+  version: 0.4.0
+  description: 'Airgapped software forge: Gitea + Jenkins + Nexus, auto-wired. Upstream charts and images only.'
   url: https://github.com/clusterfactory/clusterfactory
   architecture: amd64
+
+# Deploy-time knobs. Trusted-operator threat model (ADR 0005): defaults are
+# CHANGEME strings, never prompts; override with --set NAME=value.
 variables:
-- name: GITEA_ADMIN_PASSWORD
-  description: Gitea admin password (required, prompted if not set).
-  prompt: true
-  sensitive: true
+  - name: GITEA_ADMIN_PASSWORD
+    description: Gitea admin password (user gitea-admin), written to Secret cf-gitea-admin.
+    default: CHANGEME-gitea
+    sensitive: true
+  - name: JENKINS_ADMIN_PASSWORD
+    description: Jenkins admin password (user admin), written to Secret cf-jenkins-admin.
+    default: CHANGEME-jenkins
+    sensitive: true
+  - name: NEXUS_ADMIN_PASSWORD
+    description: Nexus admin password, written to Secret cf-nexus-admin; the wire engine rotates the initial password to it.
+    default: CHANGEME-nexus
+    sensitive: true
+  - name: NEXUS_ACCEPT_CE_EULA
+    description: >-
+      Set to "true" to accept the Sonatype Nexus Repository Community Edition EULA
+      (https://links.sonatype.com/products/nxrm/ce-eula) on the operator's behalf. Until accepted the
+      Docker connector refuses requests and the wire engine fails. Never defaulted to true (ADR 0007).
+    default: "false"
+  - name: APISERVER_CIDR
+    description: Kubernetes API server endpoint CIDR allowed as egress. Resolved automatically at deploy; set explicitly for HA control planes.
+    default: ""
+  - name: APISERVER_PORT
+    description: Kubernetes API server port.
+    default: "6443"
+
+# Package templates (###ZARF_PKG_TMPL_*###) are only substituted inside
+# zarf.yaml, so the create-time image tags are re-exported as constants,
+# which Zarf does template into values files (###ZARF_CONST_*###).
+constants:
+  - name: PLUGINS_TAG
+    value: "###ZARF_PKG_TMPL_PLUGINS_TAG###"
+  - name: WIRE_ENGINE_TAG
+    value: "###ZARF_PKG_TMPL_WIRE_ENGINE_TAG###"
+
 components:
-- name: netpol
-  required: true
-  description: "Default-deny ingress except wire\u2192{gitea,jenkins}."
-  manifests:
-  - name: networkpolicy
-    namespace: cicd
-    files:
-    - manifests/networkpolicy.yaml
-- name: gitea-secret
-  required: true
-  description: Pre-create the admin Secret Gitea will use.
-  manifests:
-  - name: gitea-admin
-    namespace: cicd
-    files:
-    - manifests/gitea-admin-secret.yaml
-- name: gitea
-  required: true
-  description: Gitea 1.23.6 as a git server (Actions disabled for the demo).
-  charts:
-  - name: gitea
-    url: https://dl.gitea.com/charts/
-    version: 11.0.1
-    namespace: cicd
-    releaseName: cf-gitea
-    valuesFiles:
-    - values/gitea.yaml
-  images:
-  - docker.gitea.com/gitea:1.23.6-rootless
-- name: jenkins
-  required: true
-  description: Jenkins 2.541.3 LTS as workflow engine (vanilla, no plugins for airgap
-    demo).
-  charts:
-  - name: jenkins
-    url: https://charts.jenkins.io
-    version: 5.9.9
-    namespace: cicd
-    releaseName: cf-jenkins
-    valuesFiles:
-    - values/jenkins.yaml
-  images:
-  - jenkins/jenkins:2.541.3-jdk21
-  - kiwigrid/k8s-sidecar:2.5.0
-- name: platform-spec
-  required: true
-  description: 'Platform spec: components + wiring graph for the engine.'
-  manifests:
-  - name: platform-configmap
-    namespace: cicd
-    files:
-    - manifests/platform-configmap.yaml
-- name: wire
-  required: false
-  description: "Credential wiring: Gitea \u2192 Jenkins (disabled for v0.3 - needs\
-    \ plugins)."
-  manifests:
-  - name: wire-rbac
-    namespace: cicd
-    files:
-    - manifests/wire-rbac.yaml
-  - name: wire-job
-    namespace: cicd
-    files:
-    - manifests/wire-job.yaml
-  actions:
-    onDeploy:
-      after:
-      - description: Wait for wire Job to complete.
-        cmd: "kubectl wait --for=condition=complete \\\n  --timeout=10m -n cicd job/cf-wire\n"
-        maxRetries: 0
-      - description: Read and report the structural SHA.
-        cmd: "kubectl get cm -n cicd cf-wire-result \\\n  -o jsonpath='{.data.structural_sha}'\n"
-        setVariables:
-        - name: STRUCTURAL_SHA
-      - description: Print post-install access instructions.
-        cmd: "echo \"\"\necho \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\"\necho \"  clusterfactory-ci is up.\"\necho \"  Structural\
-          \ SHA: ${STRUCTURAL_SHA}\"\necho \"\"\necho \"  Port-forward:\"\necho \"\
-          \    kubectl port-forward -n cicd svc/cf-gitea-http 3000:3000\"\necho \"\
-          \    kubectl port-forward -n cicd svc/cf-jenkins 8080:8080\"\necho \"\"\n\
-          echo \"  Credentials:\"\necho \"    Gitea:   gitea-admin / <the password\
-          \ you set>\"\necho \"    Jenkins: admin / \\$(kubectl get secret cf-jenkins\
-          \ -n cicd \\\\\"\necho \"              -o jsonpath='{.data.jenkins-admin-password}'\
-          \ | base64 -d)\"\necho \"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\
-          \u2500\u2500\u2500\u2500\"\n"
+  - name: clusterfactory
+    required: true
+    description: Gitea + Jenkins + Nexus with clusterfactory config/settings helper charts (upstream images).
+    only:
+      flavor: upstream
+    import:
+      path: common
+    charts:
+      - name: gitea
+        valuesFiles:
+          - values/gitea-upstream-values.yaml
+      - name: jenkins
+        valuesFiles:
+          - values/jenkins-upstream-values.yaml
+      - name: nexus
+        valuesFiles:
+          - values/nexus-upstream-values.yaml
+      - name: cf-settings
+        valuesFiles:
+          - values/upstream-values.yaml
+    # Every image referenced by every chart's values for this flavor, pinned
+    # by linux/amd64 *manifest* digest (Zarf rejects index digests; resolve
+    # with hack/pin-images.sh) and kept in sync with values/*-upstream-values.yaml.
+    # Bootstrap a new list with `zarf dev find-images -f upstream`, then pin.
+    # Renovate keeps the digests current (renovate.json).
+    # (find-images also reports bats/bats from the Jenkins chart's helm-test
+    # hook; it is never deployed and is deliberately omitted.)
+    images:
+      - docker.gitea.com/gitea:1.23.6-rootless@sha256:e3ae417c87fd0e2345cbe4da5f597ffeb6d0872490c74bbb6e988beb1561ff14
+      - docker.io/jenkins/jenkins:2.541.3-jdk21@sha256:827f56f02e09332a06638afa84068af39946066947e03cce95930ca598064384
+      - docker.io/kiwigrid/k8s-sidecar:2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc
+      - docker.io/sonatype/nexus3:3.96.2@sha256:a6a2d43487ba92581d5169b3d4d5b4ba17b87d1f95ab593094d6da7f835719b6
+      - docker.io/jenkins/inbound-agent:3355.v388858a_47b_33-16@sha256:8cdeac9601a3381a629555e8d191f1bc4a7ee17546bbf64de54dabde9d2aacd9
+      # In-cluster image builds (ADR 0009); pulled by the Kaniko pod in cf-build.
+      # The -debug variant carries a busybox shell, which the Jenkins container
+      # step needs to keep the container alive and run the executor.
+      - gcr.io/kaniko-project/executor:v1.24.0-debug@sha256:9e22d0ba2c78cffbd47e2269aa6d3dc43fc3e3ecc6b61262399279dec5e67d45
+      # Demo base image: shipped here, pre-seeded into Nexus by the wire engine,
+      # never pulled from Docker Hub by the pipeline (values/upstream-values.yaml).
+      - docker.io/library/alpine:3.20@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e
+      # Built locally at create time (make plugins-image / wire-engine-image)
+      # with content-addressed tags set by the onCreate actions in common/;
+      # never pushed - Zarf reads them from the Docker daemon.
+      - ghcr.io/clusterfactory/jenkins-plugins:###ZARF_PKG_TMPL_PLUGINS_TAG###
+      - ghcr.io/clusterfactory/wire-engine:###ZARF_PKG_TMPL_WIRE_ENGINE_TAG###

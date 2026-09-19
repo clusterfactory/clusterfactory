@@ -1,0 +1,100 @@
+// clusterfactory demo pipeline: build an image in-cluster with Kaniko and
+// push it to the Nexus docker-hosted registry. Nothing here touches the
+// internet: the base image comes from Nexus (pre-seeded by the wire engine)
+// and the Kaniko/jnlp images from the Zarf registry.
+//
+// Managed by cf-wire-engine (charts/settings/demo/Jenkinsfile); edits in
+// Gitea are overwritten on the next deploy.
+pipeline {
+  agent {
+    kubernetes {
+      // Runs in cf-build (PSA baseline, ADR 0009). Kaniko needs uid 0 and a
+      // writable root fs; everything else is dropped.
+      yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  automountServiceAccountToken: false
+  securityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    # The agent image must be the one shipped in the package; without an
+    # explicit jnlp container the plugin injects its own default tag, which
+    # does not exist in the Zarf registry.
+    - name: jnlp
+      image: docker.io/jenkins/inbound-agent:3355.v388858a_47b_33-16@sha256:8cdeac9601a3381a629555e8d191f1bc4a7ee17546bbf64de54dabde9d2aacd9
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:v1.24.0-debug@sha256:9e22d0ba2c78cffbd47e2269aa6d3dc43fc3e3ecc6b61262399279dec5e67d45
+      command: ["sleep"]
+      args: ["infinity"]
+      securityContext:
+        # The only deviation from `restricted` in the whole package (ADR 0009):
+        # uid 0 with the runtime-default capability set (root without
+        # DAC_OVERRIDE/CHOWN/FOWNER cannot write the uid-1000 workspace nor
+        # extract layers). No capabilities are added; baseline forbids more.
+        runAsUser: 0
+        runAsNonRoot: false
+        allowPrivilegeEscalation: false
+      volumeMounts:
+        - name: docker-config
+          mountPath: /kaniko/.docker
+          readOnly: true
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+  volumes:
+    - name: docker-config
+      secret:
+        secretName: cf-nexus-docker-config
+        items:
+          - key: .dockerconfigjson
+            path: config.json
+'''
+    }
+  }
+
+  environment {
+    REGISTRY = 'nexus.clusterfactory.svc.cluster.local:5000'
+    IMAGE    = "${REGISTRY}/cf-demo/hello-world"
+  }
+
+  stages {
+    stage('Build and push') {
+      steps {
+        container('kaniko') {
+          sh '''
+            /kaniko/executor \
+              --context "${WORKSPACE}" \
+              --dockerfile "${WORKSPACE}/Dockerfile" \
+              --destination "${IMAGE}:${BUILD_NUMBER}" \
+              --destination "${IMAGE}:latest" \
+              --insecure --insecure-pull --skip-tls-verify \
+              --cache=false --verbosity=info
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success { echo "pushed ${IMAGE}:${BUILD_NUMBER}" }
+    failure { echo 'Pipeline failed.' }
+  }
+}

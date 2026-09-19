@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nexus
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "cf-nexus.labels" . | nindent 4 }}
+spec:
+  serviceName: nexus
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nexus
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "cf-nexus.labels" . | nindent 8 }}
+      annotations:
+        checksum/properties: {{ toYaml .Values.properties | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        runAsGroup: {{ .Values.securityContext.runAsGroup }}
+        fsGroup: {{ .Values.securityContext.fsGroup }}
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # nexus.properties must live under the data dir, which is a volume.
+        - name: properties
+          image: {{ include "cf-nexus.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["sh", "-c", "mkdir -p /nexus-data/etc && cp /config/nexus.properties /nexus-data/etc/nexus.properties"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /nexus-data
+            - name: properties
+              mountPath: /config
+      containers:
+        - name: nexus
+          image: {{ include "cf-nexus.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # Nexus writes under /opt/sonatype at start
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8081
+            - name: docker
+              containerPort: 5000
+          env:
+            - name: INSTALL4J_ADD_VM_PARAMS
+              value: "-Xms{{ .Values.jvm.xms }} -Xmx{{ .Values.jvm.xmx }} -XX:MaxDirectMemorySize={{ .Values.jvm.maxDirectMemory }} -Djava.util.prefs.userRoot=/nexus-data/javaprefs"
+            - name: NEXUS_SECURITY_RANDOMPASSWORD
+              value: "false"
+          volumeMounts:
+            - name: data
+              mountPath: /nexus-data
+          startupProbe:
+            httpGet:
+              path: /service/rest/v1/status
+              port: http
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /service/rest/v1/status
+              port: http
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: properties
+          configMap:
+            name: nexus-properties
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.persistence.storageClassName }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

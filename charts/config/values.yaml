@@ -1,0 +1,72 @@
+# cf-config — deployed BEFORE the apps (uds-way.md §3, ADR 0001).
+# Owns: the application namespaces (with PSA labels), the NetworkPolicies
+# that enforce airgap, and the admin Secrets the apps consume.
+#
+# Package-level overrides live in values/config-values.yaml. Chart defaults
+# here are what `helm template` renders standalone.
+
+# Namespaces this chart creates and labels. The chart's own release
+# namespace (cf-system) is created by Zarf and holds nothing but the
+# Helm release record - Helm cannot adopt a namespace that already exists.
+namespaces:
+  clusterfactory:
+    # Pod Security Admission (CM-7, AC-6).
+    podSecurity: restricted
+  # Jenkins pod agents + Kaniko. `baseline`, not `restricted`: Kaniko runs as
+  # uid 0 (ADR 0009, docs/exemptions/kaniko.md). Everything else is locked:
+  # egress only to the clusterfactory namespace and DNS, no API server.
+  cf-build:
+    podSecurity: baseline
+    allowApiServer: false
+    egressToNamespaces:
+      - clusterfactory
+
+# Airgap enforcement (SC-7): deny all egress from application pods except
+# in-namespace traffic, cluster DNS and the Kubernetes API server.
+networkPolicy:
+  enabled: true
+  dns:
+    namespace: kube-system
+  # The API server is not a pod; it is reached at its endpoint IP after
+  # DNAT, so it must be allowed by ipBlock. The root zarf.yaml resolves the
+  # live endpoint into these values at deploy time (UDS Core does the same
+  # in its operator). Empty cidr => rule omitted.
+  apiServer:
+    cidr: ""
+    port: 6443
+  # Extra egress rules for the clusterfactory namespace, appended verbatim.
+  additionalEgress:
+    # The wire engine copies the demo base image out of the Zarf registry
+    # (Registry API v2) into Nexus.
+    - name: wire-engine-zarf-registry
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: cf-wire-engine
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: zarf
+              podSelector:
+                matchLabels:
+                  app: docker-registry
+          ports:
+            - protocol: TCP
+              port: 5000
+
+# Admin credentials the upstream charts consume via existingSecret.
+# Trusted-operator threat model (ADR 0005): CHANGEME defaults are
+# acceptable; override with `zarf package deploy --set ...`.
+secrets:
+  gitea:
+    name: cf-gitea-admin
+    username: gitea-admin
+    password: CHANGEME-gitea
+  jenkins:
+    name: cf-jenkins-admin
+    username: admin
+    password: CHANGEME-jenkins
+  nexus:
+    name: cf-nexus-admin
+    username: admin
+    password: CHANGEME-nexus

@@ -1,11 +1,11 @@
-name: Release
+name: Release (legacy Helm repo flow - disabled)
 
+# The umbrella Helm chart was removed in the UDS-style refactor (uds-way.md,
+# ADR 0001). This workflow packaged and signed that chart; it is kept only
+# as reference for the cosign/SBOM steps until §13 step 9/12 replaces it
+# with the Zarf release flow (signed .tar.zst + cosign.pub + SBOMs).
 on:
-  push:
-    tags:
-      - 'v*'
-  release:
-    types: [published]
+  workflow_dispatch:
 
 # workflow-level: minimum possible
 # job-level permissions are declared explicitly per job below

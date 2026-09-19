@@ -7,7 +7,24 @@ Versioning: [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
 
-<!-- PRs add entries here. Released versions move them to a versioned section. -->
+### Changed — UDS-style Zarf package (uds-way.md steps 0–8)
+- Repo restructured after the UDS package anatomy: root `zarf.yaml` with a
+  single `upstream` flavor importing `common/zarf.yaml`; `charts/config`
+  (namespaces, PSA, NetworkPolicies, Secrets) before the apps, `charts/settings`
+  (wire-engine Job) after them.
+- Gitea and Jenkins deployed from unmodified upstream charts; umbrella chart,
+  custom Jenkins image and both wire Dockerfiles removed.
+- Nexus Repository CE added (embedded H2, own helper chart); no Postgres
+  component (ADRs 0007/0008).
+- Jenkins plugins resolved on the connected side into a data-only image;
+  update centre disabled (ADR 0006).
+- Wire engine rewritten as a stdlib-only in-cluster Job: Gitea org/repo/token,
+  Jenkins credentials/job, Nexus setup, Kaniko docker config, base image copied
+  from the Zarf registry into Nexus. Idempotent; structural SHA dropped (ADR 0004).
+- Kaniko pod-agent builds in `cf-build` at PSA baseline with a declared exemption.
+- CI: lint → create (SBOM + grype) → airgapped deploy on kind + Calico with the
+  full functional gate, including an idempotent redeploy.
+- ADRs 0001–0011, 0013 and `renovate.json` added; Dependabot config removed.
 
 ## [0.2.0] - 2026-04-05
 

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: cf-nexus
+description: >-
+  Sonatype Nexus Repository Community Edition on the embedded H2 store, single replica,
+  PSA restricted (ADR 0007). Unmodified upstream image; clusterfactory owns only this small chart.
+type: application
+version: 0.1.0
+appVersion: "3.96.2"

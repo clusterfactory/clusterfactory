@@ -1,0 +1,253 @@
+name: CI
+
+# uds-way.md §11 gates, in order; every gate must pass:
+#   1. lint    zarf dev lint, helm lint on helper charts, yamllint, OSCAL schema
+#   2. create  zarf package create -f upstream on a connected runner; SBOMs; CVE scan
+#   3. deploy  kind + Calico, default-deny egress, zarf init, deploy, tests/deploy-check.sh
+#   4. functional  demo pipeline: pod agent, Kaniko build, push to Nexus (inside deploy-check.sh)
+#   5. upgrade (step 9)  6. rke2 (step 10)
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  # renovate: datasource=github-releases depName=zarf-dev/zarf
+  ZARF_VERSION: v0.75.0
+
+jobs:
+  zarf-lint:
+    name: zarf dev lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install Zarf
+        run: |
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
+          chmod +x /usr/local/bin/zarf
+          zarf version
+
+      - name: zarf dev lint
+        # Package templates for the locally built images must be set for lint;
+        # their values do not matter here.
+        run: zarf dev lint . -f upstream --no-color --set PLUGINS_TAG=lint --set WIRE_ENGINE_TAG=lint
+
+  helm-lint:
+    name: helm lint (helper charts)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
+
+      - name: helm lint charts/*
+        run: |
+          found=0
+          for chart in charts/*/Chart.yaml; do
+            [ -f "$chart" ] || continue
+            found=1
+            dir=$(dirname "$chart")
+            echo "::group::helm lint $dir"
+            helm lint "$dir" --strict
+            helm template cf "$dir" >/dev/null
+            echo "::endgroup::"
+          done
+          [ "$found" = 1 ] || echo "no helper charts yet (charts/*/Chart.yaml) - skipping"
+
+  yamllint:
+    name: yamllint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        with:
+          python-version: '3.12'
+      - run: pip install yamllint==1.35.1
+      - run: yamllint --strict -c .yamllint .
+
+  oscal-schema:
+    name: OSCAL schema check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Locate oscal-component.yaml
+        id: oscal
+        run: |
+          if [ -f oscal-component.yaml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "oscal-component.yaml not present yet (uds-way.md §13 step 9) - skipping"
+          fi
+
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
+        if: steps.oscal.outputs.present == 'true'
+        with:
+          python-version: '3.12'
+
+      - name: Validate against the OSCAL component-definition JSON schema
+        if: steps.oscal.outputs.present == 'true'
+        env:
+          # renovate: datasource=github-releases depName=usnistgov/OSCAL
+          OSCAL_VERSION: v1.1.2
+        run: |
+          pip install pyyaml jsonschema
+          curl -sSfL "https://github.com/usnistgov/OSCAL/releases/download/${OSCAL_VERSION}/oscal_component_schema.json" -o /tmp/oscal_component_schema.json
+          python - <<'PY'
+          import json, yaml, jsonschema
+          schema = json.load(open('/tmp/oscal_component_schema.json'))
+          doc = yaml.safe_load(open('oscal-component.yaml'))
+          jsonschema.validate(doc, schema)
+          print('oscal-component.yaml is schema-valid')
+          PY
+
+  create:
+    name: zarf package create (upstream)
+    runs-on: ubuntu-latest
+    needs: [zarf-lint, helm-lint, yamllint, oscal-schema]
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
+
+      - name: Install Zarf
+        run: |
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
+          chmod +x /usr/local/bin/zarf
+          zarf version
+
+      - name: Jenkins plugin lock is self-consistent (installs exactly plugins.lock)
+        run: make plugins-lock-check
+
+      - name: zarf package create -f upstream via make (builds the plugins and wire-engine images)
+        run: |
+          mkdir -p build
+          make package OUT=build ZARF_CREATE_ARGS=--no-color
+          ls -lh build/
+
+      - name: Inspect package definition
+        run: zarf package inspect definition build/zarf-package-clusterfactory-*.tar.zst --no-color
+
+      - name: Extract SBOMs
+        id: sbom
+        run: |
+          mkdir -p sboms
+          # No images yet -> no SBOMs; tolerate that until the first image lands.
+          if zarf package inspect sbom build/zarf-package-clusterfactory-*.tar.zst --output sboms --no-color; then
+            :
+          else
+            echo "no SBOMs extracted (package has no images yet)"
+          fi
+          COUNT=$(find sboms -type f -name '*.json' | wc -l)
+          echo "count=${COUNT}" >> "$GITHUB_OUTPUT"
+          echo "SBOM files: ${COUNT}"
+
+      - name: Upload SBOMs
+        if: steps.sbom.outputs.count != '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: sboms
+          path: sboms/
+          retention-days: 14
+
+      - name: Install grype
+        if: steps.sbom.outputs.count != '0'
+        uses: anchore/scan-action/download-grype@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
+        id: grype
+
+      - name: CVE scan SBOMs
+        # Blocking for the images this repo builds (wire-engine, plugins).
+        # Upstream images are scanned and summarised but do not block yet:
+        # the pinned Jenkins/Gitea/agent/sidecar versions predate several
+        # fixed criticals and Kaniko is archived upstream (never fixed).
+        # Step 9 (uds-way.md §8) bumps versions and adds a reviewed grype
+        # ignore policy with expiry dates before this becomes blocking.
+        run: |
+          set -o pipefail
+          rc=0
+          echo "## CVE scan (critical, fix available)" >> "$GITHUB_STEP_SUMMARY"
+          for sbom in $(find sboms -type f -name '*.json' | sort); do
+            name=$(basename "$sbom" .json | sed 's/_sha256.*//')
+            echo "::group::grype $name"
+            if [[ "$name" == ghcr.io_clusterfactory_* ]]; then
+              if ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --fail-on critical --only-fixed -o table; then
+                echo "- :white_check_mark: \`$name\` (blocking) clean" >> "$GITHUB_STEP_SUMMARY"
+              else
+                rc=1; echo "- :x: \`$name\` (blocking) has critical CVEs with fixes" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              n=$(${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --only-fixed -o json 2>/dev/null \
+                | python3 -c 'import json,sys; m=json.load(sys.stdin)["matches"]; print(sum(1 for x in m if x["vulnerability"]["severity"]=="Critical"))')
+              ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --only-fixed -o table || true
+              echo "- :warning: \`$name\` (upstream, report-only): ${n} critical with fix" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "::endgroup::"
+          done
+          exit $rc
+
+      - name: Upload package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: zarf-package-upstream
+          path: build/zarf-package-clusterfactory-*.tar.zst
+          retention-days: 5
+
+  deploy:
+    name: airgapped deploy (kind + Calico)
+    # Gitea + Jenkins + Nexus + a Kaniko build need more than the 7 GB of
+    # ubuntu-latest; switch to a larger runner if this starts thrashing.
+    runs-on: ubuntu-latest
+    needs: [create]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install Zarf
+        run: |
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
+          chmod +x /usr/local/bin/zarf
+          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
+
+      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+        with:
+          install_only: true
+
+      - name: Download package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: zarf-package-upstream
+          path: build
+
+      - name: Stand up the egress-blocked cluster (kind + Calico + zarf init + deny egress)
+        run: bundle/up.sh .
+
+      - name: zarf package deploy
+        run: zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+
+      - name: Gate 3 checks
+        run: tests/deploy-check.sh clusterfactory
+
+      - name: Redeploy over the converged cluster (wire engine must be idempotent)
+        run: |
+          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+          EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide
+          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -50
+          for p in $(kubectl get pods -n clusterfactory -o name); do
+            echo "::group::$p"
+            kubectl describe -n clusterfactory "$p" | tail -40
+            kubectl logs -n clusterfactory "$p" --all-containers --tail=100 || true
+            echo "::endgroup::"
+          done
