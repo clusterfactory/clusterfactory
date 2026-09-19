@@ -33,7 +33,9 @@ jobs:
           zarf version
 
       - name: zarf dev lint
-        run: zarf dev lint . -f upstream --no-color
+        # Package templates for the locally built images must be set for lint;
+        # their values do not matter here.
+        run: zarf dev lint . -f upstream --no-color --set PLUGINS_TAG=lint --set WIRE_ENGINE_TAG=lint
 
   helm-lint:
     name: helm lint (helper charts)
@@ -149,7 +151,7 @@ jobs:
 
       - name: Upload SBOMs
         if: steps.sbom.outputs.count != '0'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: sboms
           path: sboms/
@@ -157,7 +159,7 @@ jobs:
 
       - name: Install grype
         if: steps.sbom.outputs.count != '0'
-        uses: anchore/scan-action/download-grype@v6
+        uses: anchore/scan-action/download-grype@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
         id: grype
 
       - name: CVE scan SBOMs (fail on critical with a fix available)
@@ -173,7 +175,7 @@ jobs:
           exit $rc
 
       - name: Upload package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: zarf-package-upstream
           path: build/zarf-package-clusterfactory-*.tar.zst
@@ -196,12 +198,12 @@ jobs:
           INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
 
-      - uses: helm/kind-action@a1b0e391336a6ee6efb3d54b7d24d3e6de4e6f39  # v1.12.0
+      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
         with:
           install_only: true
 
       - name: Download package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: zarf-package-upstream
           path: build
