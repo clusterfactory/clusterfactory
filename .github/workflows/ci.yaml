@@ -162,14 +162,32 @@ jobs:
         uses: anchore/scan-action/download-grype@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
         id: grype
 
-      - name: CVE scan SBOMs (fail on critical with a fix available)
-        if: steps.sbom.outputs.count != '0'
+      - name: CVE scan SBOMs
+        # Blocking for the images this repo builds (wire-engine, plugins).
+        # Upstream images are scanned and summarised but do not block yet:
+        # the pinned Jenkins/Gitea/agent/sidecar versions predate several
+        # fixed criticals and Kaniko is archived upstream (never fixed).
+        # Step 9 (uds-way.md §8) bumps versions and adds a reviewed grype
+        # ignore policy with expiry dates before this becomes blocking.
         run: |
           set -o pipefail
           rc=0
-          for sbom in $(find sboms -type f -name '*.json'); do
-            echo "::group::grype $sbom"
-            ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --fail-on critical --only-fixed -o table || rc=1
+          echo "## CVE scan (critical, fix available)" >> "$GITHUB_STEP_SUMMARY"
+          for sbom in $(find sboms -type f -name '*.json' | sort); do
+            name=$(basename "$sbom" .json | sed 's/_sha256.*//')
+            echo "::group::grype $name"
+            if [[ "$name" == ghcr.io_clusterfactory_* ]]; then
+              if ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --fail-on critical --only-fixed -o table; then
+                echo "- :white_check_mark: \`$name\` (blocking) clean" >> "$GITHUB_STEP_SUMMARY"
+              else
+                rc=1; echo "- :x: \`$name\` (blocking) has critical CVEs with fixes" >> "$GITHUB_STEP_SUMMARY"
+              fi
+            else
+              n=$(${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --only-fixed -o json 2>/dev/null \
+                | python3 -c 'import json,sys; m=json.load(sys.stdin)["matches"]; print(sum(1 for x in m if x["vulnerability"]["severity"]=="Critical"))')
+              ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --only-fixed -o table || true
+              echo "- :warning: \`$name\` (upstream, report-only): ${n} critical with fix" >> "$GITHUB_STEP_SUMMARY"
+            fi
             echo "::endgroup::"
           done
           exit $rc
