@@ -20,11 +20,11 @@ is an [ADR](adr/README.md).
 | Claim | How you can check it |
 |---|---|
 | **Unmodified upstream** | The package contains the upstream Helm charts and images of Gitea, Jenkins and Nexus, pinned by digest in [`zarf.yaml`](zarf.yaml). clusterfactory adds only values files, two tiny helper charts and one Python file. |
-| **No custom application images** | The only images built here are a data-only image carrying the resolved Jenkins plugin closure ([`jenkins/`](jenkins/)) and the wire-engine image (`python:slim` + one stdlib script, [`wire-engine/`](wire-engine/)). Both are built at package-create time with content-addressed tags and never pushed anywhere. |
+| **No custom application images** | The only images built here are a data-only image carrying the resolved Jenkins plugin closure ([`jenkins/`](jenkins/)) and the wire-engine image (`python:slim` + one stdlib script, [`wire-engine/`](wire-engine/)). Both are built at package-create time with content-addressed tags and exist only in a throwaway registry on the build machine. |
 | **Wiring you can read** | All cross-service setup is a post-deploy Kubernetes Job running [`wire-engine/wire.py`](wire-engine/wire.py): check-then-act, one `[ok\|created\|updated]` line per step, exit 0 only when converged. A redeploy on a converged cluster prints only `ok`. No Helm hooks, no operators, no CRDs. |
 | **Airgap is enforced, not assumed** | [`charts/config`](charts/config) ships deny-all-egress NetworkPolicies (DNS, in-namespace and the API server only), Pod Security `restricted` on every namespace but one, and every update-checker/telemetry switch off. |
 | **One declared exception** | Kaniko builds run as uid 0 in the `cf-build` namespace at PSA `baseline`. It is written down in [`docs/exemptions/kaniko.md`](docs/exemptions/kaniko.md) with scope, justification and a review date, UDS-style. |
-| **Auditable artifacts** | Zarf signs the package (cosign) and generates an SBOM per image; CI scans them with grype. `oscal-component.yaml` maps what is actually enforced to NIST 800-53 (in progress, see below). |
+| **Auditable artifacts** | Zarf signs the package (cosign, [`cosign.pub`](cosign.pub) in the repo and in every release) and generates an SBOM per image; CI scans every SBOM under [`.grype.yaml`](.grype.yaml): known-exploited (KEV) findings block anywhere, critical-with-fix blocks in images built here, the rest is reported. [`oscal-component.yaml`](oscal-component.yaml) maps what is actually enforced to NIST 800-53 and is schema-validated in CI. |
 | **Everything tested in the open** | [`ci.yaml`](.github/workflows/ci.yaml): lint → create → deploy into kind + Calico with default-deny egress → the full gate ([`tests/deploy-check.sh`](tests/deploy-check.sh)) including an idempotent redeploy and a real Kaniko build pushed to Nexus. |
 
 ## What you get
@@ -149,13 +149,11 @@ and why is the whole point.
 
 ## Status
 
-Steps 0–8 of the migration plan ([`uds-way.md`](uds-way.md) §13) are done and
-CI-green. Remaining: Argo CD optional component ([ADR 0013](adr/0013-argocd-optional-component.md)),
-signing/SBOM publishing/OSCAL and the N-1→N upgrade gate, the `rke2/` platform
-bundle, and a first release. Known gap: the pinned upstream images carry
-critical CVEs with fixes available — the CVE gate is blocking for images built
-here and report-only for upstream until versions are bumped (see
-[SECURITY.md](SECURITY.md)).
+Steps 0–9 of the migration plan ([`uds-way.md`](uds-way.md) §13) are done and
+CI-green: the package is signed, every image's SBOM is CVE-gated, upgrades are
+tested N-1→N. Remaining: Argo CD optional component
+([ADR 0013](adr/0013-argocd-optional-component.md)), the `rke2/` platform bundle,
+and a first tagged release.
 
 ## License
 

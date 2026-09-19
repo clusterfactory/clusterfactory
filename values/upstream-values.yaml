@@ -3,7 +3,7 @@
 # with a content-addressed tag; never pushed - Zarf reads it from the daemon.
 wireEngine:
   image:
-    repository: ghcr.io/clusterfactory/wire-engine
+    repository: "###ZARF_CONST_LOCAL_REGISTRY###/clusterfactory/wire-engine"
     tag: "###ZARF_CONST_WIRE_ENGINE_TAG###"
     digest: ""
 
@@ -11,6 +11,6 @@ wireEngine:
 # engine reads it out of the Zarf registry by digest and pushes it to Nexus).
 build:
   baseImage:
-    ref: docker.io/library/alpine:3.20@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e
+    ref: docker.io/library/alpine:3.22.2@sha256:85f2b723e106c34644cd5851d7e81ee87da98ac54672b29947c052a45d31dc2f
     nexusName: alpine
-    nexusTag: "3.20"
+    nexusTag: "3.22"

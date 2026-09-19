@@ -21,8 +21,12 @@ cluster boundary, not the operator:
 ## What is verified on every change
 
 - `zarf dev lint`, `helm lint --strict`, `yamllint`, OSCAL schema check.
-- Package build with SBOM per image; **grype** on every SBOM — blocking for the
-  images this repo builds, report-only for upstream images (see below).
+- Package build, signed with cosign; SBOM per image; **grype** on every SBOM
+  under the policy in `.grype.yaml`, enforced by `hack/cve-gate.py`:
+  anything on CISA's **Known Exploited Vulnerabilities** list blocks, in any
+  image; any **Critical with a fix** blocks in the images this repo builds;
+  everything else is reported in the job summary. The only ignore is the
+  archived Kaniko executor, with a review date.
 - Airgapped deploy on kind + Calico: every container image served from the
   in-cluster Zarf registry, all workloads Ready, admin credentials work, all
   Jenkins plugins active, wire Job converged, redeploy idempotent, Kaniko build
@@ -31,20 +35,23 @@ cluster boundary, not the operator:
 
 ## Known gaps (honest list)
 
-- **Upstream image CVEs.** The pinned Jenkins, Gitea, inbound-agent and
-  k8s-sidecar images carry critical CVEs with fixes available, and Kaniko is
-  archived upstream (never fixed). Bumping versions and adding a reviewed grype
-  ignore policy with expiry dates is the next step; until then the CVE gate does
-  not block on upstream images.
+- **Upstream images carry Critical CVEs with fixes in their OS layer** - even
+  the newest official tags do (openssl in `alpine:3.22`, perl/glibc in the
+  Debian-based Jenkins images, bundled jars in Jenkins). We ship those images
+  unmodified (ADR 0001), so the gate reports rather than blocks on them; the
+  remedies are Renovate keeping tags current and a hardened flavor
+  (registry1 / Chainguard, ADR 0003), which nobody has built yet.
+- **Kaniko is archived upstream** and will never receive fixes for its Go
+  findings; it is ignored in `.grype.yaml` with a justification and a review
+  date. The recorded alternative (ko / Jib / apko) is in ADR 0009.
 - **Nexus CE on embedded H2** is single-node and not what Sonatype recommends
   for production loads (ADR 0007). Moving to Postgres is additive.
 - **Plain HTTP** everywhere in-cluster; Kaniko pushes with `--insecure`.
 - **Kaniko runs as root** (default capability set, nothing added) in `cf-build`.
 - **Gitea API tokens** are SHA-1 hashed upstream; the wire engine mints a
   read-only token for a dedicated integration user and persists it in a Secret.
-- **Package signing** is wired in Zarf but the release flow (cosign key,
-  published `cosign.pub`, SBOMs attached to releases) is not finished.
-- The `oscal-component.yaml` control mapping is not written yet.
+- **Signing key custody**: one cosign key, held by the maintainers and in the
+  repository secrets; no HSM, no rotation schedule yet.
 
 ## Reporting a vulnerability
 

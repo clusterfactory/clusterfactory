@@ -1,6 +1,4 @@
-# Cosign public key for verifying the wire image signature
-# This will be replaced with the actual public key when the wire image is built
-# For now, this is a placeholder
-
-# TODO: Generate with: cosign generate-key-pair
-# Then publish the private key as COSIGN_PRIVATE_KEY in GitHub Secrets
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEV4uD+sVGkhBPwyu6ZaO15fW5GEMS
+7SsU5GfL//S5Xf55lJPYWWrLZoEIluPrgElGReYeZ3i7FIZAeQdgeGTAlA==
+-----END PUBLIC KEY-----

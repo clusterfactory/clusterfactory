@@ -1,0 +1,28 @@
+# grype policy for the CVE gate (uds-way.md §8, ADR 0004). Enforced by
+# hack/cve-gate.py, which runs grype over every SBOM in the package.
+#
+# What blocks, and why only that:
+#   1. Any finding on CISA's Known Exploited Vulnerabilities list, in any
+#      image, any layer. Exploited-in-the-wild is the one signal that always
+#      warrants stopping the line.
+#   2. Any Critical with a fix available in an image THIS repo builds
+#      (<local registry>/clusterfactory/*): we control those bases and can rebuild.
+#   Everything else is reported in the job summary, not blocked: the package
+#   ships unmodified upstream images (ADR 0001), and even the newest official
+#   tags carry Critical findings in their OS layer (openssl in alpine:3.22,
+#   perl/glibc in Debian-based Jenkins images) or in bundled libraries.
+#   The remedy for those is not a rebuild here but (a) Renovate keeping the
+#   tags current and (b) a hardened flavor (ADR 0003: registry1 / Chainguard).
+#
+# Ignores below apply to the blocking rules. Each names a reason and a
+# review date; remove an entry when it no longer applies.
+only-fixed: true
+ignore:
+  # gcr.io/kaniko-project/executor is archived upstream (June 2025): its Go
+  # stdlib / x/crypto findings will never be fixed. Runs only inside
+  # short-lived build pods in cf-build with no API access and egress limited
+  # to Gitea/Nexus (docs/exemptions/kaniko.md). Alternative recorded in
+  # ADR 0009 (ko / Jib / apko). Review: 2027-03-01.
+  - package:
+      type: go-module
+      location: "**/kaniko/**"

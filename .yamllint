@@ -6,9 +6,6 @@ ignore: |
   charts/*.tgz
   docs/index.yaml
   *.bak
-  engine/
-  # legacy Helm-repo release flow; rewritten in uds-way.md §13 step 9/12
-  .github/workflows/release.yaml
   .git/
 
 rules:

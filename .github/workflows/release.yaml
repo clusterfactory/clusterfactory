@@ -1,156 +1,89 @@
-name: Release (legacy Helm repo flow - disabled)
+name: Release
 
-# The umbrella Helm chart was removed in the UDS-style refactor (uds-way.md,
-# ADR 0001). This workflow packaged and signed that chart; it is kept only
-# as reference for the cosign/SBOM steps until §13 step 9/12 replaces it
-# with the Zarf release flow (signed .tar.zst + cosign.pub + SBOMs).
+# uds-way.md §13 step 12 / §8: on a version tag, build the signed package on a
+# connected runner and attach it, the public key, the SBOMs and checksums to
+# a GitHub release. Consumers verify with `zarf package deploy --key cosign.pub`.
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
-# workflow-level: minimum possible
-# job-level permissions are declared explicitly per job below
 permissions:
   contents: read
 
+env:
+  # renovate: datasource=github-releases depName=zarf-dev/zarf
+  ZARF_VERSION: v0.75.0
+
 jobs:
   release:
-    name: Package, sign, and publish
+    name: Build, sign and publish the package
     runs-on: ubuntu-latest
-    outputs:
-      hashes: ${{ steps.hash.outputs.hashes }}
-      version: ${{ steps.version.outputs.version }}
     permissions:
-      contents: write      # create GitHub Release + upload assets
-      id-token: write      # cosign OIDC keyless signing (Sigstore)
-      pull-requests: write # open PR to update docs/index.yaml
-
+      contents: write   # create the release and upload assets
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
 
-      - name: Set up Helm
-        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003  # v4.1.1
-
-      - name: Set up GitHub CLI
-        run: gh --version   # pre-installed on ubuntu-latest, just verify
-
-      - name: Resolve chart version from tag
+      - name: Tag must match zarf.yaml version
         id: version
         run: |
-          TAG="${GITHUB_REF_NAME}"             # e.g. v0.1.9
-          VERSION="${TAG#v}"                   # strip leading v → 0.1.9
-          CHART_VERSION="$(grep '^version:' Chart.yaml | awk '{print $2}')"
-          if [ "${VERSION}" != "${CHART_VERSION}" ]; then
-            echo "ERROR: tag ${TAG} does not match Chart.yaml version ${CHART_VERSION}"
-            echo "Update Chart.yaml version to ${VERSION} before tagging"
-            exit 1
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          PKG_VERSION=$(awk '/^  version:/ {print $2; exit}' zarf.yaml)
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "tag $TAG does not match zarf.yaml metadata.version $PKG_VERSION"; exit 1
           fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Add Helm repos and build dependencies
+      - name: Install Zarf
         run: |
-          helm repo add gitea https://dl.gitea.com/charts/
-          helm repo add jenkins https://charts.jenkins.io
-          helm dependency build .
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
+          chmod +x /usr/local/bin/zarf
+          zarf version
 
-      - name: Package chart
+      - name: Build and sign
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
-          mkdir -p release-artifacts
-          helm package . -d release-artifacts/
+          test -n "$COSIGN_PRIVATE_KEY" || { echo "COSIGN_PRIVATE_KEY secret missing - refusing to release unsigned"; exit 1; }
+          (umask 077; printf '%s' "$COSIGN_PRIVATE_KEY" > "$RUNNER_TEMP/cosign.key")
+          mkdir -p dist
+          make package OUT=dist ZARF_CREATE_ARGS=--no-color SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD"
+          rm -f "$RUNNER_TEMP/cosign.key"
 
-      - name: Sign chart with cosign (keyless, Sigstore)
+      - name: Verify the signature with the published public key
+        run: zarf package inspect definition dist/zarf-package-clusterfactory-*.tar.zst --key cosign.pub --no-color > /dev/null
+
+      - name: Extract SBOMs and checksums
         run: |
-          cosign sign-blob \
-            --yes \
-            --bundle "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle" \
-            "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
+          zarf package inspect sbom dist/zarf-package-clusterfactory-*.tar.zst --output dist/sboms --no-color
+          tar -C dist -czf "dist/clusterfactory-${{ steps.version.outputs.version }}-sboms.tar.gz" sboms
+          rm -rf dist/sboms
+          cp cosign.pub dist/
+          (cd dist && sha256sum * > "clusterfactory-${{ steps.version.outputs.version }}-SHA256SUMS")
+          ls -lh dist
 
-      - name: Compute artifact hash for SLSA provenance
-        id: hash
+      - name: Release notes
         run: |
-          HASH=$(sha256sum "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz" | base64 -w0)
-          echo "hashes=${HASH}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## clusterfactory ${{ steps.version.outputs.version }}"
+            echo
+            echo "Signed Zarf package (upstream flavor). Verify and deploy:"
+            echo
+            echo '```bash'
+            echo "sha256sum -c clusterfactory-${{ steps.version.outputs.version }}-SHA256SUMS"
+            echo "zarf package deploy zarf-package-clusterfactory-amd64-${{ steps.version.outputs.version }}-upstream.tar.zst \\"
+            echo "  --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true"
+            echo '```'
+            echo
+            echo "Assets: package, \`cosign.pub\`, per-image SBOMs (Syft JSON + HTML), SHA256SUMS."
+            echo "Images and charts are pinned in \`zarf.yaml\`; decisions in \`adr/\`."
+          } > notes.md
 
-      - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
-        with:
-          file: release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz
-          output-file: release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json
-          format: spdx-json
-          upload-artifact: false
-
-      - name: Attest SBOM to chart with cosign
-        run: |
-          cosign attest-blob \
-            --yes \
-            --predicate "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json" \
-            --type spdxjson \
-            --bundle "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json.bundle" \
-            "release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe  # v2.6.1
-        with:
-          generate_release_notes: true
-          files: |
-            release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz
-            release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.tgz.bundle
-            release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json
-            release-artifacts/clusterfactory-${{ steps.version.outputs.version }}.sbom.spdx.json.bundle
-
-      - name: Update Helm repo index and open PR
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ steps.version.outputs.tag }}"
-          BRANCH="release/helm-index-${VERSION}"
-
-          # copy packaged chart into docs/
-          cp "release-artifacts/clusterfactory-${VERSION}.tgz" docs/
-
-          # regenerate index merging with existing
-          helm repo index docs/ \
-            --url https://clusterfactory.github.io/clusterfactory/ \
-            --merge docs/index.yaml
-
-          # configure git identity for the bot commit
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # clean up stale branch from a previous attempt if it exists
-          git push origin --delete "${BRANCH}" || true
-
-          # create a branch, commit, push, open PR
-          git checkout -b "${BRANCH}"
-          git add docs/index.yaml "docs/clusterfactory-${VERSION}.tgz"
-          git commit -m "release: publish clusterfactory-${VERSION} to Helm repo"
-          git push origin "${BRANCH}"
-
-          printf 'Automated PR from release workflow for tag `%s`.\n\nMerging this PR updates the GitHub Pages Helm repository index so that:\n```\nhelm repo update\nhelm upgrade --install cf clusterfactory/clusterfactory\n```\ninstalls version %s.\n\nThe chart tgz and cosign signature bundle are attached to the [GitHub Release](https://github.com/clusterfactory/clusterfactory/releases/tag/%s).\n' \
-            "${TAG}" "${VERSION}" "${TAG}" > /tmp/pr-body.md
-
-          gh pr create \
-            --title "release: publish clusterfactory-${VERSION} to Helm repo" \
-            --body-file /tmp/pr-body.md \
-            --base main \
-            --head "${BRANCH}"
-
-  provenance:
-    name: Generate SLSA provenance
-    needs: [release]
-    permissions:
-      actions: read     # read workflow run for provenance
-      id-token: write   # OIDC token for Sigstore signing
-      contents: write   # upload provenance to GitHub Release
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
-    with:
-      base64-subjects: ${{ needs.release.outputs.hashes }}
-      provenance-name: "clusterfactory-${{ needs.release.outputs.version }}.intoto.jsonl"
-      upload-assets: true
+          gh release create "${GITHUB_REF_NAME}" dist/* --title "clusterfactory ${{ steps.version.outputs.version }}" --notes-file notes.md --verify-tag

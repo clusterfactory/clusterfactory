@@ -23,7 +23,7 @@ spec:
     # explicit jnlp container the plugin injects its own default tag, which
     # does not exist in the Zarf registry.
     - name: jnlp
-      image: docker.io/jenkins/inbound-agent:3355.v388858a_47b_33-16@sha256:8cdeac9601a3381a629555e8d191f1bc4a7ee17546bbf64de54dabde9d2aacd9
+      image: docker.io/jenkins/inbound-agent:3385.vf1123fb_515da_-1@sha256:2adc78879f3340f14449fb6cf8608b65f56d149493a5fdbf91e106e7278f98c4
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
