@@ -3,6 +3,12 @@
 
 replicaCount: 1
 
+# Single instance on one RWO volume with the LevelDB queue on it: the new pod
+# cannot take the queue lock while the old one runs, so never surge. This is
+# what makes `zarf package deploy` over an existing install work.
+strategy:
+  type: Recreate
+
 gitea:
   admin:
     # Created by cf-config (keys: username, password); password comes from
@@ -39,7 +45,8 @@ gitea:
     picture:
       ENABLE_FEDERATED_AVATAR: false
       DISABLE_GRAVATAR: true
-    webhook:
+    security:
+      # webhooks and OAuth2 clients may only call in-cluster hosts
       ALLOWED_HOST_LIST: private,loopback,*.svc.cluster.local
     service:
       DISABLE_REGISTRATION: true

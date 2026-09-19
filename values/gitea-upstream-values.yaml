@@ -4,7 +4,7 @@ image:
   registry: docker.gitea.com
   repository: gitea
   # renovate: datasource=docker depName=docker.gitea.com/gitea
-  tag: 1.27.0  # chart appends -rootless when image.rootless is true
-  digest: sha256:caa57d932c7b78eb19b638dc38fd7c2f5512d4f90d8369c680a73bebf1b1de28
+  tag: 1.27.3  # chart appends -rootless when image.rootless is true
+  digest: sha256:95b0ae18fb99b4a579b3dd383ea5ad8d8f77534c030c1fe554e6378ac8a5c496
   rootless: true
   pullPolicy: IfNotPresent

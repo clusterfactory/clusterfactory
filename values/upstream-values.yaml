@@ -3,7 +3,7 @@
 # with a content-addressed tag; never pushed - Zarf reads it from the daemon.
 wireEngine:
   image:
-    repository: ghcr.io/clusterfactory/wire-engine
+    repository: "###ZARF_CONST_LOCAL_REGISTRY###/clusterfactory/wire-engine"
     tag: "###ZARF_CONST_WIRE_ENGINE_TAG###"
     digest: ""
 

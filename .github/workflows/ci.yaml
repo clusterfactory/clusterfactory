@@ -36,7 +36,7 @@ jobs:
       - name: zarf dev lint
         # Package templates for the locally built images must be set for lint;
         # their values do not matter here.
-        run: zarf dev lint . -f upstream --no-color --set PLUGINS_TAG=lint --set WIRE_ENGINE_TAG=lint
+        run: zarf dev lint . -f upstream --no-color --set PLUGINS_TAG=lint --set WIRE_ENGINE_TAG=lint --set LOCAL_REGISTRY=localhost:5001
 
   helm-lint:
     name: helm lint (helper charts)
@@ -172,23 +172,10 @@ jobs:
         uses: anchore/scan-action/download-grype@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
         id: grype
 
-      - name: CVE scan SBOMs - .grype.yaml policy, critical with a fix blocks, every image
+      - name: CVE gate over the SBOMs (policy in .grype.yaml, enforced by hack/cve-gate.py)
         env:
           GRYPE_CONFIG: .grype.yaml
-        run: |
-          rc=0
-          echo "## CVE scan (critical with a fix available; policy .grype.yaml)" >> "$GITHUB_STEP_SUMMARY"
-          for sbom in $(find sboms -type f -name '*.json' | sort); do
-            name=$(basename "$sbom" .json | sed 's/_sha256.*//')
-            echo "::group::grype $name"
-            if ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" -o table; then
-              echo "- :white_check_mark: \`$name\`" >> "$GITHUB_STEP_SUMMARY"
-            else
-              rc=1; echo "- :x: \`$name\` has critical vulnerabilities with fixes" >> "$GITHUB_STEP_SUMMARY"
-            fi
-            echo "::endgroup::"
-          done
-          exit $rc
+        run: hack/cve-gate.py "${{ steps.grype.outputs.cmd }}" sboms "$GITHUB_STEP_SUMMARY"
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2

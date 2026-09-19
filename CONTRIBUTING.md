@@ -16,7 +16,12 @@
 ## Local setup
 
 `zarf` (version pinned in `.github/workflows/ci.yaml`), `helm`, `kubectl`, `kind`,
-`docker`, `make`, `python3`, `yamllint`, `skopeo`.
+`docker`, `make`, `python3`, `yamllint`, `skopeo`, and `grype` for the CVE gate.
+
+`make package` starts a throwaway registry container (`cf-build-registry`,
+`localhost:5001`) and pushes the two locally built images there before Zarf
+pulls them: Zarf's "pull from the Docker daemon" fallback races itself with
+several images in flight and deletes the images afterwards.
 
 ```bash
 make lint                      # gate 1

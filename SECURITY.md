@@ -22,8 +22,11 @@ cluster boundary, not the operator:
 
 - `zarf dev lint`, `helm lint --strict`, `yamllint`, OSCAL schema check.
 - Package build, signed with cosign; SBOM per image; **grype** on every SBOM
-  under the policy in `.grype.yaml` (critical with a fix blocks; the only
-  ignore is the archived Kaniko executor, with a review date).
+  under the policy in `.grype.yaml`, enforced by `hack/cve-gate.py`:
+  anything on CISA's **Known Exploited Vulnerabilities** list blocks, in any
+  image; any **Critical with a fix** blocks in the images this repo builds;
+  everything else is reported in the job summary. The only ignore is the
+  archived Kaniko executor, with a review date.
 - Airgapped deploy on kind + Calico: every container image served from the
   in-cluster Zarf registry, all workloads Ready, admin credentials work, all
   Jenkins plugins active, wire Job converged, redeploy idempotent, Kaniko build
@@ -32,6 +35,12 @@ cluster boundary, not the operator:
 
 ## Known gaps (honest list)
 
+- **Upstream images carry Critical CVEs with fixes in their OS layer** - even
+  the newest official tags do (openssl in `alpine:3.22`, perl/glibc in the
+  Debian-based Jenkins images, bundled jars in Jenkins). We ship those images
+  unmodified (ADR 0001), so the gate reports rather than blocks on them; the
+  remedies are Renovate keeping tags current and a hardened flavor
+  (registry1 / Chainguard, ADR 0003), which nobody has built yet.
 - **Kaniko is archived upstream** and will never receive fixes for its Go
   findings; it is ignored in `.grype.yaml` with a justification and a review
   date. The recorded alternative (ko / Jib / apko) is in ADR 0009.

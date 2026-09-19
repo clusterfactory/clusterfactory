@@ -1,4 +1,4 @@
-.PHONY: help clean lint plugins plugins-update plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
+.PHONY: help clean lint local-registry plugins plugins-update plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
 
 SHELL := /bin/bash
 FLAVOR ?= upstream
@@ -44,27 +44,45 @@ plugins:  ## Install exactly jenkins/plugins.lock into jenkins/plugins/ (needs d
 	@rm -f jenkins/.plugins.lock.txt
 	@echo "installed $$(ls jenkins/plugins/*.jpi | wc -l | tr -d ' ') plugins from jenkins/plugins.lock"
 
+# Locally built images are pushed to a throwaway registry on the build
+# machine and referenced from there. Zarf's "pull from the docker daemon"
+# fallback tags/untags images by id while pulling and, with several images in
+# flight, races itself ("reference does not exist") and removes the images
+# afterwards. A registry is deterministic and works the same in CI.
+LOCAL_REGISTRY ?= localhost:5001
+# renovate: datasource=docker depName=registry
+LOCAL_REGISTRY_IMAGE := docker.io/library/registry:3.0.0@sha256:5b12b22f21522fe69443079df04c0f3f42cb9977857f3c20404386652a6c6d8e
+local-registry:  ## Start the throwaway build registry on $(LOCAL_REGISTRY) if it is not running
+	@docker ps --format '{{.Names}}' | grep -qx cf-build-registry || \
+		docker run -d --name cf-build-registry --restart unless-stopped -p 127.0.0.1:5001:5000 $(LOCAL_REGISTRY_IMAGE) >/dev/null
+	@for i in 1 2 3 4 5 6 7 8 9 10; do curl -sf http://$(LOCAL_REGISTRY)/v2/ >/dev/null && break; sleep 1; done
+	@curl -sf http://$(LOCAL_REGISTRY)/v2/ >/dev/null || { echo "build registry not reachable at $(LOCAL_REGISTRY)"; exit 1; }
+
 # Hash the actual .jpi payload (not just the lock): an empty or partial
 # resolution must never reuse the tag of a good image.
 PLUGINS_TAG := $(VERSION)-$(shell cat jenkins/plugins.lock jenkins/Dockerfile jenkins/plugins/*.jpi 2>/dev/null | shasum -a 256 | cut -c1-12)
-PLUGINS_IMAGE := ghcr.io/clusterfactory/jenkins-plugins:$(PLUGINS_TAG)
+PLUGINS_IMAGE := $(LOCAL_REGISTRY)/clusterfactory/jenkins-plugins:$(PLUGINS_TAG)
 plugins-tag:  ## Print the content-addressed plugins image tag (consumed by zarf onCreate)
 	@echo $(PLUGINS_TAG)
 
 plugins-image:  ## Build the data-only plugins image from jenkins/plugins/ (local daemon only, never pushed)
 	@ls jenkins/plugins/*.jpi >/dev/null 2>&1 || { echo "jenkins/plugins/ is empty - run make plugins"; exit 1; }
+	$(MAKE) -s local-registry
 	docker build --platform linux/amd64 -t $(PLUGINS_IMAGE) jenkins/
-	@echo "built $(PLUGINS_IMAGE)"
+	docker push -q $(PLUGINS_IMAGE)
+	@echo "built and pushed $(PLUGINS_IMAGE)"
 
 WIRE_TAG := $(VERSION)-$(shell shasum -a 256 wire-engine/wire.py wire-engine/Dockerfile | shasum -a 256 | cut -c1-12)
-WIRE_IMAGE := ghcr.io/clusterfactory/wire-engine:$(WIRE_TAG)
-ZARF_TMPL := --set PLUGINS_TAG=$(PLUGINS_TAG) --set WIRE_ENGINE_TAG=$(WIRE_TAG)
+WIRE_IMAGE := $(LOCAL_REGISTRY)/clusterfactory/wire-engine:$(WIRE_TAG)
+ZARF_TMPL := --set PLUGINS_TAG=$(PLUGINS_TAG) --set WIRE_ENGINE_TAG=$(WIRE_TAG) --set LOCAL_REGISTRY=$(LOCAL_REGISTRY)
 wire-engine-tag:  ## Print the content-addressed wire-engine image tag (consumed by zarf onCreate)
 	@echo $(WIRE_TAG)
 
 wire-engine-image:  ## Build the wire-engine image (local daemon only, never pushed)
+	$(MAKE) -s local-registry
 	docker build --platform linux/amd64 -t $(WIRE_IMAGE) wire-engine/
-	@echo "built $(WIRE_IMAGE)"
+	docker push -q $(WIRE_IMAGE)
+	@echo "built and pushed $(WIRE_IMAGE)"
 
 plugins-lock-check:  ## Fail if installing plugins.lock does not reproduce plugins.lock exactly
 	$(MAKE) plugins

@@ -24,4 +24,4 @@ agent:
 
 # Data-only plugins image built at create time (jenkins/Dockerfile) with a
 # content-addressed tag. Consumed by the plugins-loader init container.
-pluginsImage: "ghcr.io/clusterfactory/jenkins-plugins:###ZARF_CONST_PLUGINS_TAG###"
+pluginsImage: "###ZARF_CONST_LOCAL_REGISTRY###/clusterfactory/jenkins-plugins:###ZARF_CONST_PLUGINS_TAG###"
