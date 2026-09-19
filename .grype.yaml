@@ -1,0 +1,23 @@
+# grype policy for the CVE gate (uds-way.md §8, ADR 0004).
+#
+# The gate fails on any Critical vulnerability that has a fix, in every image
+# the package ships. Ignores below are the only exceptions; each one names
+# the reason and a review date. Keep this list short and honest.
+#
+# Review: remove an entry when the upstream image is bumped past the finding,
+# or when the review date passes without a re-justification.
+fail-on-severity: critical
+only-fixed: true
+ignore:
+  # gcr.io/kaniko-project/executor is archived upstream (June 2025): no
+  # releases will ever fix its Go stdlib / x/crypto findings. It runs only
+  # inside short-lived build pods in cf-build with no API access and egress
+  # limited to Gitea/Nexus (docs/exemptions/kaniko.md). Tracked in ADR 0009's
+  # recorded alternative (ko / Jib / apko). Review: 2027-03-01.
+  - package:
+      type: go-module
+      location: "**/kaniko/**"
+  - package:
+      name: stdlib
+      type: go-module
+      location: "**/kaniko/**"

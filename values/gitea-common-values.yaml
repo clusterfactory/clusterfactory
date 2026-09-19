@@ -87,11 +87,11 @@ resources:
   limits:
     memory: 1Gi
 
-# Bundled dependencies stay off: Postgres is its own component (§6),
-# and the demo runs fine on SQLite + memory cache.
-redis-cluster:
+# Bundled dependencies stay off (ADR 0008; the demo runs on SQLite + memory
+# cache). Chart 12 renamed redis to valkey.
+valkey-cluster:
   enabled: false
-redis:
+valkey:
   enabled: false
 postgresql:
   enabled: false

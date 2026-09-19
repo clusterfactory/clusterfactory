@@ -6,7 +6,7 @@ controller:
     registry: docker.io
     repository: jenkins/jenkins
     # renovate: datasource=docker depName=jenkins/jenkins
-    tag: 2.541.3-jdk21@sha256:827f56f02e09332a06638afa84068af39946066947e03cce95930ca598064384
+    tag: 2.568.3-jdk21@sha256:68964c38dbb70c0bf6adff480d6dda2e1191d2d07e076c9fd2996345303eb999
     pullPolicy: IfNotPresent
   sidecars:
     configAutoReload:
@@ -14,13 +14,13 @@ controller:
         registry: docker.io
         repository: kiwigrid/k8s-sidecar
         # renovate: datasource=docker depName=kiwigrid/k8s-sidecar
-        tag: 2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc
+        tag: 2.9.0@sha256:c277cfa6d36dfeb134ab689a461a93f76606d258759801556e4cc7d83593d3e6
 agent:
   image:
     registry: docker.io
     repository: jenkins/inbound-agent
     # renovate: datasource=docker depName=jenkins/inbound-agent
-    tag: 3355.v388858a_47b_33-16@sha256:8cdeac9601a3381a629555e8d191f1bc4a7ee17546bbf64de54dabde9d2aacd9
+    tag: 3385.vf1123fb_515da_-1@sha256:2adc78879f3340f14449fb6cf8608b65f56d149493a5fdbf91e106e7278f98c4
 
 # Data-only plugins image built at create time (jenkins/Dockerfile) with a
 # content-addressed tag. Consumed by the plugins-loader init container.

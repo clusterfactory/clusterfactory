@@ -5,7 +5,8 @@ name: CI
 #   2. create  zarf package create -f upstream on a connected runner; SBOMs; CVE scan
 #   3. deploy  kind + Calico, default-deny egress, zarf init, deploy, tests/deploy-check.sh
 #   4. functional  demo pipeline: pod agent, Kaniko build, push to Nexus (inside deploy-check.sh)
-#   5. upgrade (step 9)  6. rke2 (step 10)
+#   5. upgrade  deploy the last package built from main, then this one over it; data survives
+#   6. rke2 (step 10)
 
 on:
   pull_request:
@@ -98,18 +99,14 @@ jobs:
         run: |
           pip install pyyaml jsonschema
           curl -sSfL "https://github.com/usnistgov/OSCAL/releases/download/${OSCAL_VERSION}/oscal_component_schema.json" -o /tmp/oscal_component_schema.json
-          python - <<'PY'
-          import json, yaml, jsonschema
-          schema = json.load(open('/tmp/oscal_component_schema.json'))
-          doc = yaml.safe_load(open('oscal-component.yaml'))
-          jsonschema.validate(doc, schema)
-          print('oscal-component.yaml is schema-valid')
-          PY
+          hack/oscal-validate.py /tmp/oscal_component_schema.json oscal-component.yaml
 
   create:
     name: zarf package create (upstream)
     runs-on: ubuntu-latest
     needs: [zarf-lint, helm-lint, yamllint, oscal-schema]
+    outputs:
+      signed: ${{ steps.create.outputs.signed }}
     permissions:
       contents: read
       security-events: write
@@ -126,10 +123,23 @@ jobs:
       - name: Jenkins plugin lock is self-consistent (installs exactly plugins.lock)
         run: make plugins-lock-check
 
-      - name: zarf package create -f upstream via make (builds the plugins and wire-engine images)
+      - name: zarf package create -f upstream via make - builds the plugins and wire-engine images, signs
+        id: create
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           mkdir -p build
-          make package OUT=build ZARF_CREATE_ARGS=--no-color
+          if [ -n "$COSIGN_PRIVATE_KEY" ]; then
+            # Secrets are absent on pull requests from forks; those packages stay unsigned
+            # and the deploy job verifies only when a signature is present.
+            umask 077; printf '%s' "$COSIGN_PRIVATE_KEY" > "$RUNNER_TEMP/cosign.key"
+            make package OUT=build ZARF_CREATE_ARGS=--no-color SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD"
+            rm -f "$RUNNER_TEMP/cosign.key"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            make package OUT=build ZARF_CREATE_ARGS=--no-color
+          fi
           ls -lh build/
 
       - name: Inspect package definition
@@ -162,31 +172,19 @@ jobs:
         uses: anchore/scan-action/download-grype@1638637db639e0ade3258b51db49a9a137574c3e  # v6.5.1
         id: grype
 
-      - name: CVE scan SBOMs
-        # Blocking for the images this repo builds (wire-engine, plugins).
-        # Upstream images are scanned and summarised but do not block yet:
-        # the pinned Jenkins/Gitea/agent/sidecar versions predate several
-        # fixed criticals and Kaniko is archived upstream (never fixed).
-        # Step 9 (uds-way.md §8) bumps versions and adds a reviewed grype
-        # ignore policy with expiry dates before this becomes blocking.
+      - name: CVE scan SBOMs - .grype.yaml policy, critical with a fix blocks, every image
+        env:
+          GRYPE_CONFIG: .grype.yaml
         run: |
-          set -o pipefail
           rc=0
-          echo "## CVE scan (critical, fix available)" >> "$GITHUB_STEP_SUMMARY"
+          echo "## CVE scan (critical with a fix available; policy .grype.yaml)" >> "$GITHUB_STEP_SUMMARY"
           for sbom in $(find sboms -type f -name '*.json' | sort); do
             name=$(basename "$sbom" .json | sed 's/_sha256.*//')
             echo "::group::grype $name"
-            if [[ "$name" == ghcr.io_clusterfactory_* ]]; then
-              if ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --fail-on critical --only-fixed -o table; then
-                echo "- :white_check_mark: \`$name\` (blocking) clean" >> "$GITHUB_STEP_SUMMARY"
-              else
-                rc=1; echo "- :x: \`$name\` (blocking) has critical CVEs with fixes" >> "$GITHUB_STEP_SUMMARY"
-              fi
+            if ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" -o table; then
+              echo "- :white_check_mark: \`$name\`" >> "$GITHUB_STEP_SUMMARY"
             else
-              n=$(${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --only-fixed -o json 2>/dev/null \
-                | python3 -c 'import json,sys; m=json.load(sys.stdin)["matches"]; print(sum(1 for x in m if x["vulnerability"]["severity"]=="Critical"))')
-              ${{ steps.grype.outputs.cmd }} "sbom:${sbom}" --only-fixed -o table || true
-              echo "- :warning: \`$name\` (upstream, report-only): ${n} critical with fix" >> "$GITHUB_STEP_SUMMARY"
+              rc=1; echo "- :x: \`$name\` has critical vulnerabilities with fixes" >> "$GITHUB_STEP_SUMMARY"
             fi
             echo "::endgroup::"
           done
@@ -229,8 +227,13 @@ jobs:
       - name: Stand up the egress-blocked cluster (kind + Calico + zarf init + deny egress)
         run: bundle/up.sh .
 
-      - name: zarf package deploy
-        run: zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+      - name: zarf package deploy - signature verified when the package is signed
+        run: |
+          KEY=""
+          if [ "${{ needs.create.outputs.signed }}" = "true" ]; then
+            KEY="--key cosign.pub"; echo "package is signed - verifying with cosign.pub"
+          fi
+          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m $KEY --set NEXUS_ACCEPT_CE_EULA=true
 
       - name: Gate 3 checks
         run: tests/deploy-check.sh clusterfactory
@@ -251,3 +254,77 @@ jobs:
             kubectl logs -n clusterfactory "$p" --all-containers --tail=100 || true
             echo "::endgroup::"
           done
+
+  upgrade:
+    name: upgrade N-1 -> N (kind + Calico)
+    # Gate 5: the previous package (latest successful build on main) first,
+    # then this one over it. Demo data - repo commits, Jenkins builds, Nexus
+    # tags - must survive and the wire engine must converge.
+    runs-on: ubuntu-latest
+    needs: [create]
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Install Zarf
+        run: |
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
+          chmod +x /usr/local/bin/zarf
+          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
+
+      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+        with:
+          install_only: true
+
+      - name: Download the previous package (latest successful CI run on main)
+        id: prev
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yaml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          if [ -z "$RUN" ]; then echo "no successful main run yet - skipping upgrade gate"; echo "found=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          mkdir -p prev
+          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream -D prev
+          ls -lh prev/build
+          echo "found=true" >> "$GITHUB_OUTPUT"
+
+      - name: Download this package
+        if: steps.prev.outputs.found == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: zarf-package-upstream
+          path: build
+
+      - name: Stand up the egress-blocked cluster
+        if: steps.prev.outputs.found == 'true'
+        run: bundle/up.sh .
+
+      - name: Deploy N-1 and seed data
+        if: steps.prev.outputs.found == 'true'
+        run: |
+          zarf package deploy prev/build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+          tests/deploy-check.sh clusterfactory
+          tests/snapshot-state.sh clusterfactory > before.json
+          cat before.json
+
+      - name: Upgrade to N
+        if: steps.prev.outputs.found == 'true'
+        run: |
+          KEY=""; [ "${{ needs.create.outputs.signed }}" = "true" ] && KEY="--key cosign.pub"
+          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 20m $KEY --set NEXUS_ACCEPT_CE_EULA=true
+          tests/deploy-check.sh clusterfactory
+          tests/snapshot-state.sh clusterfactory > after.json
+          cat after.json
+          tests/compare-state.py before.json after.json
+
+      - name: Diagnostics on failure
+        if: failure() && steps.prev.outputs.found == 'true'
+        run: |
+          kubectl get pods -A -o wide
+          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -50
+          kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=100 || true

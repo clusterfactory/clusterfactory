@@ -1,0 +1,77 @@
+# Minimal OSCAL component definition (uds-way.md §8): only controls this
+# package actually enforces, mapped to NIST SP 800-53 rev5. Validated in CI
+# against the OSCAL component-definition JSON schema. Keep it small and true.
+component-definition:
+  uuid: 2f0f1a7e-3c0e-4d2a-9d61-4c9e8b2a6d10
+  metadata:
+    title: clusterfactory Zarf package
+    last-modified: "2026-09-19T00:00:00Z"
+    version: "0.4.0"
+    oscal-version: 1.1.2
+    roles:
+      - id: maintainer
+        title: clusterfactory maintainers
+    parties:
+      - uuid: 4b1a5d3c-2e6f-4f8a-9a3b-7c1d2e3f4a5b
+        type: organization
+        name: clusterfactory
+  components:
+    - uuid: 8a0d5e2f-6b3c-4a1e-9f7d-2c4b6a8e0d13
+      type: software
+      title: clusterfactory (Gitea + Jenkins + Nexus, Zarf package)
+      description: >-
+        Airgapped software forge delivered as a signed Zarf package with
+        unmodified upstream charts and images, post-deploy wiring Job, and
+        cluster-boundary hardening shipped in the package.
+      purpose: Source control, CI and container registry for disconnected environments.
+      responsible-roles:
+        - role-id: maintainer
+          party-uuids: [4b1a5d3c-2e6f-4f8a-9a3b-7c1d2e3f4a5b]
+      control-implementations:
+        - uuid: c5e7a9b1-3d2f-4e6a-8b0c-1f3d5a7c9e21
+          source: https://raw.githubusercontent.com/usnistgov/oscal-content/main/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_catalog.json
+          description: Controls enforced by the package as shipped; nothing here depends on operator configuration beyond deploying it.
+          implemented-requirements:
+            - uuid: 1a2b3c4d-0001-4e5f-8a9b-0c1d2e3f4a50
+              control-id: cm-7
+              description: >-
+                Least functionality: Pod Security Admission `restricted` is enforced on every
+                application namespace via labels set by charts/config; the single exception
+                (cf-build at `baseline` for Kaniko) is declared in docs/exemptions/kaniko.md.
+                Update checkers, telemetry and the Jenkins update centre are disabled; Jenkins
+                plugins are shipped pinned (jenkins/plugins.lock).
+            - uuid: 1a2b3c4d-0002-4e5f-8a9b-0c1d2e3f4a50
+              control-id: ac-6
+              description: >-
+                Least privilege: all workloads run as non-root with capabilities dropped
+                and seccomp RuntimeDefault (values/*-common-values.yaml); the wire-engine
+                ServiceAccount is bound to a Role limited to the Secrets it owns
+                (charts/settings/templates/rbac.yaml); Nexus deploy user holds only a
+                repository-scoped role; Jenkins pod agents mount no ServiceAccount token.
+            - uuid: 1a2b3c4d-0003-4e5f-8a9b-0c1d2e3f4a50
+              control-id: sc-7
+              description: >-
+                Boundary protection: charts/config ships deny-all-egress NetworkPolicies
+                for every application namespace, allowing only cluster DNS, in-namespace
+                traffic and the Kubernetes API server (cf-build: DNS and the clusterfactory
+                namespace only). CI deploys into a cluster with egress denied and asserts
+                the demo pipeline still completes (tests/deploy-check.sh).
+            - uuid: 1a2b3c4d-0004-4e5f-8a9b-0c1d2e3f4a50
+              control-id: sa-10
+              description: >-
+                Developer configuration management: every container image is pinned by
+                digest in zarf.yaml; the package is signed with cosign at build time and
+                verified at deploy (`--key cosign.pub`); locally built images use
+                content-addressed tags; every design decision is an ADR in adr/.
+            - uuid: 1a2b3c4d-0005-4e5f-8a9b-0c1d2e3f4a50
+              control-id: sr-4
+              description: >-
+                Provenance: Zarf generates an SBOM for every image at package-create time;
+                CI scans each SBOM with grype under the policy in .grype.yaml and fails on
+                critical vulnerabilities with fixes; SBOMs are attached to every release.
+  back-matter:
+    resources:
+      - uuid: 9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a
+        title: clusterfactory repository
+        rlinks:
+          - href: https://github.com/clusterfactory/clusterfactory

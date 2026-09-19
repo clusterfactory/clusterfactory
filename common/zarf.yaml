@@ -35,7 +35,7 @@ components:
 
       - name: gitea
         url: https://dl.gitea.com/charts/
-        version: 11.0.1
+        version: 12.7.0
         namespace: clusterfactory
         releaseName: gitea
         valuesFiles:
@@ -43,7 +43,7 @@ components:
 
       - name: jenkins
         url: https://charts.jenkins.io
-        version: 5.9.9
+        version: 5.9.63
         namespace: clusterfactory
         releaseName: jenkins
         valuesFiles:

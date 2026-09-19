@@ -72,12 +72,21 @@ plugins-lock-check:  ## Fail if installing plugins.lock does not reproduce plugi
 	@echo "plugins.lock is self-consistent"
 	@for p in $$(grep -v '^#' jenkins/plugins.txt | grep -o '^[^:]*'); do grep -q "^$$p " jenkins/plugins.lock || { echo "$$p from plugins.txt missing in plugins.lock - run make plugins-update"; exit 1; }; done
 
+# Signing (ADR 0004): set SIGNING_KEY (path or cosign key provider) and
+# SIGNING_KEY_PASS to sign; CI does, from repository secrets. cosign.pub in
+# the repo root is the matching public key; consumers deploy with --key.
+SIGNING_KEY ?=
+SIGNING_KEY_PASS ?=
+ZARF_SIGN := $(if $(SIGNING_KEY),--signing-key $(SIGNING_KEY) --signing-key-pass "$(SIGNING_KEY_PASS)",)
 package:  ## CI gate 2 locally: create the Zarf package for FLAVOR (default: upstream); OUT=dir
-	zarf package create . -f $(FLAVOR) --confirm $(ZARF_TMPL) $(if $(OUT),-o $(OUT),) $(ZARF_CREATE_ARGS)
+	zarf package create . -f $(FLAVOR) --confirm $(ZARF_TMPL) $(ZARF_SIGN) $(if $(OUT),-o $(OUT),) $(ZARF_CREATE_ARGS)
+
+package-signed:  ## Create and sign with ~/.clusterfactory/cosign.key (maintainers)
+	$(MAKE) package SIGNING_KEY=$(HOME)/.clusterfactory/cosign.key SIGNING_KEY_PASS="$$(cat $(HOME)/.clusterfactory/cosign.password)"
 
 
-deploy:  ## Deploy the package to the current kube context
-	zarf package deploy $(PACKAGE) --confirm
+deploy:  ## Deploy the package to the current kube context (verifies the signature)
+	zarf package deploy $(PACKAGE) --confirm --key cosign.pub $(ZARF_DEPLOY_ARGS)
 
 test:  ## Static checks on the wire engine (stdlib only: compile + import smoke)
 	python3 -m py_compile wire-engine/wire.py
