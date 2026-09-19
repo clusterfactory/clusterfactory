@@ -1,10 +1,12 @@
 .PHONY: help clean lint plugins plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
 
+SHELL := /bin/bash
 FLAVOR ?= upstream
 VERSION := $(shell awk '/^  version:/ {print $$2; exit}' zarf.yaml)
 PACKAGE := zarf-package-clusterfactory-amd64-$(VERSION)-$(FLAVOR).tar.zst
 # Upstream Jenkins image from the flavor values (used only to run jenkins-plugin-cli)
-JENKINS_IMAGE := $(shell awk '/repository: jenkins\/jenkins/{r=$$2} /^    tag:/{t=$$2} END{print "docker.io/" r ":" t}' values/jenkins-$(FLAVOR)-values.yaml)
+# (the tag that follows `repository: jenkins/jenkins`; the file also pins the agent image)
+JENKINS_IMAGE := $(shell awk '/repository: jenkins\/jenkins$$/{hit=1; next} hit && /tag:/{print "docker.io/jenkins/jenkins:" $$2; exit}' values/jenkins-$(FLAVOR)-values.yaml)
 
 help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -19,20 +21,23 @@ lint:  ## CI gate 1 locally: zarf dev lint, helm lint helper charts, yamllint
 
 plugins:  ## Resolve jenkins/plugins.txt into jenkins/plugins/ (needs docker + internet) and refresh plugins.lock
 	rm -rf jenkins/plugins && mkdir -p jenkins/plugins
-	docker run --rm -v "$(CURDIR)/jenkins:/j" $(JENKINS_IMAGE) \
+	set -o pipefail; docker run --rm -v "$(CURDIR)/jenkins:/j" $(JENKINS_IMAGE) \
 		jenkins-plugin-cli --plugin-file /j/plugins.txt --plugin-download-directory /j/plugins --list \
 		| sed -n '/Resulting plugin list/,/^$$/p' | grep -E '^[a-z0-9_-]+ ' | sort > jenkins/plugins.lock
+	@test -s jenkins/plugins.lock && ls jenkins/plugins/*.jpi >/dev/null || { echo "plugin resolution produced nothing"; exit 1; }
 	@echo "resolved $$(wc -l < jenkins/plugins.lock | tr -d ' ') plugins into jenkins/plugins/"
 
 # Locally built images get content-addressed tags: a kubelet caches by tag
 # (IfNotPresent), so re-using "0.4.0" for new content silently runs old bits.
-PLUGINS_TAG := $(VERSION)-$(shell shasum -a 256 jenkins/plugins.lock jenkins/Dockerfile | shasum -a 256 | cut -c1-12)
+# Hash the actual .jpi payload (not just the lock): an empty or partial
+# resolution must never reuse the tag of a good image.
+PLUGINS_TAG := $(VERSION)-$(shell cat jenkins/plugins.lock jenkins/Dockerfile jenkins/plugins/*.jpi 2>/dev/null | shasum -a 256 | cut -c1-12)
 PLUGINS_IMAGE := ghcr.io/clusterfactory/jenkins-plugins:$(PLUGINS_TAG)
 plugins-tag:  ## Print the content-addressed plugins image tag (consumed by zarf onCreate)
 	@echo $(PLUGINS_TAG)
 
 plugins-image:  ## Build the data-only plugins image from jenkins/plugins/ (local daemon only, never pushed)
-	test -d jenkins/plugins || $(MAKE) plugins
+	@ls jenkins/plugins/*.jpi >/dev/null 2>&1 || { echo "jenkins/plugins/ is empty - run make plugins"; exit 1; }
 	docker build --platform linux/amd64 -t $(PLUGINS_IMAGE) jenkins/
 	@echo "built $(PLUGINS_IMAGE)"
 

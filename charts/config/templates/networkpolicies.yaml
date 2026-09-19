@@ -51,7 +51,26 @@ spec:
   egress:
     - to:
         - podSelector: {}
-{{- if $.Values.networkPolicy.apiServer.cidr }}
+{{- range $target := ($ns.egressToNamespaces | default list) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: cf-allow-egress-to-{{ $target }}
+  namespace: {{ $name }}
+  labels:
+    {{- include "cf-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $target }}
+{{- end }}
+{{- if and $.Values.networkPolicy.apiServer.cidr (or (not (hasKey $ns "allowApiServer")) $ns.allowApiServer) }}
 ---
 # Jenkins (config-reload sidecar, kubernetes plugin) and the wire engine
 # talk to the API server.
@@ -74,6 +93,7 @@ spec:
         - protocol: TCP
           port: {{ $.Values.networkPolicy.apiServer.port | int }}
 {{- end }}
+{{- if eq $name "clusterfactory" }}
 {{- range $i, $rule := $.Values.networkPolicy.additionalEgress }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -89,6 +109,7 @@ spec:
     - Egress
   egress:
     {{- toYaml $rule.egress | nindent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

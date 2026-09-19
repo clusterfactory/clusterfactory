@@ -8,3 +8,5 @@ metadata:
 data:
   Jenkinsfile: |-
 {{ .Files.Get "demo/Jenkinsfile" | indent 4 }}
+  Dockerfile: |-
+{{ .Files.Get "demo/Dockerfile" | indent 4 }}

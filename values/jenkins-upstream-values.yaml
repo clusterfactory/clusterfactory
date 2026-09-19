@@ -15,6 +15,12 @@ controller:
         repository: kiwigrid/k8s-sidecar
         # renovate: datasource=docker depName=kiwigrid/k8s-sidecar
         tag: 2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc
+agent:
+  image:
+    registry: docker.io
+    repository: jenkins/inbound-agent
+    # renovate: datasource=docker depName=jenkins/inbound-agent
+    tag: 3355.v388858a_47b_33-16@sha256:8cdeac9601a3381a629555e8d191f1bc4a7ee17546bbf64de54dabde9d2aacd9
 
 # Data-only plugins image built at create time (jenkins/Dockerfile) with a
 # content-addressed tag. Consumed by the plugins-loader init container.

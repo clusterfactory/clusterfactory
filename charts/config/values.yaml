@@ -10,9 +10,16 @@
 # Helm release record - Helm cannot adopt a namespace that already exists.
 namespaces:
   clusterfactory:
-    # Pod Security Admission (CM-7, AC-6). Kaniko's cf-build namespace is the
-    # one declared exception (ADR 0009) and arrives in step 8.
+    # Pod Security Admission (CM-7, AC-6).
     podSecurity: restricted
+  # Jenkins pod agents + Kaniko. `baseline`, not `restricted`: Kaniko runs as
+  # uid 0 (ADR 0009, docs/exemptions/kaniko.md). Everything else is locked:
+  # egress only to the clusterfactory namespace and DNS, no API server.
+  cf-build:
+    podSecurity: baseline
+    allowApiServer: false
+    egressToNamespaces:
+      - clusterfactory
 
 # Airgap enforcement (SC-7): deny all egress from application pods except
 # in-namespace traffic, cluster DNS and the Kubernetes API server.
@@ -27,9 +34,25 @@ networkPolicy:
   apiServer:
     cidr: ""
     port: 6443
-  # Extra egress rules appended verbatim (e.g. to the Zarf registry for the
-  # wire engine, step 8).
-  additionalEgress: []
+  # Extra egress rules for the clusterfactory namespace, appended verbatim.
+  additionalEgress:
+    # The wire engine copies the demo base image out of the Zarf registry
+    # (Registry API v2) into Nexus.
+    - name: wire-engine-zarf-registry
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: cf-wire-engine
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: zarf
+              podSelector:
+                matchLabels:
+                  app: docker-registry
+          ports:
+            - protocol: TCP
+              port: 5000
 
 # Admin credentials the upstream charts consume via existingSecret.
 # Trusted-operator threat model (ADR 0005): CHANGEME defaults are

@@ -86,6 +86,46 @@ spec:
               value: {{ .Values.demo.tokenSecret | quote }}
             - name: READY_TIMEOUT_SECONDS
               value: {{ .Values.wireEngine.readyTimeoutSeconds | quote }}
+            - name: NEXUS_URL
+              value: {{ .Values.nexus.url | quote }}
+            - name: NEXUS_DOCKER_HOST
+              value: {{ .Values.nexus.dockerHost | quote }}
+            - name: NEXUS_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nexus.adminSecret }}
+                  key: username
+            - name: NEXUS_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nexus.adminSecret }}
+                  key: password
+            - name: NEXUS_INITIAL_ADMIN_PASSWORD
+              value: {{ .Values.nexus.initialAdminPassword | quote }}
+            - name: NEXUS_DOCKER_REPOSITORY
+              value: {{ .Values.nexus.dockerRepository | quote }}
+            - name: NEXUS_ACCEPT_CE_EULA
+              value: {{ .Values.nexus.acceptCeEula | quote }}
+            - name: NEXUS_DEPLOY_USER
+              value: {{ .Values.demo.nexusDeployUser | quote }}
+            - name: NEXUS_DEPLOY_SECRET_NAME
+              value: {{ .Values.demo.nexusDeploySecret | quote }}
+            - name: JENKINS_NEXUS_CREDENTIAL_ID
+              value: {{ .Values.demo.jenkinsNexusCredentialId | quote }}
+            - name: BUILD_NAMESPACE
+              value: {{ .Values.build.namespace | quote }}
+            - name: DOCKER_CONFIG_SECRET_NAME
+              value: {{ .Values.build.dockerConfigSecret | quote }}
+            - name: ZARF_REGISTRY_HOST
+              value: {{ .Values.zarfRegistry.host | quote }}
+            - name: ZARF_REGISTRY_PULL_SECRET
+              value: {{ .Values.zarfRegistry.pullSecret | quote }}
+            - name: BASE_IMAGE_REF
+              value: {{ .Values.build.baseImage.ref | quote }}
+            - name: BASE_IMAGE_NEXUS_NAME
+              value: {{ .Values.build.baseImage.nexusName | quote }}
+            - name: BASE_IMAGE_NEXUS_TAG
+              value: {{ .Values.build.baseImage.nexusTag | quote }}
           volumeMounts:
             - name: demo
               mountPath: /etc/clusterfactory/demo

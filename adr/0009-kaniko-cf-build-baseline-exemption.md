@@ -16,9 +16,10 @@ but runs as uid 0 and writes to `/`, which violates PSA `restricted`
 - Jenkins Kubernetes plugin runs builds as pod agents in namespace
   `cf-build`, labelled PSA **`baseline`** (not `privileged`). The Nexus
   credential is mounted as `/kaniko/.docker/config.json`.
-- Kaniko pods: uid 0 only. No privileged, no added capabilities, no
-  hostPath, no ServiceAccount token, seccomp `RuntimeDefault`, root fs
-  writable (Kaniko needs `/` and `/kaniko`).
+- Kaniko pods: uid 0 with the runtime-default capability set (nothing
+  added; `drop: ALL` leaves root unable to write the workspace or extract
+  layers). No privileged, no hostPath, no ServiceAccount token, seccomp
+  `RuntimeDefault`, root fs writable (Kaniko needs `/` and `/kaniko`).
 - `NetworkPolicy` on `cf-build` allows egress only to Gitea and Nexus.
 - Demo Dockerfile pulls `FROM nexus-docker.clusterfactory.svc:<port>/alpine`
   — never Docker Hub. Nexus is the only registry the pipeline knows.

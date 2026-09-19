@@ -27,6 +27,33 @@ gitea:
 jenkins:
   url: http://jenkins.clusterfactory.svc.cluster.local:8080
   adminSecret: cf-jenkins-admin
+nexus:
+  url: http://nexus.clusterfactory.svc.cluster.local:8081
+  # Docker connector as seen from Kaniko pods (host:port, plain HTTP - ADR 0010)
+  dockerHost: nexus.clusterfactory.svc.cluster.local:5000
+  adminSecret: cf-nexus-admin
+  # Known initial admin password of the upstream image; rotated on first run.
+  initialAdminPassword: admin123
+  dockerRepository: docker-hosted
+  # Must be "true" for the Docker connector to work (ADR 0007). Never defaulted.
+  acceptCeEula: "false"
+
+# Zarf's in-cluster registry (source of the pre-seeded base image).
+zarfRegistry:
+  host: zarf-docker-registry.zarf.svc.cluster.local:5000
+  pullSecret: private-registry
+
+build:
+  namespace: cf-build
+  # dockerconfigjson Secret the Kaniko pod mounts at /kaniko/.docker
+  dockerConfigSecret: cf-nexus-docker-config
+  # Base image the demo Dockerfile builds FROM: the exact reference shipped in
+  # the package (pre-seeded into Nexus by the wire engine) and the name it
+  # gets inside Nexus.
+  baseImage:
+    ref: ""          # set per flavor, e.g. docker.io/library/alpine:3.20@sha256:...
+    nexusName: alpine
+    nexusTag: "3.20"
 
 demo:
   org: cf-demo
@@ -35,5 +62,8 @@ demo:
   integrationUser: jenkins-ci
   jenkinsCredentialId: gitea-token
   jenkinsJob: cf-demo-hello-world
-  # Secret the wire engine owns; holds the Gitea token it minted.
+  # Secrets the wire engine owns: the Gitea token it minted, the Nexus deploy user it created.
   tokenSecret: cf-wire-gitea-token
+  nexusDeploySecret: cf-wire-nexus-deploy
+  nexusDeployUser: jenkins-ci
+  jenkinsNexusCredentialId: nexus-docker

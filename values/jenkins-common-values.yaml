@@ -9,9 +9,9 @@ controller:
     userKey: jenkins-admin-user
     passwordKey: jenkins-admin-password
 
-  # One built-in executor so the demo pipeline (`agent any`) can run before
-  # Kubernetes pod agents arrive in step 8.
-  numExecutors: 1
+  # Builds run on Kubernetes pod agents in cf-build (ADR 0009); nothing runs
+  # on the controller.
+  numExecutors: 0
 
   serviceType: ClusterIP
   servicePort: 8080
@@ -124,8 +124,26 @@ persistence:
       mountPath: /var/jenkins_home/plugins
 
 agent:
-  # Pod agents in cf-build arrive with Kaniko in step 8.
-  enabled: false
+  # Kubernetes plugin pod agents in the cf-build namespace (PSA baseline,
+  # ADR 0009). The chart creates the Role/RoleBinding there. The demo
+  # Jenkinsfile supplies its own pod YAML (jnlp + kaniko).
+  enabled: true
+  namespace: cf-build
+  # Default jnlp container context (restricted-compatible even though the
+  # namespace is baseline; only Kaniko needs root).
+  runAsUser: 1000
+  runAsGroup: 1000
+  # Off: the plugin would merge `capabilities.drop: ALL` into *every*
+  # container of a pod template, and root without DAC_OVERRIDE cannot write
+  # the agent workspace. The demo Jenkinsfile sets an explicit restricted
+  # context on jnlp and the documented baseline one on kaniko (ADR 0009).
+  restrictedPssSecurityContext: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
 
 rbac:
   create: true

@@ -85,6 +85,14 @@ components:
       - docker.io/jenkins/jenkins:2.541.3-jdk21@sha256:827f56f02e09332a06638afa84068af39946066947e03cce95930ca598064384
       - docker.io/kiwigrid/k8s-sidecar:2.5.0@sha256:4f8f7ff326827489dc3742e17cd0e04e2f89deb49f67021d2a5418d8b78e7ddc
       - docker.io/sonatype/nexus3:3.96.2@sha256:a6a2d43487ba92581d5169b3d4d5b4ba17b87d1f95ab593094d6da7f835719b6
+      - docker.io/jenkins/inbound-agent:3355.v388858a_47b_33-16@sha256:8cdeac9601a3381a629555e8d191f1bc4a7ee17546bbf64de54dabde9d2aacd9
+      # In-cluster image builds (ADR 0009); pulled by the Kaniko pod in cf-build.
+      # The -debug variant carries a busybox shell, which the Jenkins container
+      # step needs to keep the container alive and run the executor.
+      - gcr.io/kaniko-project/executor:v1.24.0-debug@sha256:9e22d0ba2c78cffbd47e2269aa6d3dc43fc3e3ecc6b61262399279dec5e67d45
+      # Demo base image: shipped here, pre-seeded into Nexus by the wire engine,
+      # never pulled from Docker Hub by the pipeline (values/upstream-values.yaml).
+      - docker.io/library/alpine:3.20@sha256:c64c687cbea9300178b30c95835354e34c4e4febc4badfe27102879de0483b5e
       # Built locally at create time (make plugins-image / wire-engine-image)
       # with content-addressed tags set by the onCreate actions in common/;
       # never pushed - Zarf reads them from the Docker daemon.

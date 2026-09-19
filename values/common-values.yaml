@@ -9,3 +9,10 @@ demo:
   org: cf-demo
   repo: hello-world
   jenkinsJob: cf-demo-hello-world
+nexus:
+  url: http://nexus.clusterfactory.svc.cluster.local:8081
+  dockerHost: nexus.clusterfactory.svc.cluster.local:5000
+  # Operator decision, passed through from the package variable (ADR 0007).
+  acceptCeEula: "###ZARF_VAR_NEXUS_ACCEPT_CE_EULA###"
+build:
+  namespace: cf-build

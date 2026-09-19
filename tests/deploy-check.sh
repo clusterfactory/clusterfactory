@@ -52,6 +52,7 @@ echo "== service reachability"
 probe gitea   "http://gitea-http.${NS}.svc.cluster.local:3000/api/healthz" 200
 probe jenkins "http://jenkins.${NS}.svc.cluster.local:8080/login" 200
 probe nexus   "http://nexus.${NS}.svc.cluster.local:8081/service/rest/v1/status" 200
+probe nexus-docker-anon "http://nexus.${NS}.svc.cluster.local:5000/v2/" 401  # anonymous pull is off
 
 echo "== admin credentials from the cf-config Secrets work"
 GITEA_PW=$($KUBECTL get secret cf-gitea-admin -n "$NS" -o jsonpath='{.data.password}' | base64 -d)
@@ -86,19 +87,26 @@ if [[ "${EXPECT_IDEMPOTENT:-}" == "1" ]]; then
   ok "redeploy idempotent (only ok/skipped)"
 fi
 
-echo "== demo pipeline builds from Gitea"
+echo "== demo pipeline builds from Gitea with Kaniko and pushes to Nexus (gate 4)"
 JCURL() { $KUBECTL exec -n "$NS" jenkins-0 -c jenkins -- curl -sg -u "admin:${JENKINS_PW}" "$@"; }
 CRUMB=$(JCURL -c /tmp/cf-cj http://localhost:8080/crumbIssuer/api/json | python3 -c 'import json,sys;print(json.load(sys.stdin)["crumb"])')
+# Poll the build number we are about to trigger, not lastBuild: while the
+# new build is still queued, lastBuild is the previous one.
+BUILD=$(JCURL "http://localhost:8080/job/cf-demo-hello-world/api/json?tree=nextBuildNumber" | python3 -c 'import json,sys;print(json.load(sys.stdin)["nextBuildNumber"])')
 JCURL -b /tmp/cf-cj -H "Jenkins-Crumb: ${CRUMB}" -X POST -o /dev/null http://localhost:8080/job/cf-demo-hello-world/build
 result=""
-for _ in $(seq 1 60); do
-  result=$(JCURL "http://localhost:8080/job/cf-demo-hello-world/lastBuild/api/json?tree=result" 2>/dev/null \
+for _ in $(seq 1 120); do
+  result=$(JCURL "http://localhost:8080/job/cf-demo-hello-world/${BUILD}/api/json?tree=result" 2>/dev/null \
     | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("result") or "")' 2>/dev/null || true)
   [[ -n "$result" ]] && break
   sleep 5
 done
-[[ "$result" == "SUCCESS" ]] || fail "demo pipeline result: '${result}'"
-ok "cf-demo-hello-world build SUCCESS"
+[[ "$result" == "SUCCESS" ]] || fail "demo pipeline build #${BUILD} result: '${result}'"
+ok "cf-demo-hello-world build #${BUILD} SUCCESS"
+NEXUS_PW=$($KUBECTL get secret cf-nexus-admin -n "$NS" -o jsonpath='{.data.password}' | base64 -d)
+TAGS=$($KUBECTL exec -n "$NS" nexus-0 -c nexus -- curl -s -u "admin:${NEXUS_PW}" http://localhost:5000/v2/cf-demo/hello-world/tags/list)
+grep -q "\"${BUILD}\"" <<<"$TAGS" || fail "image tag ${BUILD} not in Nexus docker-hosted: ${TAGS}"
+ok "cf-demo/hello-world in Nexus: ${TAGS}"
 
 echo "== egress is blocked"
 probe egress "http://example.com/" 000  # curl reports 000 when it cannot connect
