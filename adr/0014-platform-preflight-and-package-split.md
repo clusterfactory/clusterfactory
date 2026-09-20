@@ -1,86 +1,119 @@
-# 0014 — Where Zarf helps below the package: a preflight component, and a separate platform bundle
+# 0014 — Three layers: platform invariants, the preflight contract, customer policy
 
-**Status:** Proposed (questions open, see end)
-**Date:** 2026-09-20
+**Status:** Accepted
+**Date:** 2026-09-20 (proposed and decided the same day; answers to the Q1–Q12 list are folded in here, ADR 0015 and ADR 0016)
 
 ## Context
 
-Everything above the cluster is one Zarf package with strong guarantees:
-signed, SBOM'd, CVE-gated, tested airgapped, upgrade-tested. Everything
-below it - the OS, RKE2, storage, the node network - is a shell script and a
-tarball per ADR 0011, verified only on a nightly VM job that does not exist
-yet. Real deployments fail at that seam: the wrong CNI (kindnet-style, no
-NetworkPolicy enforcement), no default StorageClass, too little memory for
-Nexus, a control plane the pods cannot reach through the egress policy, an
-API server whose IP is not what the policy resolved.
+Everything above the cluster is one Zarf package with strong guarantees.
+Everything below it - OS, RKE2, storage, node network - was a script and a
+tarball (ADR 0011), and real deployments fail at that seam: a CNI that does
+not enforce NetworkPolicy, no default StorageClass, too little memory, an
+API server the egress policy cannot express. At the same time, hardening
+choices (CIS profile, PSA levels, deny-all egress, SELinux, TLS) differ per
+customer, and baking them into the forge package makes it wrong for anyone
+whose stance differs.
 
-Zarf cannot install RKE2 (it needs a cluster), but two things it does well
-apply here:
+## Decision
 
-1. **Actions run on the operator's machine before anything is deployed.**
-   A `preflight` component can assert the cluster meets `PREREQUISITES.md`
-   and stop `zarf package deploy` with a plain message before Helm runs.
-2. **A package is a signed, versioned, transported artifact.** The RKE2
-   tarball, binary, checksums, `config.yaml`, the local-path-provisioner
-   manifest and the install script can travel as a Zarf package too - not
-   deployed *into* a cluster, but unpacked on the host with a `files:`
-   component and Zarf `onDeploy` actions running `install.sh`. Zarf supports
-   this ("zarf package deploy" of a package with no cluster components); UDS
-   uses the same trick for host-level pieces.
+**Rule of thumb:** if changing a setting changes what has to be *tested*, it
+is a platform decision and stays fixed. If it only changes what is
+*permitted*, it is policy and the customer owns it. That gives three layers.
 
-## Decision (proposed)
+### 1. Platform invariants (fixed, no knobs)
 
-### A. `preflight` component in the application package
+RKE2 ≥ v1.36 (`v1.36.4+rke2r1` pinned), **single node**, Canal, local-path
+provisioner, image loading by tarball in the agent images directory, Zarf
+init. Delivered as a custom Zarf init package with an `rke2` component
+(ADR 0015). RKE2 configuration is written as drop-ins under
+`/etc/rancher/rke2/config.yaml.d/`: the platform writes `10-platform.yaml`,
+the policy profile writes `50-policy.yaml`.
 
-First component in `common/zarf.yaml`, `required: true`, no charts, only
-`onDeploy.before` actions using `./zarf tools kubectl`. Each check prints
-`ok:`/`FAIL:` like `tests/deploy-check.sh` and the component fails fast:
+Designed for one VM; multi-node join is not precluded (join variables kept,
+`tls-san` set to a stable DNS name so the API endpoint is never a hardcoded
+node IP). Three control planes are for the clusters the factory builds
+later, not for the factory itself.
 
-| Check | Why |
+### 2. The contract: what the forge needs from any cluster (preflight)
+
+The forge package depends only on this contract, never on the platform
+package. A `preflight` component - first in `common/zarf.yaml`, actions
+only - makes it executable; `PREREQUISITES.md` is generated from the same
+table. **Contract checks are never bypassable**; advisory checks can be
+skipped with `--set PREFLIGHT_STRICT=false`.
+
+| Check | Class |
 |---|---|
-| Kubernetes ≥ 1.30, one Ready node with ≥ 4 CPU / 8 GiB allocatable (values-driven) | Nexus + Jenkins + a build |
-| A default `StorageClass` exists and a test PVC binds | Gitea/Jenkins/Nexus persistence |
-| The CNI enforces `NetworkPolicy`: create a throwaway namespace with deny-all, a pod, and assert it cannot reach the API server; then delete | the whole airgap story is a no-op on kindnet/flannel-without-policy |
-| PSA admission active: a privileged pod in a `restricted`-labelled test namespace is rejected | CM-7 claim |
-| `kubernetes` EndpointSlice resolves to exactly the addresses the policy will allow; warn if the API is behind a VIP the policy cannot express | the ipBlock rule |
-| `zarf init` present, registry reachable from a pod | image rewriting works |
-| Optional: no internet from a pod (warn only) | confirms the environment is what the operator thinks |
+| Kubernetes ≥ 1.30; API reachable; `zarf init` present and the Zarf registry reachable from a pod | contract |
+| A default `StorageClass` exists and a test PVC binds | contract |
+| Cluster DNS resolves Services | contract |
+| Pod Security Admission active: a privileged pod is rejected in a `restricted`-labelled test namespace, and `cf-build` may be `baseline` | contract |
+| NetworkPolicy enforcement: positive control first (a pod reaches the API server), then deny-all applied, then the same connection must fail; throwaway namespace deleted afterwards. Run on **every** deploy - it takes seconds and customer clusters are where enforcement silently fails | contract |
+| `kubernetes` EndpointSlice resolves to addresses the egress policy can express as `ipBlock` | contract |
+| Allocatable CPU/memory/disk headroom for Gitea + Jenkins + Nexus + a build | advisory |
+| Internet reachable from a pod | decided by the active policy profile (failure under `cis`, warning under `baseline`) |
 
-The checks are the executable form of `PREREQUISITES.md`; the doc is
-generated from the same table.
+### 3. Customer policy (flexible, forkable)
 
-### B. A separate **platform bundle**, not a component of the forge package
+CIS profile on/off, PSA configuration, audit policy, default-deny and egress
+stance, SELinux/firewalld expectations, TLS/CA, whether reachable internet
+is a failure. Shipped as a small separate package
+`clusterfactory-policy-<profile>` with `baseline` and `cis` as examples
+(ADR 0016). **The forge ships only NetworkPolicy *allow* rules; the policy
+package ships the *denies*** - so the forge is correct under any stance and
+the deny-all is a customer decision they can read. Preflight reads the
+active profile to decide which checks are hard.
 
-`rke2/` becomes its own Zarf package (`clusterfactory-platform`, host-side,
-no cluster components): `files:` for the RKE2 artifacts, `config.yaml`,
-local-path-provisioner and the CIS sysctl/user setup; `onDeploy` actions
-that run `install.sh` with `INSTALL_RKE2_ARTIFACT_PATH`, create the `etcd`
-user, apply sysctls, enable the service, then wait for the node Ready and
-run `zarf init`. Signed and versioned like the forge package, transported
-the same way, but with its own release cadence - RKE2 patches monthly, the
-forge does not.
+### Other decisions from the question list
 
-Deploy story on the target host:
-
-```
-zarf package deploy zarf-package-clusterfactory-platform-*.tar.zst --key cosign.pub   # RKE2 + storage + zarf init
-zarf package deploy zarf-package-clusterfactory-*.tar.zst --key cosign.pub            # preflight + forge
-```
-
-Kept out of scope, still: host OS STIG, multi-node HA, etcd snapshot
-off-node cadence.
+- **OS:** check and refuse; never configure the OS beyond what the policy
+  profile asks for (the `etcd` user and CIS sysctls are consequences of
+  `profile: cis`, applied only then). Zarf flavors of the init package per OS
+  family: the RPM flavor carries `rke2-selinux` and `container-selinux`;
+  preflight verifies their dependencies are installed rather than resolving
+  RPMs offline. Tested on one RPM distro and Ubuntu.
+- **Storage:** local-path by default, preflight as the contract so a customer
+  with real storage skips ours. The local-path image travels in the host
+  tarball directory and is deployed through
+  `/var/lib/rancher/rke2/server/manifests/` into `kube-system` (which the
+  Zarf agent ignores) - it must exist before the Zarf registry's PVC. The
+  Zarf registry uses a PVC from local-path, not hostPath, so persistence is
+  the same on customer clusters. Single-node mitigation is backup (etcd
+  snapshots + PV backup procedure), a v0.5 item.
+- **Ingress:** RKE2's bundled Traefik (default from v1.36; ingress-nginx is
+  removed in v1.37) with hostPort 80/443 on the single node, **plain HTTP
+  Ingress by hostname in v0.4**; TLS is v0.5 and belongs to policy (customer
+  CA or self-signed, injected into Jenkins and Kaniko trust). Port-forward
+  stays as the fallback. Amends ADR 0010.
+- **Image loading:** manual tarballs placed by the `rke2` component - the
+  `core` and `canal` tarballs rather than the all-in-one, plus a small
+  tarball for local-path. Hauler only for the clusters the factory builds.
+- **Upgrades:** manual, etcd snapshot first; promise is that PVC data and the
+  Zarf registry contents survive, and a single node means downtime. Tested
+  N-1→N nightly. `system-upgrade-controller` is for factory-built clusters.
+- **Platform gate:** tier 1 nightly - RKE2 installed directly on a GitHub
+  runner from the artifacts, egress blocked with iptables after the
+  download (~10 min, no nested VM). Tier 2 weekly and before each release -
+  a self-hosted Rocky VM, SELinux enforcing, snapshot-revert.
+- **Deliverable:** a plain tar (no recompression) built early, because the
+  nightly gate needs it anyway: the Zarf binary, the custom init package,
+  the forge package, the example policy profiles, `cosign.pub`, a signed
+  `SHA256SUMS`, a ten-line install script and the runbook.
+- **Reusable bootstrap:** the `rke2` component is parameterised by role,
+  server URL, token and policy profile from day one, even though the
+  factory only ever uses `server` with one node, because the factory later
+  builds real clusters the same way.
 
 ## Consequences
 
-- One transport, one signing key, one verification story for both layers.
-- The forge package refuses to deploy on a cluster that cannot honour its
-  guarantees, with a message an operator can act on, instead of a Helm
-  timeout 15 minutes later.
-- Two packages, two version numbers, one more thing to document; the
-  platform package can only be tested on a VM (nightly gate, ADR 0011).
-- The preflight's NetworkPolicy check needs the CNI to be *installed and
-  enforcing* - on kind that means Calico; the test matches CI exactly.
-
-## Open questions
-
-See the list sent with this ADR; answers become the Decision section.
+- Three packages instead of one: init (platform), policy profile, forge.
+  One transport, one signing key, one verification story.
+- `charts/config` changes: the deny-all NetworkPolicies move to the policy
+  package; cf-config keeps namespaces, PSA labels, Secrets and the allow
+  rules. CI deploys with the `baseline` profile so the egress test keeps
+  meaning.
+- The forge refuses to deploy where it cannot honour its guarantees, with a
+  message an operator can act on, instead of a Helm timeout later.
+- `PREREQUISITES.md` is generated, never hand-written.
+- Things that are now explicitly *not* ours: host OS STIG, HA control
+  planes, off-node backup cadence (documented, v0.5 for backup procedure).

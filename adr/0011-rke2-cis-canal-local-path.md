@@ -1,6 +1,6 @@
 # 0011 — RKE2 with CIS profile, Canal CNI, local-path storage
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-09-20; delivery superseded by ADR 0015)
 **Date:** 2026-09-18
 
 ## Context
@@ -29,6 +29,23 @@ OS (customer) → RKE2 airgap install → zarf init → zarf package deploy
   Zarf agent/registry must admit under PSA `restricted` on a CIS cluster.
 - Canal enforces `NetworkPolicy`, which the deny-all-egress design relies
   on.
+
+## Amendment 2026-09-20 — decisions from ADR 0014
+
+- Delivery is a custom Zarf init package with an `rke2` component
+  (ADR 0015), not a script.
+- Pin the `v1.36.x+rke2r1` line (`v1.36.4+rke2r1`); Traefik stays enabled
+  (ADR 0010 amendment); `core` + `canal` tarballs, not the all-in-one.
+- Configuration by drop-ins in `/etc/rancher/rke2/config.yaml.d/`:
+  `10-platform.yaml` (platform) and `50-policy.yaml` (policy profile).
+  `profile: cis`, the `etcd` user and the CIS sysctls belong to the `cis`
+  profile (ADR 0016), not to the platform.
+- `tls-san` is a stable DNS name; join variables exist even though the
+  factory is single-node.
+- local-path-provisioner is deployed from the RKE2 manifests directory into
+  `kube-system` before Zarf's registry needs a PVC; the Zarf registry uses
+  a local-path PVC, not hostPath.
+- Upgrades: manual, etcd snapshot first, single-node downtime stated.
 
 ## Amendment 2026-09-20 — RKE2 air-gap install specifics
 

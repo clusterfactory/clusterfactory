@@ -111,3 +111,16 @@ wire Job converged (and, with `EXPECT_IDEMPOTENT=1`, only `ok`); the demo
 pipeline build with its own number succeeds and its tag exists in Nexus;
 `example.com` returns `000`. The upgrade job wraps this with
 `tests/snapshot-state.sh` / `tests/compare-state.py` around an N-1→N deploy.
+
+## Revised plan after ADRs 0014–0016 (replaces uds-way.md §13 steps 10–12)
+
+| # | Work | Gate |
+|---|---|---|
+| 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | kind: preflight passes; a kindnet cluster is refused with the right message |
+| 10b | **Policy profiles** `policy/baseline`, `policy/cis`: denies move out of `charts/config`; `profile.yaml` read by preflight | CI deploys `baseline` before the forge; egress test unchanged |
+| 10c | **Custom init package** `rke2/zarf.yaml` (`rke2` component + upstream init components; RPM/deb flavors; registry on a local-path PVC); Traefik `Ingress` by hostname in the forge | nightly tier-1 gate: RKE2 on the runner, iptables egress block, init → policy → forge → `deploy-check.sh` |
+| 10d | Tier-2 self-hosted Rocky VM gate (SELinux enforcing, snapshot-revert), weekly + pre-release | needs a runner from you |
+| 11 | Docs pass: README usage for the three-package flow, SECURITY (policy layer), CONTRIBUTING, runbook | — |
+| 12 | **Deliverable tar** (Zarf binary, init package, forge, profiles, `cosign.pub`, signed `SHA256SUMS`, install script, runbook) built by the release workflow; tag `v0.4.0` | release workflow green; nightly gate installs from the tar |
+| 8b | Argo CD optional component (ADR 0013) - after 10a–10c, it is independent | functional gate extended |
+| v0.5 | TLS via policy profile; etcd snapshot + PV backup procedure; system-upgrade-controller for factory-built clusters | |
