@@ -1,0 +1,61 @@
+level=WARN msg="failed to load plugin (ignoring)" plugin_yaml=/Users/cosmindrula/Library/helm/plugins/helm-secrets/plugin.yaml error="failed to load plugin \"/Users/cosmindrula/Library/helm/plugins/helm-secrets\": both platformCommand and command are set"
+2026-09-20 05:30:01 WRN package signature could not be verified: error=package is not signed - verification cannot be performed
+
+kind: ZarfPackageConfig
+metadata:
+  name: clusterfactory-preflight
+  description: The forge's contract checks (PREREQUISITES.md) as a standalone package.
+  version: 0.4.0
+  architecture: amd64
+  aggregateChecksum: 8779b7de769b30dca1f6c7c4268388419a7277437d34a11e3e4b0a23c0031143
+build:
+  architecture: amd64
+  timestamp: Sun, 20 Sep 2026 05:29:27 +0300
+  version: v0.75.0
+  migrations:
+  - scripts-to-actions
+  - pluralize-set-variable
+  flavor: upstream
+  signed: false
+  provenanceFiles:
+  - checksums.txt
+components:
+- name: preflight
+  description: Verify the cluster meets the forge's contract (PREREQUISITES.md); fails fast otherwise.
+  required: true
+  only:
+    flavor: upstream
+  files:
+  - source: ../preflight/preflight.sh
+    target: cf-preflight/preflight.sh
+    executable: true
+  images:
+  - docker.io/library/busybox:1.37.0@sha256:7a3ebe5bfd1a4a19797d20b0c0bb39d44393e9a03fd852c0865b0f540d868df0
+  actions:
+    onDeploy:
+      after:
+      - maxTotalSeconds: 900
+        cmd: ZARF=./zarf PREFLIGHT_STRICT="${ZARF_VAR_PREFLIGHT_STRICT}" PREFLIGHT_IMAGE="${ZARF_CONST_PREFLIGHT_IMAGE}" ./cf-preflight/preflight.sh
+        description: Run the preflight checks (see PREREQUISITES.md; results in cf-system/cf-preflight-result)
+      onSuccess:
+      - mute: true
+        cmd: rm -rf cf-preflight
+      onFailure:
+      - cmd: ./zarf tools kubectl get ns -o name | grep '^namespace/cf-preflight-' | xargs -r ./zarf tools kubectl delete --wait=false || true
+        description: Remove any throwaway preflight namespace
+constants:
+- name: PREFLIGHT_IMAGE
+  value: docker.io/library/busybox:1.37.0@sha256:7a3ebe5bfd1a4a19797d20b0c0bb39d44393e9a03fd852c0865b0f540d868df0
+variables:
+- name: PREFLIGHT_STRICT  currently set to 'true' (default)
+  description: Set to "false" to downgrade advisory preflight checks (resources) to warnings; contract checks are never bypassable.
+  default: "true"
+2026-09-20 05:30:01 WRN this package does NOT contain an SBOM. If you require an SBOM, the package must be built without the --skip-sbom flag
+2026-09-20 05:30:01 INF starting deploy package=clusterfactory-preflight
+2026-09-20 05:30:01 INF waiting for cluster connection
+2026-09-20 05:30:02 INF deploying component name=preflight
+2026-09-20 05:30:02 INF running command cmd=Remove any throwaway preflight namespace
+2026-09-20 05:30:02 INF waiting for action (no timeout) cmd=Remove any throwaway preflight namespace
+level=WARN msg="failed to load plugin (ignoring)" plugin_yaml=/Users/cosmindrula/Library/helm/plugins/helm-secrets/plugin.yaml error="failed to load plugin \"/Users/cosmindrula/Library/helm/plugins/helm-secrets\": both platformCommand and command are set"
+2026-09-20 05:30:02 INF action succeeded cmd=Remove any throwaway preflight namespace
+2026-09-20 05:30:03 ERR failed to deploy package: unable to deploy component "preflight": failed to load the Zarf State from the cluster, has Zarf been initiated: secrets "zarf-state" not found

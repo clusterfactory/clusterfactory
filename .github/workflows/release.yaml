@@ -25,16 +25,19 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
 
-      - name: Tag must match zarf.yaml version
+      - name: Tag must match zarf.yaml version (a -rc.N suffix makes a pre-release)
         id: version
         run: |
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
+          BASE="${VERSION%%-rc.*}"
           PKG_VERSION=$(awk '/^  version:/ {print $2; exit}' zarf.yaml)
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
+          if [ "$BASE" != "$PKG_VERSION" ]; then
             echo "tag $TAG does not match zarf.yaml metadata.version $PKG_VERSION"; exit 1
           fi
+          PRERELEASE=false; [ "$BASE" != "$VERSION" ] && PRERELEASE=true
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
       - name: Install Zarf
         run: |
@@ -74,7 +77,7 @@ jobs:
             echo
             echo '```bash'
             echo "sha256sum -c clusterfactory-${{ steps.version.outputs.version }}-SHA256SUMS"
-            echo "zarf package deploy zarf-package-clusterfactory-amd64-${{ steps.version.outputs.version }}-upstream.tar.zst \\"
+            echo "zarf package deploy zarf-package-clusterfactory-amd64-*-upstream.tar.zst \\"
             echo "  --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true"
             echo '```'
             echo
@@ -86,4 +89,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/* --title "clusterfactory ${{ steps.version.outputs.version }}" --notes-file notes.md --verify-tag
+          FLAGS=""; [ "${{ steps.version.outputs.prerelease }}" = "true" ] && FLAGS="--prerelease"
+          gh release create "${GITHUB_REF_NAME}" dist/* --title "clusterfactory ${{ steps.version.outputs.version }}" --notes-file notes.md --verify-tag $FLAGS
