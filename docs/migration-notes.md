@@ -1,0 +1,113 @@
+# Migration notes: clusterfactory → UDS-style Zarf package (steps 0–9)
+
+What was built, what was decided, and what bit us. Written 2026-09-20 after
+`uds-way.md` §13 steps 0–9 merged into `main` (PRs #54, #55). This is the
+narrative; the decisions themselves are in [`adr/`](../adr/README.md).
+
+## Where things stand
+
+| Area | State |
+|---|---|
+| Package | `zarf package create . -f upstream` via `make package`; signed with cosign; ~370 MB |
+| Components | `cf-config` → Gitea 1.27.3 (chart 12.7.0) → Jenkins 2.568.3 (chart 5.9.63) → Nexus CE 3.96.2 (own chart, H2) → `cf-settings` (wire engine) |
+| Wiring | 18 idempotent steps in `wire-engine/wire.py`; second run prints only `ok` |
+| Demo | push → Jenkins pod agent in `cf-build` → Kaniko builds from Nexus-hosted `alpine` → pushes `cf-demo/hello-world:<n>` to Nexus |
+| Airgap | deny-all-egress NetworkPolicies shipped; CI deploys with egress denied and asserts every image comes from the Zarf registry and `example.com` is unreachable |
+| PSA | `restricted` everywhere except `cf-build` (`baseline`, one documented exemption) |
+| CI | lint → create (SBOM, CVE gate, signing) → airgapped deploy + functional gate ∥ N-1→N upgrade gate; ~10 min each on `ubuntu-latest` |
+| Audit | cosign signature, per-image SBOMs, `.grype.yaml` policy, `oscal-component.yaml`, ADRs 0001–0013 |
+| Not yet | Argo CD (ADR 0013), `rke2/` platform bundle, `PREREQUISITES.md`, first tagged release |
+
+## Decisions that changed on contact with reality
+
+- **No Postgres, Nexus on H2** (ADR 0007/0008). `nxrm-ha` only exists in an
+  external-database shape; nothing else needed Postgres. An operator, CRDs and
+  five images for one demo database was the wrong trade.
+- **Jenkins plugins as a data-only OCI image, not `dataInjections`** (ADR 0006
+  amended). Zarf deprecates `dataInjections` and recommends exactly this.
+- **Wire Job named per Helm revision.** Job templates are immutable; an
+  upgrade must create a new Job. Helm removes the previous one.
+- **`cf-config` lives in its own `cf-system` namespace.** Helm cannot adopt a
+  Namespace that Zarf pre-created, and the chart must own the application
+  namespaces to label them.
+- **CVE policy: KEV blocks anywhere; critical-with-fix blocks only on images
+  built here.** Scanning the *newest* upstream tags showed a blanket
+  critical-with-fix rule is unachievable on unmodified images (openssl in
+  `alpine:3.22.2`, perl/glibc in the Debian-based Jenkins images, bundled
+  jars). The gate still earned its keep: Gitea 1.27.0 carried CVE-2026-60004,
+  on CISA's exploited list.
+- **Kaniko runs as uid 0 with the runtime-default capability set.** `drop: ALL`
+  leaves root unable to write the uid-1000 workspace or extract layers, and
+  PSA `baseline` forbids adding capabilities back. Written down precisely in
+  `docs/exemptions/kaniko.md`.
+
+## Things that will bite the next person (all handled, all worth knowing)
+
+**Zarf**
+- Rejects multi-arch *index* digests; pin the linux/amd64 *manifest* digest
+  (`hack/pin-images.sh`). Renovate must not pin docker digests.
+- Namespaces that exist before `zarf init` get `zarf.dev/agent=ignore`: the
+  agent never rewrites their images and the node quietly pulls from the
+  internet. CI creates namespaces after init and asserts every image is
+  served by the Zarf registry.
+- Package templates (`###ZARF_PKG_TMPL_*###`) are substituted only in
+  `zarf.yaml`, not in values files; route them through `constants:`.
+  `setVariables` is not allowed in `onCreate`.
+- The "pull from the Docker daemon" fallback tags/untags images by id while
+  pulling, races itself with several images in flight ("reference does not
+  exist") and deletes the images afterwards. Locally built images go through
+  a throwaway registry (`make local-registry`, `localhost:5001`).
+- The API server is not a pod: deny-all-egress must allow it by `ipBlock`,
+  resolved from the `kubernetes` EndpointSlice at deploy time (a Zarf
+  `onDeploy.before` action). A kind node restart changes the IP and strands
+  every such rule; `bundle/up.sh` is re-runnable for that reason.
+
+**Jenkins**
+- `agent.restrictedPssSecurityContext: true` merges `capabilities.drop: ALL`
+  into *every* container of a pod template. Off; contexts are explicit.
+- The Kubernetes plugin injects its own default `inbound-agent` tag unless
+  the pod YAML names a `jnlp` container. Pinned.
+- `container()` needs a shell: use the `-debug` Kaniko image.
+- CSRF crumbs are bound to the session cookie (the wire engine keeps a jar).
+- `jenkins-plugin-cli` resolves transitive dependencies against the live
+  update centre; a lock re-resolved from `plugins.txt` drifts within hours.
+  `plugins.lock` is the source of truth; `make plugins-update` refreshes it.
+
+**Gitea**
+- Chart 12 renamed redis to valkey in values.
+- Single instance on one RWO volume with the LevelDB queue must use
+  `strategy: Recreate`; `RollingUpdate` with 100% surge crash-loops on the
+  queue lock and every in-place upgrade fails.
+- API tokens are not re-readable; the wire engine persists the one it mints.
+
+**Nexus CE**
+- The Docker connector answers 403 until the `DockerToken` realm is active
+  **and** the CE EULA is accepted via REST. EULA acceptance is an operator
+  variable (`NEXUS_ACCEPT_CE_EULA`), never a default.
+
+**Kubelet / images**
+- A kubelet caches by tag with `IfNotPresent`; rebuilding a locally built
+  image under the same tag silently runs old bits. Tags are content hashes
+  of the payload.
+
+**Runners / registries**
+- On Linux, bind-mounted directories must be writable by the container's uid
+  (jenkins-plugin-cli runs as 1000); macOS hid this.
+- `umask 077` set for writing a signing key leaks into the rest of the shell
+  step. Use a subshell.
+- `gcr.io` is retired ("requires billing"): `scorecard-action` v2.4.0 broke,
+  and the Kaniko executor is published only there (ADR 0009 risk).
+
+**Local Docker Desktop**
+- Other kind/k3d clusters in the same VM starve the CI cluster (load 300+,
+  "process apparently never started" in Jenkins). Start fresh, or stop them.
+
+## What the gates verify (so you can trust green)
+
+`tests/deploy-check.sh`: workload pods Ready; every container image from
+the Zarf registry; Gitea/Jenkins/Nexus answer; anonymous docker pull 401;
+cf-config credentials accepted by both APIs; all top-level plugins active;
+wire Job converged (and, with `EXPECT_IDEMPOTENT=1`, only `ok`); the demo
+pipeline build with its own number succeeds and its tag exists in Nexus;
+`example.com` returns `000`. The upgrade job wraps this with
+`tests/snapshot-state.sh` / `tests/compare-state.py` around an N-1→N deploy.

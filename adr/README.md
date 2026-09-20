@@ -19,5 +19,6 @@ Decision / Consequences / Date.
 | [0011](0011-rke2-cis-canal-local-path.md) | RKE2 CIS profile, Canal, local-path storage | Accepted |
 | 0012 | Single package vs per-app packages + bundle | Open |
 | [0013](0013-argocd-optional-component.md) | Argo CD as an optional component | Proposed |
+| [0014](0014-platform-preflight-and-package-split.md) | Preflight component in the forge package; RKE2 as a separate platform bundle | Proposed |
 
 Source design document: [`uds-way.md`](../uds-way.md). Pre-refactor decision table: [`docs/archive/rafactor-vanilla-way.md`](../docs/archive/rafactor-vanilla-way.md).
