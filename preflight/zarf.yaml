@@ -1,0 +1,30 @@
+# Preflight-only package: the same `preflight` component as the forge
+# package, on its own. Used by CI to prove every contract check fails on a
+# deliberately broken cluster (ADR 0014), and handy for operators who want
+# to check a cluster before they receive the forge.
+#   zarf package create preflight -f upstream --confirm
+kind: ZarfPackageConfig
+metadata:
+  name: clusterfactory-preflight
+  version: 0.4.0
+  description: The forge's contract checks (PREREQUISITES.md) as a standalone package.
+  architecture: amd64
+
+variables:
+  - name: PREFLIGHT_STRICT
+    description: Set to "false" to downgrade advisory preflight checks (resources) to warnings; contract checks are never bypassable.
+    default: "true"
+
+constants:
+  - name: PREFLIGHT_IMAGE
+    value: docker.io/library/busybox:1.37.0@sha256:7a3ebe5bfd1a4a19797d20b0c0bb39d44393e9a03fd852c0865b0f540d868df0
+
+components:
+  - name: preflight
+    required: true
+    only:
+      flavor: upstream
+    import:
+      path: ../common
+    images:
+      - docker.io/library/busybox:1.37.0@sha256:7a3ebe5bfd1a4a19797d20b0c0bb39d44393e9a03fd852c0865b0f540d868df0

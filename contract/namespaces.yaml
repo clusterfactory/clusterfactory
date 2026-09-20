@@ -1,0 +1,16 @@
+# The forge's namespaces: an interface for policy profiles (ADR 0016).
+# A profile creates these namespaces (with its PSA labels and denies) BEFORE
+# the forge deploys; the forge tolerates namespaces that already exist and
+# creates any that are missing without policy labels. The forge needs at
+# most the PSA level listed here in each namespace.
+namespaces:
+  - name: cf-system
+    purpose: Helm release records of cf-config; nothing runs here
+    maxPodSecurity: restricted
+  - name: clusterfactory
+    purpose: Gitea, Jenkins, Nexus, the wire-engine Job
+    maxPodSecurity: restricted
+  - name: cf-build
+    purpose: Jenkins pod agents with Kaniko (uid 0, runtime-default capabilities)
+    maxPodSecurity: baseline
+    exemption: docs/exemptions/kaniko.md

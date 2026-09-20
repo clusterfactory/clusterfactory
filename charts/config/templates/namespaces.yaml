@@ -1,4 +1,7 @@
 {{- range $name, $ns := .Values.namespaces }}
+{{- /* A policy profile may have created (and labelled) the namespace already;
+       Helm cannot adopt it, so skip it. contract/namespaces.yaml is the interface. */}}
+{{- if not (lookup "v1" "Namespace" "" $name) }}
 ---
 apiVersion: v1
 kind: Namespace
@@ -13,4 +16,5 @@ metadata:
   annotations:
     # Uninstalling cf-config must never delete application data.
     helm.sh/resource-policy: keep
+{{- end }}
 {{- end }}
