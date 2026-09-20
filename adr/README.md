@@ -15,9 +15,12 @@ Decision / Consequences / Date.
 | [0007](0007-nexus-ce-embedded-h2.md) | Nexus CE on embedded H2, own helper chart (supersedes the `nxrm-ha` plan) | Accepted |
 | [0008](0008-no-postgres-component.md) | No Postgres component; deferred until a real need | Accepted |
 | [0009](0009-kaniko-cf-build-baseline-exemption.md) | Kaniko + `cf-build` baseline exemption | Accepted |
-| [0010](0010-plain-http-port-forward.md) | Plain HTTP + port-forward; cert-manager as upgrade path | Accepted |
-| [0011](0011-rke2-cis-canal-local-path.md) | RKE2 CIS profile, Canal, local-path storage | Accepted |
+| [0010](0010-plain-http-port-forward.md) | Plain HTTP; Traefik Ingress by hostname on RKE2, port-forward fallback; TLS is policy (v0.5) | Accepted, amended |
+| [0011](0011-rke2-cis-canal-local-path.md) | RKE2 (≥1.36), Canal, local-path storage; CIS moved to policy | Accepted, amended |
 | 0012 | Single package vs per-app packages + bundle | Open |
 | [0013](0013-argocd-optional-component.md) | Argo CD as an optional component | Proposed |
+| [0014](0014-platform-preflight-and-package-split.md) | Three layers: platform invariants, preflight contract, customer policy | Accepted |
+| [0015](0015-custom-init-package-rke2.md) | Custom Zarf init package with an `rke2` component | Accepted |
+| [0016](0016-policy-profile-packages.md) | Policy profiles as separate, forkable packages | Accepted |
 
 Source design document: [`uds-way.md`](../uds-way.md). Pre-refactor decision table: [`docs/archive/rafactor-vanilla-way.md`](../docs/archive/rafactor-vanilla-way.md).

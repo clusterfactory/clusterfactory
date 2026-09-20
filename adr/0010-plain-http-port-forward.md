@@ -1,6 +1,6 @@
 # 0010 — Plain HTTP in-cluster + `kubectl port-forward`; cert-manager as upgrade path
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-09-20)
 **Date:** 2026-09-18
 
 ## Context
@@ -20,6 +20,18 @@ also work airgapped.
   connector.
 - This is accepted under the trusted-operator threat model (ADR 0005):
   the attacker who can sniff pod-to-pod traffic already has node access.
+
+## Amendment 2026-09-20 (ADR 0014, Q6)
+
+On RKE2 the bundled ingress controller costs no extra images: RKE2 ≥ v1.36
+defaults to Traefik (ingress-nginx is removed in v1.37), bound to hostPort
+80/443 on the single node. v0.4 ships **plain HTTP `Ingress` by hostname**
+for Gitea, Jenkins and Nexus (and the Nexus Docker connector) in addition
+to port-forward, which stays the fallback and the only path on clusters
+without an ingress controller. TLS is a v0.5 item and belongs to the policy
+profile (customer CA or self-signed, injected into Jenkins and Kaniko
+trust). `disable: rke2-ingress-nginx` in the platform config is replaced by
+keeping Traefik enabled.
 
 ## Consequences
 
