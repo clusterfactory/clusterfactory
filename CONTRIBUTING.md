@@ -48,7 +48,10 @@ API server IP (every ipBlock NetworkPolicy goes stale).
 - **Add a flavor:** `values/<app>-<flavor>-values.yaml` per app, a component in
   `zarf.yaml` with `only.flavor`, a CI matrix entry. Behaviour must not change.
 - **Add a namespace or policy:** `charts/config/values.yaml` (`namespaces`,
-  `networkPolicy.additionalEgress`).
+  `networkPolicy.additionalEgress`) and `contract/namespaces.yaml`.
+- **Add a preflight check:** a `# CHECK: id | class | what` line plus a
+  `check ...` call in `preflight/preflight.sh`, then `hack/gen-prerequisites.py`;
+  make CI see it fail (`tests/preflight-negative.sh`).
 
 ## Pull requests
 

@@ -36,6 +36,9 @@ variables:
       (https://links.sonatype.com/products/nxrm/ce-eula) on the operator's behalf. Until accepted the
       Docker connector refuses requests and the wire engine fails. Never defaulted to true (ADR 0007).
     default: "false"
+  - name: PREFLIGHT_STRICT
+    description: Set to "false" to downgrade advisory preflight checks (resources) to warnings; contract checks are never bypassable.
+    default: "true"
   - name: APISERVER_CIDR
     description: Kubernetes API server endpoint CIDR allowed as egress. Resolved automatically at deploy; set explicitly for HA control planes.
     default: ""
@@ -47,6 +50,8 @@ variables:
 # zarf.yaml, so the create-time image tags are re-exported as constants,
 # which Zarf does template into values files (###ZARF_CONST_*###).
 constants:
+  - name: PREFLIGHT_IMAGE
+    value: docker.io/library/busybox:1.37.0@sha256:7a3ebe5bfd1a4a19797d20b0c0bb39d44393e9a03fd852c0865b0f540d868df0
   - name: PLUGINS_TAG
     value: "###ZARF_PKG_TMPL_PLUGINS_TAG###"
   - name: WIRE_ENGINE_TAG
@@ -55,6 +60,16 @@ constants:
     value: "###ZARF_PKG_TMPL_LOCAL_REGISTRY###"
 
 components:
+  - name: preflight
+    required: true
+    only:
+      flavor: upstream
+    import:
+      path: common
+    images:
+      # Test image for the preflight pods (nc, nslookup); restricted-compliant.
+      - docker.io/library/busybox:1.37.0@sha256:7a3ebe5bfd1a4a19797d20b0c0bb39d44393e9a03fd852c0865b0f540d868df0
+
   - name: clusterfactory
     required: true
     description: Gitea + Jenkins + Nexus with clusterfactory config/settings helper charts (upstream images).

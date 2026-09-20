@@ -22,6 +22,7 @@ is an [ADR](adr/README.md).
 | **Unmodified upstream** | The package contains the upstream Helm charts and images of Gitea, Jenkins and Nexus, pinned by digest in [`zarf.yaml`](zarf.yaml). clusterfactory adds only values files, two tiny helper charts and one Python file. |
 | **No custom application images** | The only images built here are a data-only image carrying the resolved Jenkins plugin closure ([`jenkins/`](jenkins/)) and the wire-engine image (`python:slim` + one stdlib script, [`wire-engine/`](wire-engine/)). Both are built at package-create time with content-addressed tags and exist only in a throwaway registry on the build machine. |
 | **Wiring you can read** | All cross-service setup is a post-deploy Kubernetes Job running [`wire-engine/wire.py`](wire-engine/wire.py): check-then-act, one `[ok\|created\|updated]` line per step, exit 0 only when converged. A redeploy on a converged cluster prints only `ok`. No Helm hooks, no operators, no CRDs. |
+| **The contract is executable** | The `preflight` component ([`preflight/preflight.sh`](preflight/preflight.sh)) runs first and refuses the deploy if the cluster cannot honour the package's guarantees: NetworkPolicy actually enforced (positive control, then deny-all), a default StorageClass that binds, PSA active, DNS, the Zarf registry, an API-server endpoint the egress policy can express. [`PREREQUISITES.md`](PREREQUISITES.md) is generated from it; results land in a ConfigMap. |
 | **Airgap is enforced, not assumed** | [`charts/config`](charts/config) ships deny-all-egress NetworkPolicies (DNS, in-namespace and the API server only), Pod Security `restricted` on every namespace but one, and every update-checker/telemetry switch off. |
 | **One declared exception** | Kaniko builds run as uid 0 in the `cf-build` namespace at PSA `baseline`. It is written down in [`docs/exemptions/kaniko.md`](docs/exemptions/kaniko.md) with scope, justification and a review date, UDS-style. |
 | **Auditable artifacts** | Zarf signs the package (cosign, [`cosign.pub`](cosign.pub) in the repo and in every release) and generates an SBOM per image; CI scans every SBOM under [`.grype.yaml`](.grype.yaml): known-exploited (KEV) findings block anywhere, critical-with-fix blocks in images built here, the rest is reported. [`oscal-component.yaml`](oscal-component.yaml) maps what is actually enforced to NIST 800-53 and is schema-validated in CI. |
@@ -43,8 +44,9 @@ is an [ADR](adr/README.md).
                     pipeline, Nexus repo/role/deploy user, Kaniko docker config, base image copy.
 ```
 
-Deploy order is the chart order in [`common/zarf.yaml`](common/zarf.yaml):
-`cf-config` → `gitea` → `jenkins` → `nexus` → (`argocd`, optional, planned) → `cf-settings`.
+Deploy order: the `preflight` component, then the chart order in
+[`common/zarf.yaml`](common/zarf.yaml): `cf-config` → `gitea` → `jenkins` →
+`nexus` → (`argocd`, optional, planned) → `cf-settings`.
 
 ## Usage
 
@@ -63,10 +65,10 @@ built images to Zarf.
 
 ### Deploy (disconnected cluster)
 
-Prerequisites on the target: a Kubernetes cluster with a CNI that enforces
-NetworkPolicy (Calico/Cilium/Canal — kindnet does not), a default StorageClass,
-and a `zarf init` (the init package matches the pinned Zarf version in
-[`ci.yaml`](.github/workflows/ci.yaml)). Nexus wants ~1.5 GiB RAM.
+Prerequisites on the target are in [`PREREQUISITES.md`](PREREQUISITES.md) and
+are checked by the package itself before anything is deployed. To check a
+cluster before you have the forge: `zarf package create preflight -f upstream`
+gives a preflight-only package.
 
 ```bash
 zarf init --confirm
