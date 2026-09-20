@@ -1,0 +1,11 @@
+# Negative-test cluster (ADR 0014): default CNI off, plain flannel installed by
+# CI - flannel does not enforce NetworkPolicy, which the preflight must detect.
+# flannel's manifest assumes 10.244.0.0/16.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: clusterfactory-neg
+networking:
+  disableDefaultCNI: true
+  podSubnet: 10.244.0.0/16
+nodes:
+  - role: control-plane

@@ -345,12 +345,13 @@ jobs:
 
       - name: kind with plain flannel (no NetworkPolicy enforcement), zarf init, default StorageClass removed
         run: |
-          kind create cluster --config bundle/kind-config.yaml --wait 120s
+          kind create cluster --config bundle/kind-config-flannel.yaml --wait 120s
           # renovate: datasource=github-releases depName=flannel-io/flannel
           FLANNEL_VERSION=v0.28.9
           kubectl apply -f "https://github.com/flannel-io/flannel/releases/download/${FLANNEL_VERSION}/kube-flannel.yml"
           kubectl -n kube-flannel rollout status ds/kube-flannel-ds --timeout=300s
           kubectl wait --for=condition=Ready node --all --timeout=300s
+          kubectl -n kube-system rollout status deploy/coredns --timeout=300s
           zarf init --confirm --no-color
           kubectl annotate storageclass standard storageclass.kubernetes.io/is-default-class-
 

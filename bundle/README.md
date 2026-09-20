@@ -3,6 +3,8 @@
 Never shipped. Holds what CI needs to stand up a throwaway cluster and
 deploy the package into it with egress blocked (uds-way.md §11 gate 3):
 
+- `kind-config-flannel.yaml` — the *negative* cluster for the preflight test: no
+  policy enforcement (flannel), podSubnet matching flannel's manifest.
 - `up.sh` — creates the cluster, installs Calico, applies the egress
   policy to every namespace the package touches. Idempotent; run it
   locally too: `bundle/up.sh <dir-with-zarf-init-pkg> && make package deploy`. Runs `zarf init` itself, *before* creating the package namespaces (see comment in the script).
