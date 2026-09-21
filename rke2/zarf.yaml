@@ -51,23 +51,23 @@ components:
     files:
       # --- RKE2 release artifacts (checksums from sha256sum-amd64.txt of the release)
       - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/rke2.linux-amd64.tar.gz
-        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_TARBALL###
+        shasum: "###ZARF_PKG_TMPL_SHA_RKE2_TARBALL###"
         target: /root/rke2-artifacts/rke2.linux-amd64.tar.gz
       - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/rke2-images-core.linux-amd64.tar.zst
-        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_IMAGES_CORE###
+        shasum: "###ZARF_PKG_TMPL_SHA_RKE2_IMAGES_CORE###"
         target: /var/lib/rancher/rke2/agent/images/rke2-images-core.linux-amd64.tar.zst
       - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/rke2-images-canal.linux-amd64.tar.zst
-        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_IMAGES_CANAL###
+        shasum: "###ZARF_PKG_TMPL_SHA_RKE2_IMAGES_CANAL###"
         target: /var/lib/rancher/rke2/agent/images/rke2-images-canal.linux-amd64.tar.zst
       - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/sha256sum-amd64.txt
-        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_SUMS###
+        shasum: "###ZARF_PKG_TMPL_SHA_RKE2_SUMS###"
         target: /root/rke2-artifacts/sha256sum-amd64.txt
       - source: https://get.rke2.io
         target: /root/rke2-artifacts/install.sh
         executable: true
       # --- SELinux policy (RPM flavor; RKE2 docs: required for air-gapped SELinux hosts)
       - source: https://rpm.rancher.io/rke2/stable/common/centos/9/noarch/rke2-selinux-0.23-1.el9.noarch.rpm
-        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_SELINUX###
+        shasum: "###ZARF_PKG_TMPL_SHA_RKE2_SELINUX###"
         target: /root/rke2-artifacts/rpm/rke2-selinux-0.23-1.el9.noarch.rpm
       - source: https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os/Packages/c/container-selinux-2.245.0-1.el9.noarch.rpm
         shasum: "###ZARF_PKG_TMPL_SHA_CONTAINER_SELINUX###"
