@@ -21,7 +21,8 @@ up() {
 
   echo "== images for containerd (imported on rke2 start, pinned against GC)"
   mkdir -p /var/lib/rancher/rke2/agent/images
-  cp rke2-images-core.linux-amd64.tar.zst "rke2-images-${CNI}.linux-amd64.tar.zst" local-path-provisioner.tar /var/lib/rancher/rke2/agent/images/
+  # every image the local-path manifest references (provisioner + the busybox helper pod)
+  cp rke2-images-core.linux-amd64.tar.zst "rke2-images-${CNI}.linux-amd64.tar.zst" local-path-provisioner.tar busybox.tar /var/lib/rancher/rke2/agent/images/
   touch /var/lib/rancher/rke2/agent/images/.cache.json
 
   echo "== config drop-ins"
