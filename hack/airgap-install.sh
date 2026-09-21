@@ -15,6 +15,9 @@ export PATH="$PATH:/var/lib/rancher/rke2/bin:$A"
 CNI="${CNI:-canal}"
 
 up() {
+  if systemctl is-active --quiet rke2-server 2>/dev/null || [ -d /var/lib/rancher/rke2 ]; then
+    echo "== previous RKE2 present - removing for a clean slate"; down
+  fi
   echo "== host: $(hostname) $(. /etc/os-release; echo "$PRETTY_NAME") selinux=$(getenforce) egress-test: github.com $(curl -sS -m 5 -o /dev/null -w '%{http_code}' https://github.com 2>/dev/null || echo 000)"
   cd "$A"
   sha256sum -c --ignore-missing sha256sum-amd64.txt | grep -v OK && { echo "checksum mismatch"; exit 1; } || echo "rke2 artifacts: checksums OK"
