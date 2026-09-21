@@ -32,7 +32,7 @@ open(p,'w').write(s)
 PY
 for img in $(grep -o 'image: *[^ ]*' rke2/files/local-path-storage.yaml | awk '{print $2}' | sort -u); do
   ref="$img"; case "$ref" in */*) ;; *) ref="docker.io/library/$ref" ;; esac; case "$ref" in *:*) ;; *) ref="$ref:latest" ;; esac
-  name=$(basename "${ref%%:*}")
+  name=$(basename "${ref%%:*}"); rm -f "rke2/files/${name}.tar"   # docker-archive cannot be overwritten
   skopeo copy --override-os linux --override-arch amd64 "docker://$ref" "docker-archive:rke2/files/${name}.tar:${ref}" >/dev/null
   echo "   $ref -> files/${name}.tar"
 done
