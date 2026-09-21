@@ -7,7 +7,10 @@
 set -euo pipefail
 SRC="$1"; DST="$2"
 mkdir -p "$DST" && cd "$DST"
-gcloud storage cp "$SRC/SHA256SUMS" ./SHA256SUMS.new >/dev/null 2>&1
+# a prefix either carries SHA256SUMS (platform set) or <file>.sha256 files (init package)
+if ! gcloud storage cp "$SRC/SHA256SUMS" ./SHA256SUMS.new >/dev/null 2>&1; then
+  gcloud storage ls "$SRC/*.sha256" 2>/dev/null | while read -r f; do gcloud storage cat "$f"; done > ./SHA256SUMS.new
+fi
 if [ -f SHA256SUMS ] && cmp -s SHA256SUMS SHA256SUMS.new && sha256sum -c SHA256SUMS --quiet 2>/dev/null; then
   rm -f SHA256SUMS.new; echo "platform cache valid: $DST ($(du -sh . | cut -f1))"; exit 0
 fi

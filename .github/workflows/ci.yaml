@@ -251,18 +251,21 @@ jobs:
           gcloud storage cp hack/airgap-install.sh tests/deploy-check.sh tests/snapshot-state.sh tests/compare-state.py "$D/bin/"
           gcloud storage cp jenkins/plugins.txt "$BUCKET/runs/${GITHUB_RUN_ID}/bin/plugins.txt"
 
-      - name: On the VM - pull artifacts, RKE2 up (air-gapped), zarf init
+      - name: On the VM - clean host, init package from the bucket (cached), zarf init --confirm
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail
-          A=/root/artifacts; rm -rf \$A/run; mkdir -p \$A/run
+          A=/root/artifacts; rm -rf \$A/run; mkdir -p \$A/run \$A/init
           gcloud storage cp -r "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/ >/dev/null 2>&1
           chmod +x \$A/run/bin/*.sh \$A/run/bin/*.py
-          \$A/run/bin/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
-          if [ -d prev ] || [ "${{ steps.prev.outputs.found }}" = "true" ]; then
+          \$A/run/bin/airgap-pull.sh "$BUCKET/init/${ZARF_VERSION}" \$A/init/${ZARF_VERSION}
+          if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
             mkdir -p \$A/run/prev && gcloud storage cp "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" \$A/run/prev/ >/dev/null 2>&1
           fi
-          ARTIFACT_DIR=\$A/platform/${{ env.RKE2_VERSION }} \$A/run/bin/airgap-install.sh up
+          \$A/run/bin/airgap-install.sh down
+          cd \$A/init/${ZARF_VERSION} && timeout 1500 zarf init --confirm --no-color 2>&1 | grep -E "ERR|preflight ok|rke2 ready|init complete"
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin
+          kubectl get nodes; kubectl get pods -n zarf
           EOS
 
       - name: On the VM - deploy N-1, seed; deploy N; gate; data survived; idempotent redeploy
@@ -299,7 +302,7 @@ jobs:
           gcloud storage rm "$BUCKET/forge/main/*" >/dev/null 2>&1 || true
           gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/forge/main/"
 
-      - name: On the VM - uninstall (clean host, platform cache kept), drop this run's bucket prefix
+      - name: On the VM - uninstall (clean host, caches kept), drop this run's bucket prefix
         if: always()
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \

@@ -99,9 +99,14 @@ components:
               set -e
               [ "$(id -u)" = 0 ] || { echo "zarf init must run as root"; exit 1; }
               [ "$(uname -m)" = x86_64 ] || { echo "amd64 package on a $(uname -m) host"; exit 1; }
-              if systemctl is-enabled nm-cloud-setup.service >/dev/null 2>&1; then echo "nm-cloud-setup is enabled - RKE2 requires it disabled (see RKE2 requirements)"; exit 1; fi
-              if systemctl is-active rke2-server >/dev/null 2>&1 || systemctl is-active rke2-agent >/dev/null 2>&1; then echo "RKE2 already running on this host"; exit 1; fi
-              avail=$(df -BG --output=avail /var/lib | tail -1 | tr -dc 0-9); [ "$avail" -ge 20 ] || { echo "need >= 20 GB free under /var/lib, have ${avail}G"; exit 1; }
+              if systemctl is-enabled nm-cloud-setup.service >/dev/null 2>&1; then
+                echo "nm-cloud-setup is enabled - RKE2 requires it disabled (see RKE2 requirements)"; exit 1
+              fi
+              if systemctl is-active rke2-server >/dev/null 2>&1 || systemctl is-active rke2-agent >/dev/null 2>&1; then
+                echo "RKE2 already running on this host"; exit 1
+              fi
+              avail=$(df -BG --output=avail /var/lib | tail -1 | tr -dc 0-9)
+              [ "$avail" -ge 20 ] || { echo "need >= 20 GB free under /var/lib, have ${avail}G"; exit 1; }
               echo "preflight ok: $(. /etc/os-release; echo "$PRETTY_NAME"), selinux=$(getenforce 2>/dev/null || echo n/a)"
         after:
           - description: Install RKE2 from the staged artifacts, wait for the node, local-path and CoreDNS
@@ -111,8 +116,10 @@ components:
               RKE2_TLS_SAN="${ZARF_VAR_RKE2_TLS_SAN}" POLICY_PROFILE="${ZARF_VAR_POLICY_PROFILE}" /root/rke2-artifacts/rke2-host.sh
       onRemove:
         before:
-          - cmd: (rke2-uninstall.sh || /usr/local/bin/rke2-uninstall.sh) >/dev/null 2>&1 || true; rm -rf /root/rke2-artifacts /var/lib/rancher /etc/rancher /opt/local-path-provisioner
-            description: Remove RKE2 and its state
+          - description: Remove RKE2 and its state
+            cmd: |
+              (rke2-uninstall.sh || /usr/local/bin/rke2-uninstall.sh) >/dev/null 2>&1 || true
+              rm -rf /root/rke2-artifacts /var/lib/rancher /etc/rancher /opt/local-path-provisioner
 
   # --- upstream Zarf init components, imported by name from the pinned init package
   - name: zarf-injector
