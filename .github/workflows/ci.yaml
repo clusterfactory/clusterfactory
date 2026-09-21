@@ -254,7 +254,7 @@ jobs:
       - name: On the VM - clean host, init package (cached from the bucket), zarf init --confirm
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
-          set -euo pipefail
+          set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
           A=/root/artifacts; mkdir -p \$A/init \$A/run/new
           gcloud storage cp "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/new/ >/dev/null 2>&1
           if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
@@ -271,7 +271,7 @@ jobs:
       - name: On the VM - deploy N-1, seed; deploy N; gate; data survived; idempotent redeploy
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
-          set -euo pipefail
+          set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
           export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin
           A=/root/artifacts/run; cd \$A; mkdir -p ../gate/jenkins && cp bin/plugins.txt ../gate/jenkins/ && cp bin/*.sh bin/*.py ../gate/
           dep() { zarf package deploy "\$@" --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true 2>&1 | grep -E "ERR|Verified|wire engine"; }
@@ -352,7 +352,7 @@ jobs:
       - name: On the VM - RKE2 with flannel, no StorageClass; preflight must refuse
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
-          set -euo pipefail
+          set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
           A=/root/artifacts
           \$A/run/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
           # flannel -> no NetworkPolicy enforcement. local-path must exist for zarf init's PVC;
