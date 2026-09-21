@@ -38,9 +38,12 @@ for img in $(grep -o 'image: *[^ ]*' rke2/files/local-path-storage.yaml | awk '{
 done
 
 echo "== zarf package create"
-mkdir -p "$OUT"
-zarf package create rke2 --confirm --no-color -o "$OUT" \
+mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd)
+# zarf reads zarf-config.toml from the working directory: the upstream components' create-time templates
+cd rke2
+zarf package create . --confirm --no-color -o "$OUT" \
   --set SHA_RKE2_TARBALL="$S_TARBALL" --set SHA_RKE2_IMAGES_CORE="$S_CORE" --set SHA_RKE2_IMAGES_CANAL="$S_CANAL" \
   --set SHA_RKE2_SUMS="$S_SUMS" --set SHA_RKE2_SELINUX="$S_RKE2_SELINUX" --set SHA_CONTAINER_SELINUX="$S_CONTAINER_SELINUX" \
   ${SIGNING_KEY:+--signing-key "$SIGNING_KEY" --signing-key-pass "$SIGNING_KEY_PASS"} 2>&1 | grep -E "ERR|WRN|writing package|creating"
+cd ..
 ls -lh "$OUT"/zarf-init-*.tar.zst
