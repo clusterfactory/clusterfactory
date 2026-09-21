@@ -140,8 +140,17 @@ Everything online happens on GitHub-hosted runners:
 - `hack/airgap-install.sh` is the manual form of the `rke2` init component
   (ADR 0015): same files, same order, same waits - and the runbook.
 
-Measured earlier the same day (still with NAT): deploy to wire-engine
-Complete in 2m38s on this VM.
+**First fully offline run (2026-09-21, by hand over IAP):** `airgap-install.sh up`
+brought RKE2 `v1.36.4+rke2r1` up from the tarballs with the SELinux policy RPMs,
+local-path from the manifests dir, and `zarf init` - `github.com 000` the whole
+time; then the rc.1 package deployed in 2m21s and the full gate passed including
+the Kaniko build. Two leaks found and fixed on the way, both now in the script:
+the local-path helper pod pulls `busybox` (archive must be loaded), and the
+provisioner directory needs `container_file_t`.
+
+The staging side is `cf-stager` (same VPC, own subnet with a NAT scoped to it,
+`storage-rw` on the bucket): `hack/airgap-fetch.sh` runs there natively (dnf,
+skopeo) - no containers, nothing on a laptop.
 
 ## Revised plan after ADRs 0014–0016 (replaces uds-way.md §13 steps 10–12)
 

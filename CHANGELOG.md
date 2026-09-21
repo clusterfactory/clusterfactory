@@ -25,6 +25,10 @@ Versioning: [Semantic Versioning](https://semver.org/).
 - CI: lint → create (SBOM + grype) → airgapped deploy on kind + Calico with the
   full functional gate, including an idempotent redeploy.
 - ADRs 0001–0011, 0013 and `renovate.json` added; Dependabot config removed.
+- Step 10a: `preflight` component (executable contract, PREREQUISITES.md
+  generated); CI moved entirely to an air-gapped RKE2 host on GCP fed from a
+  private bucket (`hack/airgap-fetch.sh`, `hack/airgap-install.sh`); kind and
+  laptop paths removed.
 - Step 9: upstream bumps (Gitea chart 12.7.0 / 1.27.0, Jenkins chart 5.9.63 /
   2.568.3, inbound-agent, k8s-sidecar 2.9.0, alpine 3.22.2); `.grype.yaml`
   CVE policy blocking on every image; cosign signing in `make package`, CI and
