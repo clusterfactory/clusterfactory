@@ -302,12 +302,11 @@ jobs:
           gcloud storage rm "$BUCKET/forge/main/*" >/dev/null 2>&1 || true
           gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/forge/main/"
 
-      - name: On the VM - uninstall (clean host, caches kept), drop this run's bucket prefix
+      - name: On the VM - uninstall (clean host, caches kept)
         if: always()
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
             --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts/run /root/gate" || true
-          gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}" || true
 
   rke2-negative:
     name: preflight refuses a broken cluster (RKE2 with flannel, no StorageClass)
@@ -339,16 +338,21 @@ jobs:
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf
           sudo install -m 755 zarf /usr/local/bin/zarf
           zarf package create preflight -f upstream --confirm --no-color --skip-sbom -o build
-          gcloud storage cp build/zarf-package-clusterfactory-preflight-*.tar.zst hack/airgap-install.sh hack/airgap-pull.sh \
-            tests/preflight-negative.sh "$BUCKET/runs/${GITHUB_RUN_ID}-neg/"
+          mkdir -p run
+          cp build/zarf-package-clusterfactory-preflight-*.tar.zst run/
+          cp hack/airgap-install.sh hack/airgap-pull.sh tests/preflight-negative.sh run/
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
+          gcloud compute scp --recurse run "$VM:/tmp/cf-run" --zone "$ZONE" --tunnel-through-iap --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo bash -s" <<'EOS'
+          rm -rf /root/artifacts/run && mkdir -p /root/artifacts
+          mv /tmp/cf-run /root/artifacts/run && chmod +x /root/artifacts/run/*.sh
+          EOS
 
       - name: On the VM - RKE2 with flannel, no StorageClass; preflight must refuse
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail
-          A=/root/artifacts; rm -rf \$A/run; mkdir -p \$A/run
-          gcloud storage cp -r "$BUCKET/runs/${GITHUB_RUN_ID}-neg/*" \$A/run/ >/dev/null 2>&1
-          chmod +x \$A/run/*.sh
+          A=/root/artifacts
           \$A/run/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
           # flannel -> no NetworkPolicy enforcement. local-path must exist for zarf init's PVC;
           # the default-class annotation is removed afterwards so the preflight sees no default.
@@ -359,9 +363,8 @@ jobs:
           cd \$A/run && ./preflight-negative.sh zarf-package-clusterfactory-preflight-*.tar.zst networkpolicy-enforcement,default-storageclass
           EOS
 
-      - name: On the VM - uninstall; drop the bucket prefix
+      - name: On the VM - uninstall
         if: always()
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
             --command "sudo bash /root/artifacts/run/airgap-install.sh down; sudo rm -rf /root/artifacts/run" || true
-          gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}-neg" || true
