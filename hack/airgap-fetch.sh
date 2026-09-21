@@ -39,17 +39,22 @@ fi
 ls rpm
 LP="https://raw.githubusercontent.com/rancher/local-path-provisioner/${LOCAL_PATH_VERSION}/deploy/local-path-storage.yaml"
 curl -sSfL "$LP" -o local-path-storage.yaml
-LP_IMG=$(grep -o 'image: rancher/local-path-provisioner:[^ ]*' local-path-storage.yaml | head -1 | cut -d' ' -f2)
-BB_IMG=$(grep -o 'image: busybox' local-path-storage.yaml | head -1 | cut -d' ' -f2)
-# default class + pinned images in the manifest we ship
+# images referenced by the manifest (fully qualified in v0.0.37), saved as
+# docker-archives that containerd imports from the RKE2 images directory.
+# The manifest is also patched to make local-path the default StorageClass.
 python3 - <<'PY'
-import re
 p='local-path-storage.yaml'; s=open(p).read()
 s=s.replace('kind: StorageClass\nmetadata:\n  name: local-path\n','kind: StorageClass\nmetadata:\n  name: local-path\n  annotations:\n    storageclass.kubernetes.io/is-default-class: "true"\n')
 open(p,'w').write(s)
 PY
-skopeo copy --override-os linux --override-arch amd64 "docker://docker.io/$LP_IMG" "docker-archive:local-path-provisioner.tar:$LP_IMG"
-skopeo copy --override-os linux --override-arch amd64 "docker://docker.io/library/busybox:1.37.0" "docker-archive:busybox.tar:busybox:latest"
+grep -q 'is-default-class: "true"' local-path-storage.yaml
+for img in $(grep -o 'image: *[^ ]*' local-path-storage.yaml | awk '{print $2}' | sort -u); do
+  ref="$img"; case "$ref" in */*) ;; *) ref="docker.io/library/$ref" ;; esac
+  case "$ref" in *:*) ;; *) ref="$ref:latest" ;; esac
+  name=$(basename "${ref%%:*}")
+  skopeo copy --override-os linux --override-arch amd64 "docker://$ref" "docker-archive:${name}.tar:${ref}" >/dev/null
+  echo "saved $ref -> ${name}.tar"
+done
 curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf && chmod +x zarf
 curl -sSfLO "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf-init-amd64-${ZARF_VERSION}.tar.zst"
 [ -n "$PACKAGE" ] && cp "$PACKAGE" . && cp "$(dirname "$PACKAGE")/cosign.pub" . 2>/dev/null || true
