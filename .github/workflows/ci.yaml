@@ -241,27 +241,29 @@ jobs:
             echo "found=false" >> "$GITHUB_OUTPUT"; echo "no previous main package - upgrade gate skipped"
           fi
 
-      - name: Stage this run's packages in the bucket
+      - name: Copy this run's packages and the gate scripts to the VM over the IAP tunnel
         run: |
-          D="$BUCKET/runs/${GITHUB_RUN_ID}"
-          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$D/new/"
+          mkdir -p run/new run/bin
+          cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub run/new/
           if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
-            gcloud storage cp prev/zarf-package-clusterfactory-*.tar.zst "$D/prev/"
+            mkdir -p run/prev && cp prev/zarf-package-clusterfactory-*.tar.zst run/prev/
           fi
-          gcloud storage cp hack/airgap-install.sh tests/deploy-check.sh tests/snapshot-state.sh tests/compare-state.py "$D/bin/"
-          gcloud storage cp jenkins/plugins.txt "$BUCKET/runs/${GITHUB_RUN_ID}/bin/plugins.txt"
+          cp hack/airgap-install.sh hack/airgap-pull.sh run/bin/
+          cp tests/deploy-check.sh tests/snapshot-state.sh tests/compare-state.py run/bin/
+          cp jenkins/plugins.txt run/bin/plugins.txt
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
+          gcloud compute scp --recurse run "$VM:/tmp/cf-run" --zone "$ZONE" --tunnel-through-iap --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo bash -s" <<'EOS'
+          rm -rf /root/artifacts/run && mkdir -p /root/artifacts
+          mv /tmp/cf-run /root/artifacts/run && chmod +x /root/artifacts/run/bin/*
+          EOS
 
-      - name: On the VM - clean host, init package from the bucket (cached), zarf init --confirm
+      - name: On the VM - clean host, init package (cached from the bucket), zarf init --confirm
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail
-          A=/root/artifacts; rm -rf \$A/run; mkdir -p \$A/run \$A/init
-          gcloud storage cp -r "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/ >/dev/null 2>&1
-          chmod +x \$A/run/bin/*.sh \$A/run/bin/*.py
+          A=/root/artifacts; mkdir -p \$A/init
           \$A/run/bin/airgap-pull.sh "$BUCKET/init/${ZARF_VERSION}" \$A/init/${ZARF_VERSION}
-          if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
-            mkdir -p \$A/run/prev && gcloud storage cp "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" \$A/run/prev/ >/dev/null 2>&1
-          fi
           \$A/run/bin/airgap-install.sh down
           cd \$A/init/${ZARF_VERSION} && timeout 1500 zarf init --confirm --no-color 2>&1 | grep -E "ERR|preflight ok|rke2 ready|init complete"
           export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin
