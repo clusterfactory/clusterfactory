@@ -255,11 +255,14 @@ jobs:
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail
-          A=/root/artifacts; rm -rf \$A; mkdir -p \$A/rpm
-          gcloud storage cp -r "$BUCKET/platform/${{ env.RKE2_VERSION }}/*" \$A/ >/dev/null 2>&1
+          A=/root/artifacts; rm -rf \$A/run; mkdir -p \$A/run
           gcloud storage cp -r "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/ >/dev/null 2>&1
           chmod +x \$A/run/bin/*.sh \$A/run/bin/*.py
-          ARTIFACT_DIR=\$A \$A/run/bin/airgap-install.sh up
+          \$A/run/bin/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
+          if [ -d prev ] || [ "${{ steps.prev.outputs.found }}" = "true" ]; then
+            mkdir -p \$A/run/prev && gcloud storage cp "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" \$A/run/prev/ >/dev/null 2>&1
+          fi
+          ARTIFACT_DIR=\$A/platform/${{ env.RKE2_VERSION }} \$A/run/bin/airgap-install.sh up
           EOS
 
       - name: On the VM - deploy N-1, seed; deploy N; gate; data survived; idempotent redeploy
@@ -290,11 +293,17 @@ jobs:
           kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=80; journalctl -u rke2-server --no-pager -n 40
           EOS
 
-      - name: On the VM - uninstall (clean host), drop this run's bucket prefix
+      - name: Publish this package as the new main package (main only)
+        if: github.ref == 'refs/heads/main' && success()
+        run: |
+          gcloud storage rm "$BUCKET/forge/main/*" >/dev/null 2>&1 || true
+          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/forge/main/"
+
+      - name: On the VM - uninstall (clean host, platform cache kept), drop this run's bucket prefix
         if: always()
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
-            --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts /root/gate" || true
+            --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts/run /root/gate" || true
           gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}" || true
 
   rke2-negative:
@@ -327,20 +336,20 @@ jobs:
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf
           sudo install -m 755 zarf /usr/local/bin/zarf
           zarf package create preflight -f upstream --confirm --no-color --skip-sbom -o build
-          gcloud storage cp build/zarf-package-clusterfactory-preflight-*.tar.zst hack/airgap-install.sh tests/preflight-negative.sh \
-            "$BUCKET/runs/${GITHUB_RUN_ID}-neg/"
+          gcloud storage cp build/zarf-package-clusterfactory-preflight-*.tar.zst hack/airgap-install.sh hack/airgap-pull.sh \
+            tests/preflight-negative.sh "$BUCKET/runs/${GITHUB_RUN_ID}-neg/"
 
       - name: On the VM - RKE2 with flannel, no StorageClass; preflight must refuse
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail
-          A=/root/artifacts; rm -rf \$A; mkdir -p \$A/run
-          gcloud storage cp -r "$BUCKET/platform/${{ env.RKE2_VERSION }}/*" \$A/ >/dev/null 2>&1
+          A=/root/artifacts; rm -rf \$A/run; mkdir -p \$A/run
           gcloud storage cp -r "$BUCKET/runs/${GITHUB_RUN_ID}-neg/*" \$A/run/ >/dev/null 2>&1
           chmod +x \$A/run/*.sh
+          \$A/run/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
           # flannel -> no NetworkPolicy enforcement. local-path must exist for zarf init's PVC;
           # the default-class annotation is removed afterwards so the preflight sees no default.
-          CNI=flannel ARTIFACT_DIR=\$A \$A/run/airgap-install.sh up
+          CNI=flannel ARTIFACT_DIR=\$A/platform/${{ env.RKE2_VERSION }} \$A/run/airgap-install.sh up
           export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin
           kubectl annotate storageclass local-path storageclass.kubernetes.io/is-default-class-
           kubectl get pods -n zarf
@@ -351,5 +360,5 @@ jobs:
         if: always()
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
-            --command "sudo bash /root/artifacts/run/airgap-install.sh down; sudo rm -rf /root/artifacts" || true
+            --command "sudo bash /root/artifacts/run/airgap-install.sh down; sudo rm -rf /root/artifacts/run" || true
           gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}-neg" || true
