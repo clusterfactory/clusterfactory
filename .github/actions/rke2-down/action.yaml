@@ -1,0 +1,10 @@
+name: rke2-down
+description: Uninstall RKE2 and remove all state so the runner is clean for the next job.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        sudo rke2-uninstall.sh >/dev/null 2>&1 || sudo /usr/local/bin/rke2-uninstall.sh >/dev/null 2>&1 || true
+        sudo rm -rf /var/lib/rancher /etc/rancher /opt/local-path-provisioner "$HOME/pkg" "$HOME/prev" || true
+        echo "runner clean"

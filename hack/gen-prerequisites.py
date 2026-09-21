@@ -19,7 +19,7 @@ out = ["# Prerequisites", "",
 for cid, cls, what in rows:
     out.append(f"| `{cid}` | {classes.get(cls, cls)} | {what} |")
 out += ["", "## Beyond the checks", "",
-        "- A CNI that enforces `NetworkPolicy` (Calico, Cilium, Canal; kind >= 0.24 kindnet does; plain flannel does not).",
+        "- A CNI that enforces `NetworkPolicy` (Canal, Calico, Cilium; plain flannel does not - the preflight checks it).",
         "- `zarf init` done with the Zarf version pinned in `.github/workflows/ci.yaml`; the init package is in the deliverable.",
         "- The namespaces in `contract/namespaces.yaml` may pre-exist (created by a policy profile); the forge never relabels them.",
         "- Out of scope: host OS hardening, HA control planes, off-node backup cadence (see SECURITY.md).", ""]

@@ -136,8 +136,8 @@ list in `contract/namespaces.yaml` and tolerates namespaces that already
 exist (`lookup`-guarded creation in `charts/config`).
 
 **Preflight specifics (10a):** every contract check is shown *failing* in
-CI (kind with the default CNI disabled and plain flannel for enforcement;
-the default-class annotation removed for storage); it runs as a Zarf
+CI (a second RKE2 with `cni: flannel` for enforcement and no StorageClass
+for storage - RKE2 is the only cluster this project tests on); it runs as a Zarf
 action with `./zarf tools kubectl` so the host needs no kubectl; the
 component lists its own test image; test pods pass PSA `restricted`; the
 throwaway namespace is deleted in `onFailure` too; results are emitted as

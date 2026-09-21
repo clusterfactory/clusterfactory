@@ -17,3 +17,5 @@ jenkins/plugins/
 sboms/
 
 jenkins/.plugins.lock.*
+preflight-negative.out
+preflight-result.json

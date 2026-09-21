@@ -1,13 +1,14 @@
 name: CI
 
-# uds-way.md §11 gates, in order; every gate must pass:
-#   1. lint    zarf dev lint, helm lint on helper charts, yamllint, OSCAL schema
-#   2. create  zarf package create -f upstream on a connected runner; SBOMs; CVE scan
-#   3. deploy  kind + Calico, default-deny egress, zarf init, deploy, tests/deploy-check.sh
-#   4. functional  demo pipeline: pod agent, Kaniko build, push to Nexus (inside deploy-check.sh)
-#   5. upgrade  deploy the last package built from main, then this one over it; data survives
-#   3b preflight-negative  every contract check seen failing on a deliberately broken cluster
-#   6. rke2 (step 10)
+# uds-way.md §11 gates, in order; every gate must pass. Everything that needs
+# a cluster runs on the self-hosted RKE2 runner (Rocky 9, SELinux enforcing,
+# ADR 0014): there is no kind, nothing runs on a laptop.
+#   1. lint      zarf dev lint, helm lint on helper charts, yamllint, OSCAL schema  (hosted)
+#   2. create    zarf package create -f upstream; SBOMs; CVE gate; signing          (hosted)
+#   3. rke2      clean RKE2 -> deploy the last main package -> upgrade to this one ->
+#                full gate incl. the demo pipeline -> idempotent redeploy -> uninstall (self-hosted)
+#   4. rke2-negative  RKE2 with cni=flannel and no StorageClass: the preflight must refuse it (self-hosted)
+# Self-hosted jobs never run for pull requests from forks (public repo).
 
 on:
   pull_request:
@@ -20,6 +21,10 @@ permissions:
 env:
   # renovate: datasource=github-releases depName=zarf-dev/zarf
   ZARF_VERSION: v0.75.0
+  # renovate: datasource=github-releases depName=rancher/rke2
+  RKE2_VERSION: v1.36.4+rke2r1
+  # renovate: datasource=github-releases depName=rancher/local-path-provisioner
+  LOCAL_PATH_VERSION: v0.0.37
 
 jobs:
   zarf-lint:
@@ -188,180 +193,111 @@ jobs:
           path: build/zarf-package-clusterfactory-*.tar.zst
           retention-days: 5
 
-  deploy:
-    name: airgapped deploy (kind + Calico)
-    # Gitea + Jenkins + Nexus + a Kaniko build need more than the 7 GB of
-    # ubuntu-latest; switch to a larger runner if this starts thrashing.
-    runs-on: ubuntu-latest
+  rke2:
+    name: forge on RKE2 (Rocky 9, SELinux) - deploy, upgrade, gate
+    runs-on: [self-hosted, rke2, rocky9]
     needs: [create]
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Install Zarf
-        run: |
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
-          chmod +x /usr/local/bin/zarf
-          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
-
-      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
-        with:
-          install_only: true
-
-      - name: Download package
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
-        with:
-          name: zarf-package-upstream
-          path: build
-
-      - name: Stand up the egress-blocked cluster (kind + Calico + zarf init + deny egress)
-        run: bundle/up.sh .
-
-      - name: zarf package deploy - signature verified when the package is signed
-        run: |
-          KEY=""
-          if [ "${{ needs.create.outputs.signed }}" = "true" ]; then
-            KEY="--key cosign.pub"; echo "package is signed - verifying with cosign.pub"
-          fi
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m $KEY --set NEXUS_ACCEPT_CE_EULA=true
-
-      - name: Gate 3 checks
-        run: tests/deploy-check.sh clusterfactory
-
-      - name: Redeploy over the converged cluster (wire engine must be idempotent)
-        run: |
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
-          EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
-
-      - name: Diagnostics on failure
-        if: failure()
-        run: |
-          kubectl get pods -A -o wide
-          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -50
-          for p in $(kubectl get pods -n clusterfactory -o name); do
-            echo "::group::$p"
-            kubectl describe -n clusterfactory "$p" | tail -40
-            kubectl logs -n clusterfactory "$p" --all-containers --tail=100 || true
-            echo "::endgroup::"
-          done
-
-  upgrade:
-    name: upgrade N-1 -> N (kind + Calico)
-    # Gate 5: the previous package (latest successful build on main) first,
-    # then this one over it. Demo data - repo commits, Jenkins builds, Nexus
-    # tags - must survive and the wire engine must converge.
-    runs-on: ubuntu-latest
-    needs: [create]
-    if: github.event_name == 'pull_request'
-    timeout-minutes: 75
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 45
+    concurrency:
+      group: cf-runner-1
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - name: Install Zarf
-        run: |
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
-          chmod +x /usr/local/bin/zarf
-          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
-
-      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+      - uses: ./.github/actions/rke2-up
         with:
-          install_only: true
+          rke2-version: ${{ env.RKE2_VERSION }}
+          zarf-version: ${{ env.ZARF_VERSION }}
+          local-path-version: ${{ env.LOCAL_PATH_VERSION }}
 
-      - name: Download the previous package (latest successful CI run on main)
+      - name: Download this package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: zarf-package-upstream
+          path: pkg
+
+      - name: Previous package (latest successful CI run on main) for the upgrade gate
         id: prev
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yaml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-          if [ -z "$RUN" ]; then echo "no successful main run yet - skipping upgrade gate"; echo "found=false" >> "$GITHUB_OUTPUT"; exit 0; fi
-          mkdir -p prev
-          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream -D prev
-          # the artifact root is the package file itself (no build/ prefix)
+          if [ -z "$RUN" ]; then echo "found=false" >> "$GITHUB_OUTPUT"; echo "no successful main run yet - upgrade gate skipped"; exit 0; fi
+          mkdir -p prev && gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream -D prev
           PREV=$(find prev -name 'zarf-package-clusterfactory-*.tar.zst' | head -1)
-          test -n "$PREV" || { echo "previous package not found in artifact"; find prev; exit 1; }
-          ls -lh "$PREV"
-          echo "path=$PREV" >> "$GITHUB_OUTPUT"
-          echo "found=true" >> "$GITHUB_OUTPUT"
-
-      - name: Download this package
-        if: steps.prev.outputs.found == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
-        with:
-          name: zarf-package-upstream
-          path: build
-
-      - name: Stand up the egress-blocked cluster
-        if: steps.prev.outputs.found == 'true'
-        run: bundle/up.sh .
+          [ -n "$PREV" ] && { echo "path=$PREV" >> "$GITHUB_OUTPUT"; echo "found=true" >> "$GITHUB_OUTPUT"; } || echo "found=false" >> "$GITHUB_OUTPUT"
 
       - name: Deploy N-1 and seed data
         if: steps.prev.outputs.found == 'true'
         run: |
-          zarf package deploy "${{ steps.prev.outputs.path }}" --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+          zarf package deploy "${{ steps.prev.outputs.path }}" --confirm --no-color --timeout 12m --set NEXUS_ACCEPT_CE_EULA=true
           tests/deploy-check.sh clusterfactory
-          tests/snapshot-state.sh clusterfactory > before.json
-          cat before.json
+          tests/snapshot-state.sh clusterfactory > before.json && cat before.json
 
-      - name: Upgrade to N
-        if: steps.prev.outputs.found == 'true'
+      - name: Deploy this package (signature verified when signed)
         run: |
           KEY=""; [ "${{ needs.create.outputs.signed }}" = "true" ] && KEY="--key cosign.pub"
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 20m $KEY --set NEXUS_ACCEPT_CE_EULA=true
-          tests/deploy-check.sh clusterfactory
-          tests/snapshot-state.sh clusterfactory > after.json
-          cat after.json
-          tests/compare-state.py before.json after.json
+          zarf package deploy pkg/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 12m $KEY --set NEXUS_ACCEPT_CE_EULA=true
+
+      - name: Full gate (contract, wiring, demo pipeline, egress)
+        run: tests/deploy-check.sh clusterfactory
+
+      - name: Upgrade kept the data
+        if: steps.prev.outputs.found == 'true'
+        run: tests/snapshot-state.sh clusterfactory > after.json && cat after.json && tests/compare-state.py before.json after.json
+
+      - name: Redeploy must be idempotent
+        run: |
+          KEY=""; [ "${{ needs.create.outputs.signed }}" = "true" ] && KEY="--key cosign.pub"
+          zarf package deploy pkg/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 12m $KEY --set NEXUS_ACCEPT_CE_EULA=true
+          EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
 
       - name: Diagnostics on failure
-        if: failure() && steps.prev.outputs.found == 'true'
+        if: failure()
         run: |
-          kubectl get pods -A -o wide
-          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -50
+          kubectl get pods -A -o wide || true
+          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -40 || true
           kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=100 || true
+          sudo journalctl -u rke2-server --no-pager -n 40 || true
 
-  preflight-negative:
-    name: preflight refuses a broken cluster (flannel, no default StorageClass)
-    runs-on: ubuntu-latest
-    needs: [zarf-lint, helm-lint, yamllint, oscal-schema]
+      - uses: ./.github/actions/rke2-down
+        if: always()
+
+  rke2-negative:
+    name: preflight refuses a broken cluster (RKE2 with flannel, no StorageClass)
+    runs-on: [self-hosted, rke2, rocky9]
+    needs: [rke2]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 25
+    concurrency:
+      group: cf-runner-1
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
-      - name: Install Zarf
-        run: |
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
-          chmod +x /usr/local/bin/zarf
-          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
-
-      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+      - uses: ./.github/actions/rke2-up
         with:
-          install_only: true
+          rke2-version: ${{ env.RKE2_VERSION }}
+          zarf-version: ${{ env.ZARF_VERSION }}
+          local-path-version: ${{ env.LOCAL_PATH_VERSION }}
+          cni: flannel
+          storageclass: "false"
 
-      - name: kind with plain flannel (no NetworkPolicy enforcement), zarf init, default StorageClass removed
-        run: |
-          kind create cluster --config bundle/kind-config.yaml --wait 120s
-          # renovate: datasource=github-releases depName=flannel-io/flannel
-          FLANNEL_VERSION=v0.28.9
-          kubectl apply -f "https://github.com/flannel-io/flannel/releases/download/${FLANNEL_VERSION}/kube-flannel.yml"
-          kubectl -n kube-flannel rollout status ds/kube-flannel-ds --timeout=300s
-          kubectl wait --for=condition=Ready node --all --timeout=300s
-          zarf init --confirm --no-color
-          kubectl annotate storageclass standard storageclass.kubernetes.io/is-default-class-
-
-      - name: Build the preflight-only package
+      - name: Preflight-only package
         run: zarf package create preflight -f upstream --confirm --no-color --skip-sbom -o build
 
-      - name: Preflight must fail on exactly the broken checks
+      - name: Preflight must fail on exactly networkpolicy-enforcement and default-storageclass
         run: tests/preflight-negative.sh build/zarf-package-clusterfactory-preflight-*.tar.zst networkpolicy-enforcement,default-storageclass
 
       - name: Diagnostics on failure
         if: failure()
         run: |
           cat preflight-negative.out || true
-          kubectl get pods -A -o wide
+          kubectl get pods -A -o wide || true
+
+      - uses: ./.github/actions/rke2-down
+        if: always()

@@ -1,7 +1,6 @@
-# tests/ — integration checks against the CI cluster
+# tests/ — integration checks against a deployed forge
 
-Run against the cluster stood up from `bundle/` after
-`zarf package deploy`. Each check is a small script that exits non-zero
+Run on the RKE2 runner (or any RKE2 host) after `zarf package deploy`. Each check is a small script that exits non-zero
 on failure and prints one line per assertion. Planned (uds-way.md §11):
 
 | Gate | Check |

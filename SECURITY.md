@@ -27,7 +27,7 @@ cluster boundary, not the operator:
   image; any **Critical with a fix** blocks in the images this repo builds;
   everything else is reported in the job summary. The only ignore is the
   archived Kaniko executor, with a review date.
-- Airgapped deploy on kind + Calico: every container image served from the
+- Airgapped deploy on the RKE2 runner (Rocky 9, SELinux): every container image served from the
   in-cluster Zarf registry, all workloads Ready, admin credentials work, all
   Jenkins plugins active, wire Job converged, redeploy idempotent, Kaniko build
   pushed to Nexus, internet egress `000`.

@@ -1,0 +1,73 @@
+name: rke2-up
+description: >-
+  Clean RKE2 single node on the self-hosted Rocky 9 runner (online install for
+  now; the air-gapped install is the rke2 init component, ADR 0015), the
+  local-path StorageClass with its SELinux label, and zarf init.
+inputs:
+  rke2-version:
+    description: RKE2 version (renovate keeps ci.yaml's env in sync)
+    required: true
+  zarf-version:
+    required: true
+  local-path-version:
+    required: true
+  cni:
+    description: canal (default) or flannel (no NetworkPolicy enforcement - for the negative preflight test)
+    default: canal
+  storageclass:
+    description: install local-path as the default StorageClass ("true"/"false")
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Host facts and clean slate
+      shell: bash
+      run: |
+        echo "host: $(hostname)  os: $(. /etc/os-release; echo "$PRETTY_NAME")  selinux: $(getenforce)"
+        echo "cpu: $(nproc)  mem: $(free -g | awk '/Mem/{print $2}') GiB"
+        uname -m | grep -qx x86_64
+        if [ -x /usr/bin/rke2-uninstall.sh ] || [ -x /usr/local/bin/rke2-uninstall.sh ]; then
+          sudo rke2-uninstall.sh >/dev/null 2>&1 || sudo /usr/local/bin/rke2-uninstall.sh >/dev/null 2>&1 || true
+        fi
+        sudo rm -rf /var/lib/rancher /etc/rancher /opt/local-path-provisioner
+
+    - name: Install RKE2 (cni=${{ inputs.cni }}) and wait for Ready
+      shell: bash
+      run: |
+        sudo mkdir -p /etc/rancher/rke2
+        printf 'cni: %s\n' "${{ inputs.cni }}" | sudo tee /etc/rancher/rke2/config.yaml >/dev/null
+        curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_VERSION="${{ inputs.rke2-version }}" sh - 2>&1 | tail -1
+        sudo systemctl enable --now rke2-server
+        sudo chmod 644 /etc/rancher/rke2/rke2.yaml
+        echo "KUBECONFIG=/etc/rancher/rke2/rke2.yaml" >> "$GITHUB_ENV"
+        echo "/var/lib/rancher/rke2/bin" >> "$GITHUB_PATH"
+        export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH="$PATH:/var/lib/rancher/rke2/bin"
+        for i in $(seq 1 60); do kubectl get nodes 2>/dev/null | grep -q ' Ready' && break; sleep 5; done
+        kubectl get nodes
+        timeout 300 kubectl -n kube-system rollout status deploy/rke2-coredns-rke2-coredns
+
+    - name: Default StorageClass (local-path) - directory must be container_file_t under SELinux
+      if: inputs.storageclass == 'true'
+      shell: bash
+      run: |
+        sudo mkdir -p /opt/local-path-provisioner
+        sudo semanage fcontext -a -t container_file_t "/opt/local-path-provisioner(/.*)?" 2>/dev/null \
+          || sudo semanage fcontext -m -t container_file_t "/opt/local-path-provisioner(/.*)?"
+        sudo restorecon -R /opt/local-path-provisioner
+        U="https://raw.githubusercontent.com/rancher/local-path-provisioner"
+        kubectl apply -f "$U/${{ inputs.local-path-version }}/deploy/local-path-storage.yaml" >/dev/null
+        timeout 120 kubectl -n local-path-storage rollout status deploy/local-path-provisioner
+        kubectl annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite
+        kubectl get storageclass
+
+    - name: Zarf and zarf init
+      shell: bash
+      run: |
+        mkdir -p "$HOME/zarf" && cd "$HOME/zarf"
+        Z="${{ inputs.zarf-version }}"
+        [ -x zarf ] && ./zarf version | grep -q "${Z#v}" || curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${Z}/zarf_${Z}_Linux_amd64" -o zarf
+        chmod +x zarf
+        [ -f "zarf-init-amd64-${Z}.tar.zst" ] || curl -sSfLO "https://github.com/zarf-dev/zarf/releases/download/${Z}/zarf-init-amd64-${Z}.tar.zst"
+        echo "$HOME/zarf" >> "$GITHUB_PATH"
+        timeout 600 ./zarf init --confirm --no-color 2>&1 | grep -E "ERR|init complete"
+        kubectl get pods -n zarf

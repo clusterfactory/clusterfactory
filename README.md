@@ -26,7 +26,7 @@ is an [ADR](adr/README.md).
 | **Airgap is enforced, not assumed** | [`charts/config`](charts/config) ships deny-all-egress NetworkPolicies (DNS, in-namespace and the API server only), Pod Security `restricted` on every namespace but one, and every update-checker/telemetry switch off. |
 | **One declared exception** | Kaniko builds run as uid 0 in the `cf-build` namespace at PSA `baseline`. It is written down in [`docs/exemptions/kaniko.md`](docs/exemptions/kaniko.md) with scope, justification and a review date, UDS-style. |
 | **Auditable artifacts** | Zarf signs the package (cosign, [`cosign.pub`](cosign.pub) in the repo and in every release) and generates an SBOM per image; CI scans every SBOM under [`.grype.yaml`](.grype.yaml): known-exploited (KEV) findings block anywhere, critical-with-fix blocks in images built here, the rest is reported. [`oscal-component.yaml`](oscal-component.yaml) maps what is actually enforced to NIST 800-53 and is schema-validated in CI. |
-| **Everything tested in the open** | [`ci.yaml`](.github/workflows/ci.yaml): lint → create → deploy into kind + Calico with default-deny egress → the full gate ([`tests/deploy-check.sh`](tests/deploy-check.sh)) including an idempotent redeploy and a real Kaniko build pushed to Nexus. |
+| **Everything tested on the real target** | [`ci.yaml`](.github/workflows/ci.yaml): lint → create → on a self-hosted **RKE2 / Rocky 9 / SELinux-enforcing** runner: clean RKE2 install, deploy the previous package, upgrade to this one, the full gate ([`tests/deploy-check.sh`](tests/deploy-check.sh)) with a real Kaniko build pushed to Nexus, idempotent redeploy, and a second RKE2 with flannel + no StorageClass that the preflight must refuse. No kind, nothing runs on a laptop (ADR 0014). |
 
 ## What you get
 
@@ -101,13 +101,11 @@ base image and pushes `cf-demo/hello-world:<build>` to Nexus `docker-hosted`.
 
 Inspect the wiring: `kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine`.
 
-### Run the CI gate locally
+### Run the gate yourself
 
-```bash
-bundle/up.sh <dir containing zarf-init-*.tar.zst>   # kind + Calico + zarf init + deny egress
-make package OUT=build && zarf package deploy build/*.tar.zst --confirm --set NEXUS_ACCEPT_CE_EULA=true
-tests/deploy-check.sh                                 # EXPECT_IDEMPOTENT=1 after a redeploy
-```
+The gates run only on the RKE2 runner; there is no laptop path. On any RKE2
+host with the package deployed, `hack/vm-demo.sh` triggers the demo pipeline
+and checks Nexus, and `tests/deploy-check.sh` runs the full gate.
 
 ## Repo layout
 
@@ -120,7 +118,7 @@ charts/settings        AFTER the apps: the wire-engine Job, RBAC, demo Jenkinsfi
 values/                <app>-common-values.yaml (behaviour) / <app>-upstream-values.yaml (images)
 wire-engine/           wire.py + Dockerfile (stdlib only)
 jenkins/               plugins.txt → plugins.lock → data-only plugins image
-bundle/ tests/         CI cluster scaffolding and the gate script
+tests/                 the gate scripts (run on the RKE2 runner)
 adr/                   why things are the way they are
 docs/exemptions/       every deviation from PSA restricted
 ```

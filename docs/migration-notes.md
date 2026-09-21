@@ -59,8 +59,8 @@ narrative; the decisions themselves are in [`adr/`](../adr/README.md).
   a throwaway registry (`make local-registry`, `localhost:5001`).
 - The API server is not a pod: deny-all-egress must allow it by `ipBlock`,
   resolved from the `kubernetes` EndpointSlice at deploy time (a Zarf
-  `onDeploy.before` action). A kind node restart changes the IP and strands
-  every such rule; `bundle/up.sh` is re-runnable for that reason.
+  `onDeploy.before` action). If the node IP changes, every such rule goes
+  stale until the next deploy.
 
 **Jenkins**
 - `agent.restrictedPssSecurityContext: true` merges `capabilities.drop: ALL`
@@ -98,9 +98,10 @@ narrative; the decisions themselves are in [`adr/`](../adr/README.md).
 - `gcr.io` is retired ("requires billing"): `scorecard-action` v2.4.0 broke,
   and the Kaniko executor is published only there (ADR 0009 risk).
 
-**Local Docker Desktop**
-- Other kind/k3d clusters in the same VM starve the CI cluster (load 300+,
-  "process apparently never started" in Jenkins). Start fresh, or stop them.
+**Rocky 9 / SELinux**
+- local-path-provisioner's directory must be `container_file_t`, or its helper
+  pod cannot `mkdir` and every PVC (the Zarf registry's first) stays Pending.
+- systemd will not exec the GitHub runner from `user_home_t`; label it `bin_t`.
 
 ## What the gates verify (so you can trust green)
 
@@ -112,11 +113,20 @@ pipeline build with its own number succeeds and its tag exists in Nexus;
 `example.com` returns `000`. The upgrade job wraps this with
 `tests/snapshot-state.sh` / `tests/compare-state.py` around an N-1→N deploy.
 
+## CI runs only on RKE2 (2026-09-21)
+
+kind and every laptop path were removed. `ci.yaml`: hosted lint + create,
+then on `cf-runner-1` the `rke2` job (clean RKE2, deploy the previous main
+package, upgrade, full gate, idempotent redeploy, uninstall) and
+`rke2-negative` (RKE2 with `cni: flannel`, no StorageClass - the preflight
+must refuse it). Composite actions `.github/actions/rke2-up` / `rke2-down`.
+Measured: deploy to wire-engine Complete in 2m38s on the 16-core VM.
+
 ## Revised plan after ADRs 0014–0016 (replaces uds-way.md §13 steps 10–12)
 
 | # | Work | Gate |
 |---|---|---|
-| 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | kind: preflight passes; a kindnet cluster is refused with the right message |
+| 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | RKE2: preflight passes; RKE2 with flannel + no StorageClass is refused |
 | 10b | **Policy profiles** `policy/baseline`, `policy/cis`: denies move out of `charts/config`; `profile.yaml` read by preflight | CI deploys `baseline` before the forge; egress test unchanged |
 | 10c | **Custom init package** `rke2/zarf.yaml` (`rke2` component + upstream init components; RPM/deb flavors; registry on a local-path PVC); Traefik `Ingress` by hostname in the forge | nightly tier-1 gate: RKE2 on the runner, iptables egress block, init → policy → forge → `deploy-check.sh` |
 | 10d | Tier-2 self-hosted Rocky VM gate (SELinux enforcing, snapshot-revert), weekly + pre-release | needs a runner from you |
