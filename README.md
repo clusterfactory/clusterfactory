@@ -2,12 +2,13 @@
 
 **A transparent way to package a software forge for disconnected environments.**
 
-One signed [Zarf](https://zarf.dev) package that stands up **Gitea** (git), **Jenkins**
-(CI), **Nexus Repository CE** (container registry) — and optionally **Argo CD** — on any
-Kubernetes cluster with no internet access, and wires them together so that a
-push to a repo builds an image in-cluster and lands it in the registry.
-Nothing in the package phones home; CI proves it on every change by deploying
-into a cluster with all egress denied.
+One signed [Zarf](https://zarf.dev) file and one command turn a bare Rocky/RHEL 9
+host with no internet into a working forge: **RKE2**, then **Gitea** (git),
+**Jenkins** (CI), **Nexus Repository CE** (container registry) — optionally
+**Argo CD** — wired together so that a push to a repo builds an image in-cluster
+and lands it in the registry. Already have a cluster? The forge is also a
+package of its own. Nothing in either phones home; CI proves it on every change
+on a VM with no route to the internet.
 
 The repo layout and conventions are borrowed from Defense Unicorns'
 [UDS packages](https://uds.defenseunicorns.com/structure/packages/) — the
@@ -26,7 +27,7 @@ is an [ADR](adr/README.md).
 | **Airgap is enforced, not assumed** | [`charts/config`](charts/config) ships deny-all-egress NetworkPolicies (DNS, in-namespace and the API server only), Pod Security `restricted` on every namespace but one, and every update-checker/telemetry switch off. |
 | **One declared exception** | Kaniko builds run as uid 0 in the `cf-build` namespace at PSA `baseline`. It is written down in [`docs/exemptions/kaniko.md`](docs/exemptions/kaniko.md) with scope, justification and a review date, UDS-style. |
 | **Auditable artifacts** | Zarf signs the package (cosign, [`cosign.pub`](cosign.pub) in the repo and in every release) and generates an SBOM per image; CI scans every SBOM under [`.grype.yaml`](.grype.yaml): known-exploited (KEV) findings block anywhere, critical-with-fix blocks in images built here, the rest is reported. [`oscal-component.yaml`](oscal-component.yaml) maps what is actually enforced to NIST 800-53 and is schema-validated in CI. |
-| **Tested on a physically air-gapped RKE2 host** | [`ci.yaml`](.github/workflows/ci.yaml): lint → create → a **Rocky 9 / SELinux-enforcing VM with no route to the internet** (artifacts arrive through a private bucket, control through an IAP tunnel): RKE2 installed from tarballs only, deploy the previous package, upgrade to this one, the full gate ([`tests/deploy-check.sh`](tests/deploy-check.sh)) with a real Kaniko build pushed to Nexus, idempotent redeploy, and a second RKE2 with flannel + no StorageClass that the preflight must refuse. No kind, nothing runs on a laptop (ADR 0014). |
+| **Tested on a physically air-gapped bare host** | [`ci.yaml`](.github/workflows/ci.yaml): lint → create both packages → a **Rocky 9 / SELinux-enforcing VM with no route to the internet** (packages arrive through a private bucket, control through an IAP tunnel): the customer command on the all-in-one of the previous `main` build, the full gate ([`tests/deploy-check.sh`](tests/deploy-check.sh)) with a real Kaniko build pushed to Nexus, upgrade with this build's forge package, gate, idempotent redeploy, and a second RKE2 with flannel + no StorageClass that the preflight must refuse. No kind, nothing runs on a laptop (ADR 0014). |
 
 ## What you get
 
@@ -50,39 +51,64 @@ Deploy order: the `preflight` component, then the chart order in
 
 ## Usage
 
-### Build the package (connected machine)
+Every [release](https://github.com/clusterfactory/clusterfactory/releases) carries
+two signed packages, `cosign.pub` and checksums:
 
-Needs `zarf`, `helm`, `docker`, `make`, `python3`, `skopeo` (only for re-pinning digests).
+| File | What it is | Use it when |
+|---|---|---|
+| `zarf-init-amd64-<zarf>.tar.zst` (~2 GB) | **All-in-one**: RKE2 (air-gapped, from tarballs), the Zarf registry and agent, then the forge. A custom Zarf init package ([`rke2/zarf.yaml`](rke2/zarf.yaml), [ADR 0015](adr/0015-custom-init-package-rke2.md)). | You have a bare host. |
+| `zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst` (~1.2 GB) | **The forge only** ([`zarf.yaml`](zarf.yaml)). | You bring the cluster, or you upgrade an existing install. |
 
-```bash
-make package            # = zarf package create . -f upstream (resolves Jenkins plugins,
-                        #   builds the two local images, generates SBOMs)
-# → zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst
-```
+### Bare host → forge (one command)
 
-Always build through `make` — it passes the content-addressed tags of the locally
-built images to Zarf.
-
-### Deploy (disconnected cluster)
-
-Prerequisites on the target are in [`PREREQUISITES.md`](PREREQUISITES.md) and
-are checked by the package itself before anything is deployed. To check a
-cluster before you have the forge: `zarf package create preflight -f upstream`
-gives a preflight-only package.
+Host: Rocky/RHEL 9, x86_64, 16 GB+ RAM, 20 GB+ free under `/var/lib`, SELinux
+enforcing is fine, no internet needed. Copy the `zarf` binary (the version in the
+file name), the init package and `cosign.pub` into one directory and run as root:
 
 ```bash
-zarf init --confirm
-zarf package deploy zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst \
-  --key cosign.pub \
+sha256sum -c clusterfactory-<version>-SHA256SUMS --ignore-missing
+zarf init --confirm --key cosign.pub \
   --set NEXUS_ACCEPT_CE_EULA=true \                # you are accepting Sonatype's CE EULA
   --set GITEA_ADMIN_PASSWORD=... \                 # defaults are CHANGEME-*; see ADR 0005
   --set JENKINS_ADMIN_PASSWORD=... \
   --set NEXUS_ADMIN_PASSWORD=...
 ```
 
-The deploy fails loudly if the wire engine does not converge and prints its
-logs. Redeploying the same or a newer package over an existing install is the
-upgrade path.
+About eight minutes later the node is Ready and the forge is wired. The host
+preflight refuses a host that already runs RKE2, and the cluster preflight
+refuses a cluster that cannot honour the package's guarantees — it never
+"fixes" either. `zarf package remove init --confirm` takes RKE2 down again.
+
+### Your own cluster, or an upgrade
+
+Prerequisites are in [`PREREQUISITES.md`](PREREQUISITES.md) and are checked by
+the package itself before anything is deployed (`zarf package create preflight
+-f upstream` gives a preflight-only package to check a cluster ahead of time).
+
+```bash
+zarf init --confirm      # your cluster, once (skip after the all-in-one)
+zarf package deploy zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst \
+  --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true   # + the passwords as above
+```
+
+Redeploying the same or a newer forge package over an existing install — from
+the all-in-one or not — is the upgrade path: Helm release names do not depend
+on which package deployed them. The deploy fails loudly if the wire engine does
+not converge and prints its logs.
+
+### Build the packages (connected machine)
+
+Needs `zarf`, `helm`, `docker`, `make`, `python3`, `skopeo`.
+
+```bash
+make package            # the forge: zarf package create . -f upstream (resolves Jenkins
+                        #   plugins, builds the two local images, generates SBOMs)
+make init-package       # the all-in-one: rke2/ + the forge components, renamed to the
+                        #   name `zarf init` looks for
+```
+
+Always build through `make` — it passes the content-addressed tags of the locally
+built images to Zarf.
 
 ### Use it
 

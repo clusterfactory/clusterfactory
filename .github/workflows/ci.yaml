@@ -42,7 +42,15 @@ jobs:
       - name: zarf dev lint
         # Package templates for the locally built images must be set for lint;
         # their values do not matter here.
-        run: zarf dev lint . -f upstream --no-color --set PLUGINS_TAG=lint --set WIRE_ENGINE_TAG=lint --set LOCAL_REGISTRY=localhost:5001
+        run: |
+          T="--set PLUGINS_TAG=lint --set WIRE_ENGINE_TAG=lint --set LOCAL_REGISTRY=localhost:5001"
+          zarf dev lint . -f upstream --no-color $T
+          S=""
+          for k in SHA_RKE2_TARBALL SHA_RKE2_IMAGES_CORE SHA_RKE2_IMAGES_CANAL SHA_RKE2_SUMS SHA_RKE2_SELINUX SHA_CONTAINER_SELINUX; do
+            S="$S --set $k=lint"
+          done
+          touch rke2/files/local-path-storage.yaml rke2/files/local-path-provisioner.tar rke2/files/busybox.tar
+          (cd rke2 && zarf dev lint . -f upstream --no-color $T $S --set CF_VERSION=lint)
 
   helm-lint:
     name: helm lint (helper charts)
@@ -123,11 +131,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112  # v4.3.0
 
-      - name: Install Zarf
+      - name: Install Zarf and skopeo
         run: |
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
           chmod +x /usr/local/bin/zarf
           zarf version
+          sudo apt-get -qq update && sudo apt-get -qq install -y skopeo >/dev/null
 
       - name: Jenkins plugin lock is self-consistent (installs exactly plugins.lock)
         run: make plugins-lock-check
@@ -144,10 +153,12 @@ jobs:
             # and the deploy job verifies only when a signature is present.
             (umask 077; printf '%s' "$COSIGN_PRIVATE_KEY" > "$RUNNER_TEMP/cosign.key")
             make package OUT=build ZARF_CREATE_ARGS=--no-color SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD"
+            make init-package OUT=build SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD"
             rm -f "$RUNNER_TEMP/cosign.key"
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             make package OUT=build ZARF_CREATE_ARGS=--no-color
+            make init-package OUT=build
           fi
           ls -lh build/
 
@@ -186,17 +197,24 @@ jobs:
           GRYPE_CONFIG: .grype.yaml
         run: hack/cve-gate.py "${{ steps.grype.outputs.cmd }}" sboms "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload package
+      - name: Upload the forge package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: zarf-package-upstream
           path: build/zarf-package-clusterfactory-*.tar.zst
           retention-days: 5
 
+      - name: Upload the all-in-one init package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: zarf-init-upstream
+          path: build/zarf-init-amd64-*.tar.zst
+          retention-days: 5
+
   rke2:
-    name: forge on RKE2 (Rocky 9, SELinux) - deploy, upgrade, gate
-    # The VM has no internet at all: artifacts come from the GCS bucket via
-    # Private Google Access; this hosted job stages this run's package there
+    name: all-in-one on a bare Rocky 9 host (SELinux) - zarf init, gate, upgrade, gate
+    # The VM has no internet at all: packages come from the GCS bucket via
+    # Private Google Access; this hosted job stages this run's packages there
     # and drives the VM over the IAP tunnel (no public IP, no SSH exposure).
     runs-on: ubuntu-latest
     needs: [create]
@@ -222,26 +240,27 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db  # v3.0.1
 
-      - name: Download this package
+      - name: Download this run's packages (all-in-one init + forge-only)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
-          name: zarf-package-upstream
+          pattern: zarf-*-upstream
+          merge-multiple: true
           path: pkg
 
-      - name: Previous package (published to forge/main by the last green run on main) for the upgrade gate
+      - name: Previous packages (published to forge/main by the last green run on main) for the upgrade gate
         id: prev
         run: |
-          if gcloud storage ls "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" >/dev/null 2>&1; then
+          if gcloud storage ls "$BUCKET/forge/main/zarf-init-amd64-*.tar.zst" >/dev/null 2>&1; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
-            echo "found=false" >> "$GITHUB_OUTPUT"; echo "no previous main package - upgrade gate skipped"
+            echo "found=false" >> "$GITHUB_OUTPUT"; echo "no previous main packages - upgrade gate skipped"
           fi
 
-      - name: Gate scripts to the VM over the IAP tunnel; the 1.2 GB package via the bucket (the tunnel drops large uploads)
+      - name: Gate scripts to the VM over the IAP tunnel; the packages via the bucket (the tunnel drops gigabyte uploads)
         run: |
-          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/runs/${GITHUB_RUN_ID}/"
+          gcloud storage cp pkg/zarf-init-amd64-*.tar.zst pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/runs/${GITHUB_RUN_ID}/"
           mkdir -p run/bin
-          cp hack/airgap-install.sh hack/airgap-pull.sh run/bin/
+          cp hack/airgap-install.sh run/bin/
           cp tests/deploy-check.sh tests/snapshot-state.sh tests/compare-state.py run/bin/
           cp jenkins/plugins.txt run/bin/plugins.txt
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
@@ -251,39 +270,42 @@ jobs:
           mv /tmp/cf-run /root/artifacts/run && chmod +x /root/artifacts/run/bin/*
           EOS
 
-      - name: On the VM - clean host, init package (cached from the bucket), zarf init --confirm
+      - name: On the VM - clean host; the customer command on the all-in-one (N-1 if main has one, else N)
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
-          A=/root/artifacts; mkdir -p \$A/init \$A/run/new
+          A=/root/artifacts; mkdir -p \$A/run/new
           gcloud storage cp "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/new/ >/dev/null 2>&1
+          FROM=new
           if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
-            mkdir -p \$A/run/prev
-            gcloud storage cp "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" \$A/run/prev/ >/dev/null 2>&1
+            mkdir -p \$A/run/prev && gcloud storage cp "$BUCKET/forge/main/*" \$A/run/prev/ >/dev/null 2>&1; FROM=prev
           fi
-          \$A/run/bin/airgap-pull.sh "$BUCKET/init/${ZARF_VERSION}" \$A/init/${ZARF_VERSION}
           \$A/run/bin/airgap-install.sh down
-          cd \$A/init/${ZARF_VERSION} && timeout 1500 zarf init --confirm --no-color 2>&1 | grep -E "ERR|preflight ok|rke2 ready|init complete"
-          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin
-          kubectl get nodes; kubectl get pods -n zarf
+          cd \$A/run/\$FROM && ls -lh
+          timeout 2400 zarf init --confirm --no-color --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true 2>&1 \
+            | grep -E "ERR|Verified|preflight ok|rke2 ready|init complete|wire engine"
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+          kubectl get nodes; kubectl get pods -A | grep -vE "Running|Completed" || true
           EOS
 
-      - name: On the VM - deploy N-1, seed; deploy N; gate; data survived; idempotent redeploy
+      - name: On the VM - gate the all-in-one; upgrade with the forge-only package N; gate; data survived; idempotent redeploy
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
-          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
           A=/root/artifacts/run; cd \$A; mkdir -p ../gate/jenkins && cp bin/plugins.txt ../gate/jenkins/ && cp bin/*.sh bin/*.py ../gate/
-          dep() { zarf package deploy "\$@" --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true 2>&1 | grep -E "ERR|Verified|wire engine"; }
-          if [ -d prev ]; then
-            dep prev/zarf-package-clusterfactory-*.tar.zst
-            ../gate/deploy-check.sh clusterfactory
-            ../gate/snapshot-state.sh clusterfactory > before.json; cat before.json
-          fi
-          dep new/zarf-package-clusterfactory-*.tar.zst --key new/cosign.pub
+          dep() {
+            zarf package deploy "\$@" --confirm --no-color --timeout 15m --key new/cosign.pub --set NEXUS_ACCEPT_CE_EULA=true 2>&1 \\
+              | grep -E "ERR|Verified|wire engine"
+          }
           ../gate/deploy-check.sh clusterfactory
-          if [ -d prev ]; then ../gate/snapshot-state.sh clusterfactory > after.json; ../gate/compare-state.py before.json after.json; fi
-          dep new/zarf-package-clusterfactory-*.tar.zst --key new/cosign.pub
+          if [ -d prev ]; then
+            ../gate/snapshot-state.sh clusterfactory > before.json; cat before.json
+            dep new/zarf-package-clusterfactory-*.tar.zst
+            ../gate/deploy-check.sh clusterfactory
+            ../gate/snapshot-state.sh clusterfactory > after.json; ../gate/compare-state.py before.json after.json
+          fi
+          dep new/zarf-package-clusterfactory-*.tar.zst
           EXPECT_IDEMPOTENT=1 ../gate/deploy-check.sh clusterfactory
           EOS
 
@@ -296,11 +318,11 @@ jobs:
           kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=80; journalctl -u rke2-server --no-pager -n 40
           EOS
 
-      - name: Publish this package as the new main package (main only)
+      - name: Publish these packages as the new main packages (main only)
         if: github.ref == 'refs/heads/main' && success()
         run: |
           gcloud storage rm "$BUCKET/forge/main/*" >/dev/null 2>&1 || true
-          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/forge/main/"
+          gcloud storage cp pkg/zarf-init-amd64-*.tar.zst pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/forge/main/"
 
       - name: On the VM - uninstall (clean host, caches kept)
         if: always()

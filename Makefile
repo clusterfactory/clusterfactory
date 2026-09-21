@@ -1,4 +1,4 @@
-.PHONY: help clean lint local-registry plugins plugins-update plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package deploy test
+.PHONY: help clean lint local-registry plugins plugins-update plugins-image plugins-tag plugins-lock-check wire-engine-image wire-engine-tag package init-package deploy test
 
 SHELL := /bin/bash
 FLAVOR ?= upstream
@@ -12,7 +12,7 @@ help:  ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 clean:  ## Clean build artifacts
-	rm -rf zarf-package-clusterfactory-*.tar.zst zarf-sbom/ sboms/ build/
+	rm -rf zarf-package-clusterfactory-*.tar.zst zarf-init-*.tar.zst zarf-sbom/ sboms/ build/
 
 lint:  ## CI gate 1 locally: zarf dev lint, helm lint helper charts, yamllint
 	zarf dev lint . -f $(FLAVOR) $(ZARF_TMPL)
@@ -98,6 +98,10 @@ SIGNING_KEY_PASS ?=
 ZARF_SIGN := $(if $(SIGNING_KEY),--signing-key $(SIGNING_KEY) --signing-key-pass "$(SIGNING_KEY_PASS)",)
 package:  ## CI gate 2 locally: create the Zarf package for FLAVOR (default: upstream); OUT=dir
 	zarf package create . -f $(FLAVOR) --confirm $(ZARF_TMPL) $(ZARF_SIGN) $(if $(OUT),-o $(OUT),) $(ZARF_CREATE_ARGS)
+
+init-package:  ## The all-in-one init package (RKE2 + Zarf + the forge) for FLAVOR; OUT=dir (needs docker, skopeo, internet)
+	FLAVOR=$(FLAVOR) ZARF_EXTRA="$(ZARF_TMPL)" SIGNING_KEY="$(SIGNING_KEY)" SIGNING_KEY_PASS="$(SIGNING_KEY_PASS)" \
+		hack/build-init-package.sh $(if $(OUT),$(OUT),build)
 
 package-signed:  ## Create and sign with ~/.clusterfactory/cosign.key (maintainers)
 	$(MAKE) package SIGNING_KEY=$(HOME)/.clusterfactory/cosign.key SIGNING_KEY_PASS="$$(cat $(HOME)/.clusterfactory/cosign.password)"

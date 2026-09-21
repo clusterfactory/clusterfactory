@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: [hack/airgap-fetch.sh, hack/build-init-package.sh, rke2/**, .github/workflows/airgap-stage.yaml]
+    paths: [hack/airgap-fetch.sh, .github/workflows/airgap-stage.yaml]
 
 permissions:
   contents: read
@@ -41,13 +41,3 @@ jobs:
           sudo install -m 755 zarf /usr/local/bin/zarf
       - name: Platform artifact set (manual runbook path) -> platform/${{ env.RKE2_VERSION }}
         run: hack/airgap-fetch.sh "gs://cf-artifacts-${{ secrets.GCP_PROJECT_ID }}/platform/${RKE2_VERSION}"
-      - name: Init package (ADR 0015) -> init/${{ env.ZARF_VERSION }}
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-        run: |
-          (umask 077; printf '%s' "$COSIGN_PRIVATE_KEY" > "$RUNNER_TEMP/cosign.key")
-          SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD" hack/build-init-package.sh build
-          rm -f "$RUNNER_TEMP/cosign.key"
-          cd build && sha256sum zarf-init-amd64-*.tar.zst > "zarf-init-amd64-${ZARF_VERSION}.tar.zst.sha256"
-          gcloud storage cp zarf-init-amd64-*.tar.zst* "gs://cf-artifacts-${{ secrets.GCP_PROJECT_ID }}/init/${ZARF_VERSION}/"
