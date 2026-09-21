@@ -16,14 +16,15 @@
 ## Where things run
 
 Nothing runs on a laptop. Lint and package builds run on GitHub-hosted
-runners; every job that needs a cluster runs on the self-hosted RKE2 runner
-(`cf-runner-1`: Rocky 9, SELinux enforcing, no inbound access). A pull
+runners; every job that needs a cluster runs against `cf-runner-1`, an
+air-gapped RKE2 host (Rocky 9, SELinux enforcing, no internet route) fed from
+a private GCS bucket and driven over an IAP tunnel by the hosted job. A pull
 request from a branch in this repository gets the full RKE2 gate; forks get
 lint and create only. One job at a time on the VM - a queued PR waits.
 
-To iterate on a live cluster, deploy a package on the runner VM (or any RKE2
-host) and use `hack/vm-demo.sh`; the `RKE2 gate` workflow can keep the
-cluster up (`keep_cluster: true`) for inspection.
+The manual form of the install is `hack/airgap-install.sh` (`up`, `deploy`,
+`down`) with an artifact directory produced by `hack/airgap-fetch.sh`; that
+is also the runbook for any offline RKE2 host.
 
 Tools for authoring: `zarf`, `helm`, `yamllint`, `python3`, `skopeo`
 (`hack/pin-images.sh`), `docker` + `make` only if you build packages locally.

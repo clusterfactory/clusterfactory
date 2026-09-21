@@ -113,14 +113,35 @@ pipeline build with its own number succeeds and its tag exists in Nexus;
 `example.com` returns `000`. The upgrade job wraps this with
 `tests/snapshot-state.sh` / `tests/compare-state.py` around an N-1→N deploy.
 
-## CI runs only on RKE2 (2026-09-21)
+## CI runs only on RKE2, and the RKE2 host is physically air-gapped (2026-09-21)
 
-kind and every laptop path were removed. `ci.yaml`: hosted lint + create,
-then on `cf-runner-1` the `rke2` job (clean RKE2, deploy the previous main
-package, upgrade, full gate, idempotent redeploy, uninstall) and
-`rke2-negative` (RKE2 with `cni: flannel`, no StorageClass - the preflight
-must refuse it). Composite actions `.github/actions/rke2-up` / `rke2-down`.
-Measured: deploy to wire-engine Complete in 2m38s on the 16-core VM.
+kind and every laptop path were removed. The test host `cf-runner-1` (GCP,
+Rocky 9, SELinux enforcing, 16 vCPU / 32 GB) has **no route to the internet
+at all** - no external IP, no Cloud NAT, only Private Google Access to one
+private GCS bucket, and SSH reachable solely through Google's IAP tunnel.
+Everything online happens on GitHub-hosted runners:
+
+- `airgap-stage.yaml` fetches the platform artifacts (RKE2 core + canal +
+  flannel tarballs, `install.sh`, checksums, `rke2-selinux` +
+  `container-selinux` RPMs resolved in a Rocky container, local-path
+  manifest + image tar, zarf + init package) with `hack/airgap-fetch.sh` and
+  stages them under `gs://cf-artifacts-<project>/platform/<rke2 version>/`.
+- `ci.yaml` `rke2` job (hosted): stages this run's package and the gate
+  scripts under `runs/<run id>/`, then over IAP the VM pulls them and runs
+  `hack/airgap-install.sh up` (tarball-only RKE2 install, local-path from the
+  manifests dir with the `container_file_t` label, `zarf init`), deploys the
+  previous main package, upgrades to this one, runs the full gate incl. the
+  demo Kaniko build, checks data survived, redeploys idempotently, uninstalls,
+  and deletes the run prefix. `rke2-negative` does the same with
+  `cni: flannel` and the default-class annotation removed; the preflight must
+  refuse. GitHub → VM only ever flows through WIF-authenticated `gcloud`
+  (service account limited to that instance + that bucket); the VM's own
+  identity can only read the bucket.
+- `hack/airgap-install.sh` is the manual form of the `rke2` init component
+  (ADR 0015): same files, same order, same waits - and the runbook.
+
+Measured earlier the same day (still with NAT): deploy to wire-engine
+Complete in 2m38s on this VM.
 
 ## Revised plan after ADRs 0014–0016 (replaces uds-way.md §13 steps 10–12)
 
