@@ -59,14 +59,37 @@ two signed packages, `cosign.pub` and checksums:
 | `zarf-init-amd64-<zarf>.tar.zst` (~2 GB) | **All-in-one**: RKE2 (air-gapped, from tarballs), the Zarf registry and agent, then the forge. A custom Zarf init package ([`rke2/zarf.yaml`](rke2/zarf.yaml), [ADR 0015](adr/0015-custom-init-package-rke2.md)). | You have a bare host. |
 | `zarf-package-clusterfactory-amd64-<version>-upstream.tar.zst` (~1.2 GB) | **The forge only** ([`zarf.yaml`](zarf.yaml)). | You bring the cluster, or you upgrade an existing install. |
 
-### Bare host → forge (one command)
+### Bare host → forge, step by step
 
-Host: Rocky/RHEL 9, x86_64, 16 GB+ RAM, 20 GB+ free under `/var/lib`, SELinux
-enforcing is fine, no internet needed. Copy the `zarf` binary (the version in the
-file name), the init package and `cosign.pub` into one directory and run as root:
+Target host: Rocky/RHEL 9, x86_64, 16 GB+ RAM, 4+ CPUs, 20 GB+ free under
+`/var/lib`, SELinux enforcing is fine, **no internet needed**. You need root
+and nothing installed.
+
+**1. On a connected machine, download the release** (≈2.3 GB; pick the tag on
+the [releases page](https://github.com/clusterfactory/clusterfactory/releases),
+the Zarf version is in the init file name):
 
 ```bash
-sha256sum -c clusterfactory-<version>-SHA256SUMS --ignore-missing
+V=0.4.0                 # clusterfactory release
+Z=v0.75.0               # zarf CLI version the init package is built for
+R=https://github.com/clusterfactory/clusterfactory/releases/download/v$V
+mkdir clusterfactory-$V && cd clusterfactory-$V
+curl -sSfLO "$R/zarf-init-amd64-$Z.tar.zst"
+curl -sSfLO "$R/cosign.pub"
+curl -sSfLO "$R/clusterfactory-$V-SHA256SUMS"
+curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/$Z/zarf_${Z}_Linux_amd64" -o zarf
+sha256sum -c "clusterfactory-$V-SHA256SUMS" --ignore-missing     # init package + cosign.pub OK
+```
+
+**2. Carry the directory across** (USB, scp, whatever the gap allows) to the
+target host, e.g. `/root/clusterfactory-0.4.0/`.
+
+**3. On the target host, as root:**
+
+```bash
+cd /root/clusterfactory-0.4.0
+install -m 755 zarf /usr/local/bin/zarf
+sha256sum -c "clusterfactory-0.4.0-SHA256SUMS" --ignore-missing  # again, after the transfer
 zarf init --confirm --key cosign.pub \
   --set NEXUS_ACCEPT_CE_EULA=true \                # you are accepting Sonatype's CE EULA
   --set GITEA_ADMIN_PASSWORD=... \                 # defaults are CHANGEME-*; see ADR 0005
@@ -74,10 +97,23 @@ zarf init --confirm --key cosign.pub \
   --set NEXUS_ADMIN_PASSWORD=...
 ```
 
-About eight minutes later the node is Ready and the forge is wired. The host
-preflight refuses a host that already runs RKE2, and the cluster preflight
-refuses a cluster that cannot honour the package's guarantees — it never
-"fixes" either. `zarf package remove init --confirm` takes RKE2 down again.
+`--key cosign.pub` refuses a package that is not signed by this project. The
+host preflight then refuses a host that already runs RKE2, and the cluster
+preflight refuses a cluster that cannot honour the package's guarantees — it
+never "fixes" either. About eight minutes later:
+
+```
+preflight ok: Rocky Linux 9.8 (Blue Onyx), selinux=Enforcing
+== rke2 ready
+wire engine: cf-wire-engine-r1=Complete:True
+init complete.
+```
+
+**4. Use it** — see [Use it](#use-it) below; `kubectl` is at
+`/var/lib/rancher/rke2/bin/kubectl` with `KUBECONFIG=/etc/rancher/rke2/rke2.yaml`.
+
+To take everything down again: `zarf package remove init --confirm` (removes
+the forge, then RKE2 and its state).
 
 ### Your own cluster, or an upgrade
 
@@ -113,7 +149,8 @@ built images to Zarf.
 ### Use it
 
 Everything is cluster-internal over plain HTTP (ADR 0010); reach it with
-port-forward:
+port-forward (on the all-in-one host: `export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+PATH=$PATH:/var/lib/rancher/rke2/bin`):
 
 ```bash
 kubectl port-forward -n clusterfactory svc/gitea-http 3000:3000   # http://localhost:3000  gitea-admin
