@@ -124,3 +124,21 @@ pipeline build with its own number succeeds and its tag exists in Nexus;
 | 12 | **Deliverable tar** (Zarf binary, init package, forge, profiles, `cosign.pub`, signed `SHA256SUMS`, install script, runbook) built by the release workflow; tag `v0.4.0` | release workflow green; nightly gate installs from the tar |
 | 8b | Argo CD optional component (ADR 0013) - after 10a–10c, it is independent | functional gate extended |
 | v0.5 | TLS via policy profile; etcd snapshot + PV backup procedure; system-upgrade-controller for factory-built clusters | |
+
+## Self-hosted RKE2 gate (2026-09-21)
+
+`cf-runner-1`: GCP `sportpilot-dev-001`, `europe-west1-b`, `n2-custom-16-32768`,
+Rocky 9 GCP image, shielded VM, **no external IP, no service account, own VPC
+`cf-runner` with zero ingress rules, Cloud NAT for egress**. It is a GitHub
+self-hosted runner (labels `self-hosted, rke2, rocky9, gcp`): only outbound
+connections to GitHub, nothing ever connects in. Registered with a one-hour
+token passed as instance metadata and purged afterwards; the startup script
+(re-run on every boot) installs deps, disables `nm-cloud-setup`/`firewalld`,
+labels the runner tree `bin_t` (SELinux refuses to exec `user_home_t` from
+systemd) and starts the service.
+
+`rke2-gate.yaml` runs the forge on it from a clean RKE2 install
+(`workflow_dispatch` with a release tag or the latest CI artifact; nightly),
+and uninstalls RKE2 afterwards. `vm-ops.yaml` resets/stops/starts the VM via
+Workload Identity Federation - service account `cf-runner-ops` with a custom
+role limited to that one instance, no key file. Stop the VM when not in use.

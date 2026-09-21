@@ -1,0 +1,40 @@
+name: Runner VM ops
+
+# Reset / stop / start the self-hosted runner VM cf-runner-1 without any
+# stored key: GitHub OIDC -> Workload Identity Federation -> a service
+# account whose only permissions are get/reset/stop/start on that instance.
+# Stop it when the day's testing is done; start it before the next round.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: what to do with cf-runner-1
+        type: choice
+        options: [status, reset, stop, start]
+        default: status
+
+permissions:
+  contents: read
+  id-token: write   # OIDC token for WIF
+
+jobs:
+  vm:
+    name: cf-runner-1 ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093  # v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db  # v3.0.1
+
+      - name: ${{ inputs.action }}
+        run: |
+          case "${{ inputs.action }}" in
+            status) ;;
+            *) gcloud compute instances ${{ inputs.action }} cf-runner-1 --zone=europe-west1-b --quiet ;;
+          esac
+          gcloud compute instances describe cf-runner-1 --zone=europe-west1-b \
+            --format='value(name,status,machineType.basename(),networkInterfaces[0].networkIP)'
