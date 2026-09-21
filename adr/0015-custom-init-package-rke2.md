@@ -1,6 +1,6 @@
 # 0015 — Custom Zarf init package with an `rke2` component
 
-**Status:** Accepted
+**Status:** Accepted — implemented and verified 2026-09-21
 **Date:** 2026-09-20
 
 ## Context
@@ -50,6 +50,22 @@ zarf init --confirm --set POLICY_PROFILE=cis ...        # RKE2 + local-path + Za
 zarf package deploy clusterfactory-policy-cis-*.tar.zst  # denies, PSA config, audit policy
 zarf package deploy clusterfactory-*.tar.zst --key cosign.pub   # preflight + forge
 ```
+
+## Verified 2026-09-21
+
+`rke2/zarf.yaml` built on the connected staging host (`hack/build-init-package.sh`,
+897 MB, Zarf checksums every file at create; upstream components imported from
+`oci://ghcr.io/zarf-dev/packages/init:v0.75.0` with upstream's create-time values
+in `rke2/zarf-config.toml`). On a bare Rocky 9.8 host with SELinux enforcing and
+no route to the internet, `zarf init --confirm` went from nothing to a Ready RKE2
+`v1.36.4+rke2r1` node with local-path (default), Zarf registry and agent in
+**3m39s**; the forge package then deployed and passed the full gate (Kaniko build
+pushed to Nexus, egress 000). The whole offline kit is `zarf`,
+`zarf-init-amd64-v0.75.0.tar.zst`, `zarf-package-clusterfactory-*.tar.zst`.
+
+Two host facts the component carries because the air-gapped test found them:
+the local-path helper pod needs the `busybox` archive loaded, and the provisioner
+directory must be labelled `container_file_t`.
 
 ## Consequences
 

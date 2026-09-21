@@ -152,13 +152,24 @@ The staging side is `cf-stager` (same VPC, own subnet with a NAT scoped to it,
 `storage-rw` on the bucket): `hack/airgap-fetch.sh` runs there natively (dnf,
 skopeo) - no containers, nothing on a laptop.
 
+## 10c done: RKE2 as a Zarf init package (2026-09-21)
+
+`rke2/` is a custom `ZarfInitConfig`: the `rke2` component (RKE2 tarballs, SELinux
+RPMs, local-path manifest + image archives, config drop-ins, `rke2-host.sh`, a
+host preflight that refuses rather than configures) followed by the upstream
+injector/seed-registry/registry/agent components imported by OCI. Built on
+`cf-stager` with `hack/build-init-package.sh`, staged at `init/<zarf version>/`.
+Verified on the air-gapped host: `zarf init --confirm` → Ready cluster in 3m39s;
+forge deploy + gate green on top. `hack/airgap-install.sh` stays as the manual
+runbook and as the oracle the init package is compared against.
+
 ## Revised plan after ADRs 0014–0016 (replaces uds-way.md §13 steps 10–12)
 
 | # | Work | Gate |
 |---|---|---|
 | 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | RKE2: preflight passes; RKE2 with flannel + no StorageClass is refused |
 | 10b | **Policy profiles** `policy/baseline`, `policy/cis`: denies move out of `charts/config`; `profile.yaml` read by preflight | CI deploys `baseline` before the forge; egress test unchanged |
-| 10c | **Custom init package** `rke2/zarf.yaml` (`rke2` component + upstream init components; RPM/deb flavors; registry on a local-path PVC); Traefik `Ingress` by hostname in the forge | nightly tier-1 gate: RKE2 on the runner, iptables egress block, init → policy → forge → `deploy-check.sh` |
+| 10c | **Custom init package** `rke2/zarf.yaml` — **done** (RPM flavor; deb flavor, registry-on-PVC override and Traefik `Ingress` by hostname still open) | done by hand on the air-gapped host; CI uses it next |
 | 10d | Tier-2 self-hosted Rocky VM gate (SELinux enforcing, snapshot-revert), weekly + pre-release | needs a runner from you |
 | 11 | Docs pass: README usage for the three-package flow, SECURITY (policy layer), CONTRIBUTING, runbook | — |
 | 12 | **Deliverable tar** (Zarf binary, init package, forge, profiles, `cosign.pub`, signed `SHA256SUMS`, install script, runbook) built by the release workflow; tag `v0.4.0` | release workflow green; nightly gate installs from the tar |
