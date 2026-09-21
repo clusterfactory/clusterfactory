@@ -79,6 +79,11 @@ deploy() {
 down() {
   (rke2-uninstall.sh || /usr/local/bin/rke2-uninstall.sh) >/dev/null 2>&1 || true
   rm -rf /var/lib/rancher /etc/rancher /opt/local-path-provisioner
+  # rke2-uninstall.sh leaves the CNI's host state behind. Calico's blackhole route
+  # for the pod CIDR makes every pod IP answer EINVAL on the next install (CoreDNS
+  # never becomes Ready under flannel), so drop routes and devices explicitly.
+  ip route show | awk '/^blackhole 10\.42\./ {print $2}' | while read -r r; do ip route del blackhole "$r"; done
+  for l in cni0 flannel.1 flannel.4096 vxlan.calico flannel-v6.1; do ip link del "$l" 2>/dev/null || true; done
   echo "clean"
 }
 

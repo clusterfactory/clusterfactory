@@ -120,6 +120,9 @@ components:
             cmd: |
               (rke2-uninstall.sh || /usr/local/bin/rke2-uninstall.sh) >/dev/null 2>&1 || true
               rm -rf /root/rke2-artifacts /var/lib/rancher /etc/rancher /opt/local-path-provisioner
+              # the uninstaller leaves CNI host state (Calico's blackhole pod-CIDR route breaks the next install)
+              ip route show | awk '/^blackhole 10\.42\./ {print $2}' | while read -r r; do ip route del blackhole "$r"; done
+              for l in cni0 flannel.1 flannel.4096 vxlan.calico; do ip link del "$l" 2>/dev/null || true; done
 
   # --- upstream Zarf init components, imported by name from the pinned init package
   - name: zarf-injector
