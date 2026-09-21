@@ -81,9 +81,11 @@ jobs:
         run: |
           mkdir -p "$HOME/zarf" && cd "$HOME/zarf"
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf && chmod +x zarf
-          sudo install -m 755 zarf /usr/local/bin/zarf
+          # the runner service's PATH has no /usr/local/bin; export the dir for later steps
+          echo "$HOME/zarf" >> "$GITHUB_PATH"
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf-init-amd64-${ZARF_VERSION}.tar.zst" -O
-          zarf init --confirm --no-color
+          ./zarf version
+          ./zarf init --confirm --no-color
           kubectl get pods -n zarf
 
       - name: Fetch the package (${{ inputs.package_source || 'v0.4.0-rc.1' }})
