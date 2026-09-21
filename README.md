@@ -61,6 +61,9 @@ two signed packages, `cosign.pub` and checksums:
 
 ### Bare host → forge, step by step
 
+(Long form with VM sizing, transfer options, upgrade, removal and
+troubleshooting: [`docs/install-bare-host.md`](docs/install-bare-host.md).)
+
 Target host: Rocky/RHEL 9, x86_64, 16 GB+ RAM, 4+ CPUs, 20 GB+ free under
 `/var/lib`, SELinux enforcing is fine, **no internet needed**. You need root
 and nothing installed.
