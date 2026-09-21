@@ -13,26 +13,21 @@
 5. **Pin by digest.** `hack/pin-images.sh <image:tag>` gives the linux/amd64
    manifest digest Zarf needs (it rejects multi-arch index digests).
 
-## Local setup
+## Where things run
 
-`zarf` (version pinned in `.github/workflows/ci.yaml`), `helm`, `kubectl`, `kind`,
-`docker`, `make`, `python3`, `yamllint`, `skopeo`, and `grype` for the CVE gate.
+Nothing runs on a laptop. Lint and package builds run on GitHub-hosted
+runners; every job that needs a cluster runs against `cf-runner-1`, an
+air-gapped RKE2 host (Rocky 9, SELinux enforcing, no internet route) fed from
+a private GCS bucket and driven over an IAP tunnel by the hosted job. A pull
+request from a branch in this repository gets the full RKE2 gate; forks get
+lint and create only. One job at a time on the VM - a queued PR waits.
 
-`make package` starts a throwaway registry container (`cf-build-registry`,
-`localhost:5001`) and pushes the two locally built images there before Zarf
-pulls them: Zarf's "pull from the Docker daemon" fallback races itself with
-several images in flight and deletes the images afterwards.
+The manual form of the install is `hack/airgap-install.sh` (`up`, `deploy`,
+`down`) with an artifact directory produced by `hack/airgap-fetch.sh`; that
+is also the runbook for any offline RKE2 host.
 
-```bash
-make lint                      # gate 1
-make package OUT=build         # gate 2 (builds the plugins + wire-engine images)
-bundle/up.sh <dir with zarf-init-*.tar.zst>
-zarf package deploy build/*.tar.zst --confirm --set NEXUS_ACCEPT_CE_EULA=true
-tests/deploy-check.sh          # gates 3 + 4; EXPECT_IDEMPOTENT=1 after a redeploy
-```
-
-`bundle/up.sh` is re-runnable; run it again if a kind node restart changed the
-API server IP (every ipBlock NetworkPolicy goes stale).
+Tools for authoring: `zarf`, `helm`, `yamllint`, `python3`, `skopeo`
+(`hack/pin-images.sh`), `docker` + `make` only if you build packages locally.
 
 ## How to…
 
@@ -48,7 +43,10 @@ API server IP (every ipBlock NetworkPolicy goes stale).
 - **Add a flavor:** `values/<app>-<flavor>-values.yaml` per app, a component in
   `zarf.yaml` with `only.flavor`, a CI matrix entry. Behaviour must not change.
 - **Add a namespace or policy:** `charts/config/values.yaml` (`namespaces`,
-  `networkPolicy.additionalEgress`).
+  `networkPolicy.additionalEgress`) and `contract/namespaces.yaml`.
+- **Add a preflight check:** a `# CHECK: id | class | what` line plus a
+  `check ...` call in `preflight/preflight.sh`, then `hack/gen-prerequisites.py`;
+  make CI see it fail (`tests/preflight-negative.sh`).
 
 ## Pull requests
 

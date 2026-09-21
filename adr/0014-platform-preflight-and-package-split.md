@@ -104,6 +104,46 @@ active profile to decide which checks are hard.
   factory only ever uses `server` with one node, because the factory later
   builds real clusters the same way.
 
+## Amendments 2026-09-20 (before 10a was built)
+
+**Hostnames / Ingress (10c):**
+- `INGRESS_CLASS` is a variable; empty means *create no Ingress objects*
+  (customer clusters will not be `traefik`; kind has no controller).
+- No `registry.` hostname in v0.4: nothing in the demo needs the Zarf
+  registry outside the node, and exposure is a "what is permitted" question
+  - a profile's.
+- Two URL sets: external URLs (Gitea `ROOT_URL`, Jenkins location URL)
+  follow `BASE_DOMAIN`; all wiring (webhooks, checkouts, Kaniko pushes)
+  stays on Service names. Nothing hashes the external URLs (the structural
+  SHA is gone, ADR 0004), so `BASE_DOMAIN` cannot change any "proof".
+- Runbook: git is HTTP-only in v0.4 (SSH does not go through the Ingress);
+  Gitea redirects to `ROOT_URL` even over port-forward, so the fallback
+  needs the hosts entry too; the deploy prints the exact `/etc/hosts` line.
+
+**Airgap proof, split in two claims instead of weakened:**
+1. *"Deploys with zero egress"* - a property of the package alone, proven
+   by the runner-native gate with egress blocked.
+2. *"Workloads cannot call out at runtime"* - needs the package **plus a
+   profile**.
+
+Consequences of moving denies into profiles: allow rules are only tested
+under default-deny (a missing allow is invisible without a deny), so
+**`baseline` must include default-deny** - it is not a lighter profile -
+and **CI runs the forge under both `baseline` and `cis`**. Namespace names
+become an interface: profiles create the forge's namespaces (PSA labels and
+denies are namespaced) before the forge deploys; the forge publishes the
+list in `contract/namespaces.yaml` and tolerates namespaces that already
+exist (`lookup`-guarded creation in `charts/config`).
+
+**Preflight specifics (10a):** every contract check is shown *failing* in
+CI (a second RKE2 with `cni: flannel` for enforcement and no StorageClass
+for storage - RKE2 is the only cluster this project tests on); it runs as a Zarf
+action with `./zarf tools kubectl` so the host needs no kubectl; the
+component lists its own test image; test pods pass PSA `restricted`; the
+throwaway namespace is deleted in `onFailure` too; results are emitted as
+data (`cf-system/cf-preflight-result` ConfigMap + JSON on stdout) so the
+nightly job can assert which checks ran and how each was classified.
+
 ## Consequences
 
 - Three packages instead of one: init (platform), policy profile, forge.

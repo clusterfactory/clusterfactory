@@ -1,0 +1,18 @@
+# Create-time values for the imported upstream init components (same keys as
+# zarf-dev/zarf's zarf-config.toml at the pinned version; the agent tag is the
+# released one, not upstream's 'local').
+[package.create.set]
+agent_image_domain = 'ghcr.io/'
+agent_image = 'zarf-dev/zarf/agent'
+agent_image_tag = 'v0.75.0'
+
+registry_image_domain = ''
+registry_image = 'library/registry'
+registry_image_tag = '3.1.0'
+
+proxy_image_domain = ''
+proxy_image = 'alpine/socat'
+proxy_image_tag = '1.8.0.3'
+
+# referenced by the upstream package definition even though git-server is not imported
+gitea_image = 'ghcr.io/go-gitea/gitea:1.24.6-rootless'

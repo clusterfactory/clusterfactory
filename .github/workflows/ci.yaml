@@ -1,12 +1,14 @@
 name: CI
 
-# uds-way.md §11 gates, in order; every gate must pass:
-#   1. lint    zarf dev lint, helm lint on helper charts, yamllint, OSCAL schema
-#   2. create  zarf package create -f upstream on a connected runner; SBOMs; CVE scan
-#   3. deploy  kind + Calico, default-deny egress, zarf init, deploy, tests/deploy-check.sh
-#   4. functional  demo pipeline: pod agent, Kaniko build, push to Nexus (inside deploy-check.sh)
-#   5. upgrade  deploy the last package built from main, then this one over it; data survives
-#   6. rke2 (step 10)
+# uds-way.md §11 gates, in order; every gate must pass. Everything that needs
+# a cluster runs on the self-hosted RKE2 runner (Rocky 9, SELinux enforcing,
+# ADR 0014): there is no kind, nothing runs on a laptop.
+#   1. lint      zarf dev lint, helm lint on helper charts, yamllint, OSCAL schema  (hosted)
+#   2. create    zarf package create -f upstream; SBOMs; CVE gate; signing          (hosted)
+#   3. rke2      clean RKE2 -> deploy the last main package -> upgrade to this one ->
+#                full gate incl. the demo pipeline -> idempotent redeploy -> uninstall (self-hosted)
+#   4. rke2-negative  RKE2 with cni=flannel and no StorageClass: the preflight must refuse it (self-hosted)
+# Self-hosted jobs never run for pull requests from forks (public repo).
 
 on:
   pull_request:
@@ -19,6 +21,10 @@ permissions:
 env:
   # renovate: datasource=github-releases depName=zarf-dev/zarf
   ZARF_VERSION: v0.75.0
+  # renovate: datasource=github-releases depName=rancher/rke2
+  RKE2_VERSION: v1.36.4+rke2r1
+  # renovate: datasource=github-releases depName=rancher/local-path-provisioner
+  LOCAL_PATH_VERSION: v0.0.37
 
 jobs:
   zarf-lint:
@@ -69,6 +75,9 @@ jobs:
           python-version: '3.12'
       - run: pip install yamllint==1.35.1
       - run: yamllint --strict -c .yamllint .
+
+      - name: PREREQUISITES.md is generated from preflight.sh
+        run: hack/gen-prerequisites.py && git diff --exit-code PREREQUISITES.md
 
   oscal-schema:
     name: OSCAL schema check
@@ -184,138 +193,179 @@ jobs:
           path: build/zarf-package-clusterfactory-*.tar.zst
           retention-days: 5
 
-  deploy:
-    name: airgapped deploy (kind + Calico)
-    # Gitea + Jenkins + Nexus + a Kaniko build need more than the 7 GB of
-    # ubuntu-latest; switch to a larger runner if this starts thrashing.
+  rke2:
+    name: forge on RKE2 (Rocky 9, SELinux) - deploy, upgrade, gate
+    # The VM has no internet at all: artifacts come from the GCS bucket via
+    # Private Google Access; this hosted job stages this run's package there
+    # and drives the VM over the IAP tunnel (no public IP, no SSH exposure).
     runs-on: ubuntu-latest
     needs: [create]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 60
+    concurrency:
+      group: cf-runner-1
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      ZONE: europe-west1-b
+      VM: cf-runner-1
+      BUCKET: gs://cf-artifacts-${{ secrets.GCP_PROJECT_ID }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Install Zarf
-        run: |
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
-          chmod +x /usr/local/bin/zarf
-          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
-
-      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093  # v3
         with:
-          install_only: true
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db  # v3.0.1
 
-      - name: Download package
+      - name: Download this package
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
           name: zarf-package-upstream
-          path: build
+          path: pkg
 
-      - name: Stand up the egress-blocked cluster (kind + Calico + zarf init + deny egress)
-        run: bundle/up.sh .
-
-      - name: zarf package deploy - signature verified when the package is signed
+      - name: Previous package (published to forge/main by the last green run on main) for the upgrade gate
+        id: prev
         run: |
-          KEY=""
-          if [ "${{ needs.create.outputs.signed }}" = "true" ]; then
-            KEY="--key cosign.pub"; echo "package is signed - verifying with cosign.pub"
+          if gcloud storage ls "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" >/dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"; echo "no previous main package - upgrade gate skipped"
           fi
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m $KEY --set NEXUS_ACCEPT_CE_EULA=true
 
-      - name: Gate 3 checks
-        run: tests/deploy-check.sh clusterfactory
-
-      - name: Redeploy over the converged cluster (wire engine must be idempotent)
+      - name: Gate scripts to the VM over the IAP tunnel; the 1.2 GB package via the bucket (the tunnel drops large uploads)
         run: |
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
-          EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
+          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/runs/${GITHUB_RUN_ID}/"
+          mkdir -p run/bin
+          cp hack/airgap-install.sh hack/airgap-pull.sh run/bin/
+          cp tests/deploy-check.sh tests/snapshot-state.sh tests/compare-state.py run/bin/
+          cp jenkins/plugins.txt run/bin/plugins.txt
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
+          gcloud compute scp --recurse run "$VM:/tmp/cf-run" --zone "$ZONE" --tunnel-through-iap --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo bash -s" <<'EOS'
+          rm -rf /root/artifacts/run && mkdir -p /root/artifacts
+          mv /tmp/cf-run /root/artifacts/run && chmod +x /root/artifacts/run/bin/*
+          EOS
+
+      - name: On the VM - clean host, init package (cached from the bucket), zarf init --confirm
+        run: |
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
+          set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
+          A=/root/artifacts; mkdir -p \$A/init \$A/run/new
+          gcloud storage cp "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/new/ >/dev/null 2>&1
+          if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
+            mkdir -p \$A/run/prev
+            gcloud storage cp "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" \$A/run/prev/ >/dev/null 2>&1
+          fi
+          \$A/run/bin/airgap-pull.sh "$BUCKET/init/${ZARF_VERSION}" \$A/init/${ZARF_VERSION}
+          \$A/run/bin/airgap-install.sh down
+          cd \$A/init/${ZARF_VERSION} && timeout 1500 zarf init --confirm --no-color 2>&1 | grep -E "ERR|preflight ok|rke2 ready|init complete"
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin
+          kubectl get nodes; kubectl get pods -n zarf
+          EOS
+
+      - name: On the VM - deploy N-1, seed; deploy N; gate; data survived; idempotent redeploy
+        run: |
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
+          set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin
+          A=/root/artifacts/run; cd \$A; mkdir -p ../gate/jenkins && cp bin/plugins.txt ../gate/jenkins/ && cp bin/*.sh bin/*.py ../gate/
+          dep() { zarf package deploy "\$@" --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true 2>&1 | grep -E "ERR|Verified|wire engine"; }
+          if [ -d prev ]; then
+            dep prev/zarf-package-clusterfactory-*.tar.zst
+            ../gate/deploy-check.sh clusterfactory
+            ../gate/snapshot-state.sh clusterfactory > before.json; cat before.json
+          fi
+          dep new/zarf-package-clusterfactory-*.tar.zst --key new/cosign.pub
+          ../gate/deploy-check.sh clusterfactory
+          if [ -d prev ]; then ../gate/snapshot-state.sh clusterfactory > after.json; ../gate/compare-state.py before.json after.json; fi
+          dep new/zarf-package-clusterfactory-*.tar.zst --key new/cosign.pub
+          EXPECT_IDEMPOTENT=1 ../gate/deploy-check.sh clusterfactory
+          EOS
 
       - name: Diagnostics on failure
         if: failure()
         run: |
-          kubectl get pods -A -o wide
-          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -50
-          for p in $(kubectl get pods -n clusterfactory -o name); do
-            echo "::group::$p"
-            kubectl describe -n clusterfactory "$p" | tail -40
-            kubectl logs -n clusterfactory "$p" --all-containers --tail=100 || true
-            echo "::endgroup::"
-          done
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<'EOS' || true
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=$PATH:/var/lib/rancher/rke2/bin
+          kubectl get pods -A -o wide; kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -40
+          kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=80; journalctl -u rke2-server --no-pager -n 40
+          EOS
 
-  upgrade:
-    name: upgrade N-1 -> N (kind + Calico)
-    # Gate 5: the previous package (latest successful build on main) first,
-    # then this one over it. Demo data - repo commits, Jenkins builds, Nexus
-    # tags - must survive and the wire engine must converge.
+      - name: Publish this package as the new main package (main only)
+        if: github.ref == 'refs/heads/main' && success()
+        run: |
+          gcloud storage rm "$BUCKET/forge/main/*" >/dev/null 2>&1 || true
+          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/forge/main/"
+
+      - name: On the VM - uninstall (clean host, caches kept)
+        if: always()
+        run: |
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts/run /root/gate" || true
+          gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}" || true
+
+  rke2-negative:
+    name: preflight refuses a broken cluster (RKE2 with flannel, no StorageClass)
     runs-on: ubuntu-latest
-    needs: [create]
-    if: github.event_name == 'pull_request'
-    timeout-minutes: 75
+    needs: [rke2]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 30
+    concurrency:
+      group: cf-runner-1
+      cancel-in-progress: false
     permissions:
       contents: read
-      actions: read
+      id-token: write
+    env:
+      ZONE: europe-west1-b
+      VM: cf-runner-1
+      BUCKET: gs://cf-artifacts-${{ secrets.GCP_PROJECT_ID }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
-
-      - name: Install Zarf
-        run: |
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
-          chmod +x /usr/local/bin/zarf
-          INIT="zarf-init-amd64-${ZARF_VERSION}.tar.zst"
-          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/${INIT}" -o "${INIT}"
-
-      - uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3  # v1.12.0
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093  # v3
         with:
-          install_only: true
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db  # v3.0.1
 
-      - name: Download the previous package (latest successful CI run on main)
-        id: prev
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Install Zarf and build the preflight-only package
         run: |
-          RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yaml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-          if [ -z "$RUN" ]; then echo "no successful main run yet - skipping upgrade gate"; echo "found=false" >> "$GITHUB_OUTPUT"; exit 0; fi
-          mkdir -p prev
-          gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream -D prev
-          # the artifact root is the package file itself (no build/ prefix)
-          PREV=$(find prev -name 'zarf-package-clusterfactory-*.tar.zst' | head -1)
-          test -n "$PREV" || { echo "previous package not found in artifact"; find prev; exit 1; }
-          ls -lh "$PREV"
-          echo "path=$PREV" >> "$GITHUB_OUTPUT"
-          echo "found=true" >> "$GITHUB_OUTPUT"
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf
+          sudo install -m 755 zarf /usr/local/bin/zarf
+          zarf package create preflight -f upstream --confirm --no-color --skip-sbom -o build
+          mkdir -p run
+          cp build/zarf-package-clusterfactory-preflight-*.tar.zst run/
+          cp hack/airgap-install.sh hack/airgap-pull.sh tests/preflight-negative.sh run/
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
+          gcloud compute scp --recurse run "$VM:/tmp/cf-run" --zone "$ZONE" --tunnel-through-iap --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo bash -s" <<'EOS'
+          rm -rf /root/artifacts/run && mkdir -p /root/artifacts
+          mv /tmp/cf-run /root/artifacts/run && chmod +x /root/artifacts/run/*.sh
+          EOS
 
-      - name: Download this package
-        if: steps.prev.outputs.found == 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
-        with:
-          name: zarf-package-upstream
-          path: build
-
-      - name: Stand up the egress-blocked cluster
-        if: steps.prev.outputs.found == 'true'
-        run: bundle/up.sh .
-
-      - name: Deploy N-1 and seed data
-        if: steps.prev.outputs.found == 'true'
+      - name: On the VM - RKE2 with flannel, no StorageClass; preflight must refuse
         run: |
-          zarf package deploy "${{ steps.prev.outputs.path }}" --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
-          tests/deploy-check.sh clusterfactory
-          tests/snapshot-state.sh clusterfactory > before.json
-          cat before.json
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
+          set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
+          A=/root/artifacts
+          \$A/run/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
+          # flannel -> no NetworkPolicy enforcement. local-path must exist for zarf init's PVC;
+          # the default-class annotation is removed afterwards so the preflight sees no default.
+          CNI=flannel ARTIFACT_DIR=\$A/platform/${{ env.RKE2_VERSION }} \$A/run/airgap-install.sh up
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin
+          kubectl annotate storageclass local-path storageclass.kubernetes.io/is-default-class-
+          kubectl get pods -n zarf
+          cd \$A/run && ./preflight-negative.sh zarf-package-clusterfactory-preflight-*.tar.zst networkpolicy-enforcement,default-storageclass
+          EOS
 
-      - name: Upgrade to N
-        if: steps.prev.outputs.found == 'true'
+      - name: On the VM - uninstall
+        if: always()
         run: |
-          KEY=""; [ "${{ needs.create.outputs.signed }}" = "true" ] && KEY="--key cosign.pub"
-          zarf package deploy build/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 20m $KEY --set NEXUS_ACCEPT_CE_EULA=true
-          tests/deploy-check.sh clusterfactory
-          tests/snapshot-state.sh clusterfactory > after.json
-          cat after.json
-          tests/compare-state.py before.json after.json
-
-      - name: Diagnostics on failure
-        if: failure() && steps.prev.outputs.found == 'true'
-        run: |
-          kubectl get pods -A -o wide
-          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -50
-          kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=100 || true
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
+            --command "sudo bash /root/artifacts/run/airgap-install.sh down; sudo rm -rf /root/artifacts/run" || true

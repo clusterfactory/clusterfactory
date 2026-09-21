@@ -59,8 +59,8 @@ narrative; the decisions themselves are in [`adr/`](../adr/README.md).
   a throwaway registry (`make local-registry`, `localhost:5001`).
 - The API server is not a pod: deny-all-egress must allow it by `ipBlock`,
   resolved from the `kubernetes` EndpointSlice at deploy time (a Zarf
-  `onDeploy.before` action). A kind node restart changes the IP and strands
-  every such rule; `bundle/up.sh` is re-runnable for that reason.
+  `onDeploy.before` action). If the node IP changes, every such rule goes
+  stale until the next deploy.
 
 **Jenkins**
 - `agent.restrictedPssSecurityContext: true` merges `capabilities.drop: ALL`
@@ -98,9 +98,10 @@ narrative; the decisions themselves are in [`adr/`](../adr/README.md).
 - `gcr.io` is retired ("requires billing"): `scorecard-action` v2.4.0 broke,
   and the Kaniko executor is published only there (ADR 0009 risk).
 
-**Local Docker Desktop**
-- Other kind/k3d clusters in the same VM starve the CI cluster (load 300+,
-  "process apparently never started" in Jenkins). Start fresh, or stop them.
+**Rocky 9 / SELinux**
+- local-path-provisioner's directory must be `container_file_t`, or its helper
+  pod cannot `mkdir` and every PVC (the Zarf registry's first) stays Pending.
+- systemd will not exec the GitHub runner from `user_home_t`; label it `bin_t`.
 
 ## What the gates verify (so you can trust green)
 
@@ -112,13 +113,63 @@ pipeline build with its own number succeeds and its tag exists in Nexus;
 `example.com` returns `000`. The upgrade job wraps this with
 `tests/snapshot-state.sh` / `tests/compare-state.py` around an N-1→N deploy.
 
+## CI runs only on RKE2, and the RKE2 host is physically air-gapped (2026-09-21)
+
+kind and every laptop path were removed. The test host `cf-runner-1` (GCP,
+Rocky 9, SELinux enforcing, 16 vCPU / 32 GB) has **no route to the internet
+at all** - no external IP, no Cloud NAT, only Private Google Access to one
+private GCS bucket, and SSH reachable solely through Google's IAP tunnel.
+Everything online happens on GitHub-hosted runners:
+
+- `airgap-stage.yaml` fetches the platform artifacts (RKE2 core + canal +
+  flannel tarballs, `install.sh`, checksums, `rke2-selinux` +
+  `container-selinux` RPMs resolved in a Rocky container, local-path
+  manifest + image tar, zarf + init package) with `hack/airgap-fetch.sh` and
+  stages them under `gs://cf-artifacts-<project>/platform/<rke2 version>/`.
+- `ci.yaml` `rke2` job (hosted): stages this run's package and the gate
+  scripts under `runs/<run id>/`, then over IAP the VM pulls them and runs
+  `hack/airgap-install.sh up` (tarball-only RKE2 install, local-path from the
+  manifests dir with the `container_file_t` label, `zarf init`), deploys the
+  previous main package, upgrades to this one, runs the full gate incl. the
+  demo Kaniko build, checks data survived, redeploys idempotently, uninstalls,
+  and deletes the run prefix. `rke2-negative` does the same with
+  `cni: flannel` and the default-class annotation removed; the preflight must
+  refuse. GitHub → VM only ever flows through WIF-authenticated `gcloud`
+  (service account limited to that instance + that bucket); the VM's own
+  identity can only read the bucket.
+- `hack/airgap-install.sh` is the manual form of the `rke2` init component
+  (ADR 0015): same files, same order, same waits - and the runbook.
+
+**First fully offline run (2026-09-21, by hand over IAP):** `airgap-install.sh up`
+brought RKE2 `v1.36.4+rke2r1` up from the tarballs with the SELinux policy RPMs,
+local-path from the manifests dir, and `zarf init` - `github.com 000` the whole
+time; then the rc.1 package deployed in 2m21s and the full gate passed including
+the Kaniko build. Two leaks found and fixed on the way, both now in the script:
+the local-path helper pod pulls `busybox` (archive must be loaded), and the
+provisioner directory needs `container_file_t`.
+
+The staging side is `cf-stager` (same VPC, own subnet with a NAT scoped to it,
+`storage-rw` on the bucket): `hack/airgap-fetch.sh` runs there natively (dnf,
+skopeo) - no containers, nothing on a laptop.
+
+## 10c done: RKE2 as a Zarf init package (2026-09-21)
+
+`rke2/` is a custom `ZarfInitConfig`: the `rke2` component (RKE2 tarballs, SELinux
+RPMs, local-path manifest + image archives, config drop-ins, `rke2-host.sh`, a
+host preflight that refuses rather than configures) followed by the upstream
+injector/seed-registry/registry/agent components imported by OCI. Built on
+`cf-stager` with `hack/build-init-package.sh`, staged at `init/<zarf version>/`.
+Verified on the air-gapped host: `zarf init --confirm` → Ready cluster in 3m39s;
+forge deploy + gate green on top. `hack/airgap-install.sh` stays as the manual
+runbook and as the oracle the init package is compared against.
+
 ## Revised plan after ADRs 0014–0016 (replaces uds-way.md §13 steps 10–12)
 
 | # | Work | Gate |
 |---|---|---|
-| 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | kind: preflight passes; a kindnet cluster is refused with the right message |
+| 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | RKE2: preflight passes; RKE2 with flannel + no StorageClass is refused |
 | 10b | **Policy profiles** `policy/baseline`, `policy/cis`: denies move out of `charts/config`; `profile.yaml` read by preflight | CI deploys `baseline` before the forge; egress test unchanged |
-| 10c | **Custom init package** `rke2/zarf.yaml` (`rke2` component + upstream init components; RPM/deb flavors; registry on a local-path PVC); Traefik `Ingress` by hostname in the forge | nightly tier-1 gate: RKE2 on the runner, iptables egress block, init → policy → forge → `deploy-check.sh` |
+| 10c | **Custom init package** `rke2/zarf.yaml` — **done** (RPM flavor; deb flavor, registry-on-PVC override and Traefik `Ingress` by hostname still open) | done by hand on the air-gapped host; CI uses it next |
 | 10d | Tier-2 self-hosted Rocky VM gate (SELinux enforcing, snapshot-revert), weekly + pre-release | needs a runner from you |
 | 11 | Docs pass: README usage for the three-package flow, SECURITY (policy layer), CONTRIBUTING, runbook | — |
 | 12 | **Deliverable tar** (Zarf binary, init package, forge, profiles, `cosign.pub`, signed `SHA256SUMS`, install script, runbook) built by the release workflow; tag `v0.4.0` | release workflow green; nightly gate installs from the tar |

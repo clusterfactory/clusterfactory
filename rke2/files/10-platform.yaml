@@ -1,0 +1,7 @@
+# clusterfactory platform invariants (ADR 0014). Policy goes in 50-policy.yaml.
+cni: canal
+embedded-registry: true
+disable:
+  - rke2-metrics-server
+  - rke2-snapshot-controller
+  - rke2-snapshot-controller-crd

@@ -20,6 +20,31 @@ metadata:
   description: Flavor-agnostic clusterfactory package definition; imported by the root zarf.yaml.
 
 components:
+  # The contract (ADR 0014): what the forge needs from any cluster, checked
+  # before anything is deployed. Images of a component are pushed before its
+  # `after` actions run, so the test image is in the Zarf registry by then.
+  - name: preflight
+    required: true
+    description: Verify the cluster meets the forge's contract (PREREQUISITES.md); fails fast otherwise.
+    files:
+      - source: ../preflight/preflight.sh
+        target: cf-preflight/preflight.sh
+        executable: true
+    actions:
+      onDeploy:
+        after:
+          - description: Run the preflight checks (see PREREQUISITES.md; results in cf-system/cf-preflight-result)
+            # Zarf rewrites "./zarf" inside cmd to the running binary's path; the
+            # script receives it as $ZARF so the host needs no kubectl.
+            cmd: ZARF=./zarf PREFLIGHT_STRICT="${ZARF_VAR_PREFLIGHT_STRICT}" PREFLIGHT_IMAGE="${ZARF_CONST_PREFLIGHT_IMAGE}" ./cf-preflight/preflight.sh
+            maxTotalSeconds: 900
+        onFailure:
+          - description: Remove any throwaway preflight namespace
+            cmd: ./zarf tools kubectl get ns -o name | grep '^namespace/cf-preflight-' | xargs -r ./zarf tools kubectl delete --wait=false || true
+        onSuccess:
+          - cmd: rm -rf cf-preflight
+            mute: true
+
   - name: clusterfactory
     required: true
     description: Gitea + Jenkins + Nexus with clusterfactory config/settings helper charts.

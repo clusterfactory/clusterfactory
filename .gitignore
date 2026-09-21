@@ -17,3 +17,7 @@ jenkins/plugins/
 sboms/
 
 jenkins/.plugins.lock.*
+preflight-negative.out
+preflight-result.json
+rke2/files/*.tar
+rke2/files/local-path-storage.yaml
