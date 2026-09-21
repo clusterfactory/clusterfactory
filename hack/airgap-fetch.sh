@@ -42,6 +42,8 @@ curl -sSfL "$LP" -o local-path-storage.yaml
 # images referenced by the manifest (fully qualified in v0.0.37), saved as
 # docker-archives that containerd imports from the RKE2 images directory.
 # The manifest is also patched to make local-path the default StorageClass.
+# (busybox is referenced as "busybox" = docker.io/library/busybox:latest; the
+# helper pod pulls that exact name, so the archive keeps it.)
 python3 - <<'PY'
 p='local-path-storage.yaml'; s=open(p).read()
 s=s.replace('kind: StorageClass\nmetadata:\n  name: local-path\n','kind: StorageClass\nmetadata:\n  name: local-path\n  annotations:\n    storageclass.kubernetes.io/is-default-class: "true"\n')
@@ -58,7 +60,7 @@ done
 curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf && chmod +x zarf
 curl -sSfLO "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf-init-amd64-${ZARF_VERSION}.tar.zst"
 [ -n "$PACKAGE" ] && cp "$PACKAGE" . && cp "$(dirname "$PACKAGE")/cosign.pub" . 2>/dev/null || true
-sha256sum -- * > SHA256SUMS
+find . -type f ! -name SHA256SUMS -printf "%P\n" | sort | xargs sha256sum > SHA256SUMS
 ls -lh
 case "$DEST" in
   gs://*) gcloud storage cp -r ./* "$DEST/" ;;
