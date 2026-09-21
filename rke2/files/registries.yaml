@@ -1,0 +1,3 @@
+# Embedded registry mirror (Spegel): peers share images loaded from tarballs.
+mirrors:
+  "*":

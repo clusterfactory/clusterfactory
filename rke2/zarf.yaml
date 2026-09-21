@@ -1,0 +1,133 @@
+# clusterfactory custom Zarf init package (ADR 0015): RKE2 in the slot where
+# upstream puts k3s, followed by the upstream init components. Built on a
+# connected host (`make init-package`), deployed on the offline host with
+# `zarf init --confirm` - nothing else is needed to get from bare OS to a
+# Kubernetes cluster with the Zarf registry and agent.
+#
+# Platform invariants (ADR 0014): RKE2 pinned below, single node, Canal,
+# local-path, tarball image loading. Policy (CIS profile, PSA, audit) comes
+# from a policy profile package - never from here.
+kind: ZarfInitConfig
+metadata:
+  name: init
+  description: clusterfactory init - RKE2 (air-gapped) + Zarf registry/agent
+  # Must match the Zarf CLI version: `zarf init` looks for zarf-init-<arch>-<this>.tar.zst
+  version: v0.75.0
+  architecture: amd64
+  url: https://github.com/clusterfactory/clusterfactory
+
+variables:
+  - name: RKE2_ROLE
+    description: server (the factory, single node) or agent (joining a server - for the clusters the factory builds later)
+    default: server
+  - name: RKE2_SERVER_URL
+    description: for agents - https://<server>:9345
+    default: ""
+  - name: RKE2_TOKEN
+    description: for agents - the server's node token
+    default: ""
+    sensitive: true
+  - name: RKE2_TLS_SAN
+    description: stable DNS name added to the API server certificate (never a node IP)
+    default: ""
+  - name: POLICY_PROFILE
+    description: name of the policy profile whose 50-policy.yaml drop-in to apply (empty = none)
+    default: ""
+
+constants:
+  - name: RKE2_VERSION
+    value: v1.36.4+rke2r1
+
+components:
+  - name: rke2
+    required: true
+    description: >-
+      *** run as root *** RKE2 v1.36.4+rke2r1 from tarballs (core + canal images imported by
+      containerd on start), SELinux policy RPMs, local-path StorageClass, embedded registry mirror.
+    only:
+      localOS: linux
+      cluster:
+        architecture: amd64
+    files:
+      # --- RKE2 release artifacts (checksums from sha256sum-amd64.txt of the release)
+      - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/rke2.linux-amd64.tar.gz
+        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_TARBALL###
+        target: /root/rke2-artifacts/rke2.linux-amd64.tar.gz
+      - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/rke2-images-core.linux-amd64.tar.zst
+        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_IMAGES_CORE###
+        target: /var/lib/rancher/rke2/agent/images/rke2-images-core.linux-amd64.tar.zst
+      - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/rke2-images-canal.linux-amd64.tar.zst
+        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_IMAGES_CANAL###
+        target: /var/lib/rancher/rke2/agent/images/rke2-images-canal.linux-amd64.tar.zst
+      - source: https://github.com/rancher/rke2/releases/download/v1.36.4%2Brke2r1/sha256sum-amd64.txt
+        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_SUMS###
+        target: /root/rke2-artifacts/sha256sum-amd64.txt
+      - source: https://get.rke2.io
+        target: /root/rke2-artifacts/install.sh
+        executable: true
+      # --- SELinux policy (RPM flavor; RKE2 docs: required for air-gapped SELinux hosts)
+      - source: https://rpm.rancher.io/rke2/stable/common/centos/9/noarch/rke2-selinux-0.23-1.el9.noarch.rpm
+        shasum: ###ZARF_PKG_TMPL_SHA_RKE2_SELINUX###
+        target: /root/rke2-artifacts/rpm/rke2-selinux-0.23-1.el9.noarch.rpm
+      - source: https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os/Packages/c/container-selinux-2.245.0-1.el9.noarch.rpm
+        shasum: ###ZARF_PKG_TMPL_SHA_CONTAINER_SELINUX###
+        target: /root/rke2-artifacts/rpm/container-selinux-2.245.0-1.el9.noarch.rpm
+      # --- local-path-provisioner: manifest into the RKE2 manifests dir, images next to RKE2's
+      - source: files/local-path-storage.yaml
+        target: /var/lib/rancher/rke2/server/manifests/local-path-storage.yaml
+      - source: files/local-path-provisioner.tar
+        target: /var/lib/rancher/rke2/agent/images/local-path-provisioner.tar
+      - source: files/busybox.tar
+        target: /var/lib/rancher/rke2/agent/images/busybox.tar
+      # --- configuration
+      - source: files/10-platform.yaml
+        target: /etc/rancher/rke2/config.yaml.d/10-platform.yaml
+      - source: files/registries.yaml
+        target: /etc/rancher/rke2/registries.yaml
+      - source: files/cache.json
+        target: /var/lib/rancher/rke2/agent/images/.cache.json
+      - source: files/rke2-host.sh
+        target: /root/rke2-artifacts/rke2-host.sh
+        executable: true
+    actions:
+      onDeploy:
+        defaults:
+          maxRetries: 0
+        before:
+          - description: Host preflight (refuse rather than configure)
+            cmd: |
+              set -e
+              [ "$(id -u)" = 0 ] || { echo "zarf init must run as root"; exit 1; }
+              [ "$(uname -m)" = x86_64 ] || { echo "amd64 package on a $(uname -m) host"; exit 1; }
+              if systemctl is-enabled nm-cloud-setup.service >/dev/null 2>&1; then echo "nm-cloud-setup is enabled - RKE2 requires it disabled (see RKE2 requirements)"; exit 1; fi
+              if systemctl is-active rke2-server >/dev/null 2>&1 || systemctl is-active rke2-agent >/dev/null 2>&1; then echo "RKE2 already running on this host"; exit 1; fi
+              avail=$(df -BG --output=avail /var/lib | tail -1 | tr -dc 0-9); [ "$avail" -ge 20 ] || { echo "need >= 20 GB free under /var/lib, have ${avail}G"; exit 1; }
+              echo "preflight ok: $(. /etc/os-release; echo "$PRETTY_NAME"), selinux=$(getenforce 2>/dev/null || echo n/a)"
+        after:
+          - description: Install RKE2 from the staged artifacts, wait for the node, local-path and CoreDNS
+            maxTotalSeconds: 900
+            cmd: |
+              RKE2_ROLE="${ZARF_VAR_RKE2_ROLE}" RKE2_SERVER_URL="${ZARF_VAR_RKE2_SERVER_URL}" RKE2_TOKEN="${ZARF_VAR_RKE2_TOKEN}" \
+              RKE2_TLS_SAN="${ZARF_VAR_RKE2_TLS_SAN}" POLICY_PROFILE="${ZARF_VAR_POLICY_PROFILE}" /root/rke2-artifacts/rke2-host.sh
+      onRemove:
+        before:
+          - cmd: (rke2-uninstall.sh || /usr/local/bin/rke2-uninstall.sh) >/dev/null 2>&1 || true; rm -rf /root/rke2-artifacts /var/lib/rancher /etc/rancher /opt/local-path-provisioner
+            description: Remove RKE2 and its state
+
+  # --- upstream Zarf init components, imported by name from the pinned init package
+  - name: zarf-injector
+    required: true
+    import:
+      url: oci://ghcr.io/zarf-dev/packages/init:v0.75.0
+  - name: zarf-seed-registry
+    required: true
+    import:
+      url: oci://ghcr.io/zarf-dev/packages/init:v0.75.0
+  - name: zarf-registry
+    required: true
+    import:
+      url: oci://ghcr.io/zarf-dev/packages/init:v0.75.0
+  - name: zarf-agent
+    required: true
+    import:
+      url: oci://ghcr.io/zarf-dev/packages/init:v0.75.0
