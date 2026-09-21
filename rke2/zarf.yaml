@@ -70,7 +70,7 @@ components:
         shasum: ###ZARF_PKG_TMPL_SHA_RKE2_SELINUX###
         target: /root/rke2-artifacts/rpm/rke2-selinux-0.23-1.el9.noarch.rpm
       - source: https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os/Packages/c/container-selinux-2.245.0-1.el9.noarch.rpm
-        shasum: ###ZARF_PKG_TMPL_SHA_CONTAINER_SELINUX###
+        shasum: "###ZARF_PKG_TMPL_SHA_CONTAINER_SELINUX###"
         target: /root/rke2-artifacts/rpm/container-selinux-2.245.0-1.el9.noarch.rpm
       # --- local-path-provisioner: manifest into the RKE2 manifests dir, images next to RKE2's
       - source: files/local-path-storage.yaml
