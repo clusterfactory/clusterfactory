@@ -1,0 +1,138 @@
+name: RKE2 gate
+
+# Tier-2 platform gate (ADR 0014): the forge on a real RKE2 host - Rocky 9,
+# SELinux enforcing - on the self-hosted runner `cf-runner-1` (GCP, no
+# inbound access, NAT egress only). Installs RKE2 from scratch, adds the
+# StorageClass, runs zarf init, deploys a package, runs the full gate, and
+# uninstalls RKE2 at the end so the VM is clean for the next run.
+#
+# Never runs for pull requests: this is a public repo and the runner must not
+# execute untrusted code. Manual runs and the nightly schedule only.
+on:
+  workflow_dispatch:
+    inputs:
+      package_source:
+        description: "release tag (e.g. v0.4.0-rc.1) or 'artifact' for the latest successful CI build on main"
+        default: v0.4.0-rc.1
+      keep_cluster:
+        description: leave RKE2 and the forge running after the gate (for manual inspection; next run cleans up)
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 2 * * *'   # nightly 02:17 UTC
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  # renovate: datasource=github-releases depName=zarf-dev/zarf
+  ZARF_VERSION: v0.75.0
+  # renovate: datasource=github-releases depName=rancher/rke2
+  RKE2_VERSION: v1.36.4+rke2r1
+  # renovate: datasource=github-releases depName=rancher/local-path-provisioner
+  LOCAL_PATH_VERSION: v0.0.37
+  KUBECONFIG: /etc/rancher/rke2/rke2.yaml
+
+jobs:
+  rke2:
+    name: forge on RKE2 (Rocky 9, SELinux)
+    runs-on: [self-hosted, rke2, rocky9]
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 60
+    concurrency:
+      group: cf-runner-1
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Host facts
+        run: |
+          echo "host: $(hostname)  os: $(. /etc/os-release; echo "$PRETTY_NAME")  selinux: $(getenforce)"
+          echo "cpu: $(nproc)  mem: $(free -g | awk '/Mem/{print $2}') GiB  disk: $(df -h / | awk 'NR==2{print $4}') free"
+          uname -m | grep -qx x86_64
+
+      - name: Clean slate (uninstall a previous RKE2 if present)
+        run: |
+          if command -v rke2-uninstall.sh >/dev/null 2>&1 || [ -x /usr/local/bin/rke2-uninstall.sh ]; then
+            sudo rke2-uninstall.sh || sudo /usr/local/bin/rke2-uninstall.sh || true
+          fi
+          sudo rm -rf /var/lib/rancher /etc/rancher /opt/local-path-provisioner || true
+
+      - name: Install RKE2 ${{ env.RKE2_VERSION }} (online) and start it
+        run: |
+          curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_VERSION="$RKE2_VERSION" sh -
+          sudo systemctl enable --now rke2-server
+          sudo chmod 644 /etc/rancher/rke2/rke2.yaml
+          echo "/var/lib/rancher/rke2/bin" >> "$GITHUB_PATH"
+          export PATH="$PATH:/var/lib/rancher/rke2/bin"
+          for i in $(seq 1 60); do kubectl get nodes 2>/dev/null | grep -q ' Ready' && break; sleep 5; done
+          kubectl get nodes
+          kubectl -n kube-system rollout status deploy/rke2-coredns-rke2-coredns --timeout=300s
+
+      - name: Default StorageClass (local-path)
+        run: |
+          kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${LOCAL_PATH_VERSION}/deploy/local-path-storage.yaml"
+          kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout=120s
+          kubectl annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite
+          kubectl get storageclass
+
+      - name: Zarf ${{ env.ZARF_VERSION }} and zarf init
+        run: |
+          mkdir -p "$HOME/zarf" && cd "$HOME/zarf"
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o zarf && chmod +x zarf
+          sudo install -m 755 zarf /usr/local/bin/zarf
+          curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf-init-amd64-${ZARF_VERSION}.tar.zst" -O
+          zarf init --confirm --no-color
+          kubectl get pods -n zarf
+
+      - name: Fetch the package (${{ inputs.package_source || 'v0.4.0-rc.1' }})
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SRC: ${{ inputs.package_source || 'v0.4.0-rc.1' }}
+        run: |
+          mkdir -p "$HOME/pkg" && cd "$HOME/pkg" && rm -f ./*
+          if [ "$SRC" = "artifact" ]; then
+            RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yaml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream
+            cp "$GITHUB_WORKSPACE/cosign.pub" .
+          else
+            R="https://github.com/${GITHUB_REPOSITORY}/releases/download/${SRC}"
+            V="${SRC#v}"
+            curl -sSfLO "$R/zarf-package-clusterfactory-amd64-${V%%-rc.*}-upstream.tar.zst"
+            curl -sSfLO "$R/cosign.pub"
+            curl -sSfLO "$R/clusterfactory-${V}-SHA256SUMS"
+            sha256sum -c "clusterfactory-${V}-SHA256SUMS" --ignore-missing
+          fi
+          ls -lh
+
+      - name: Deploy (signature verified)
+        run: |
+          cd "$HOME/pkg"
+          PKG=$(ls zarf-package-clusterfactory-*.tar.zst | head -1)
+          zarf package deploy "$PKG" --key cosign.pub --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+
+      - name: Gate (deploy-check.sh) and demo pipeline
+        run: tests/deploy-check.sh clusterfactory
+
+      - name: Redeploy must be idempotent
+        run: |
+          cd "$HOME/pkg"
+          PKG=$(ls zarf-package-clusterfactory-*.tar.zst | head -1)
+          zarf package deploy "$PKG" --key cosign.pub --confirm --no-color --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true
+          cd "$GITHUB_WORKSPACE" && EXPECT_IDEMPOTENT=1 tests/deploy-check.sh clusterfactory
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get events -n clusterfactory --sort-by=.lastTimestamp | tail -40 || true
+          kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=100 || true
+          sudo journalctl -u rke2-server --no-pager -n 50 || true
+
+      - name: Uninstall RKE2 (leave the VM clean)
+        if: always() && inputs.keep_cluster != true
+        run: |
+          sudo rke2-uninstall.sh || sudo /usr/local/bin/rke2-uninstall.sh || true
+          sudo rm -rf /var/lib/rancher /etc/rancher /opt/local-path-provisioner "$HOME/pkg" "$HOME/zarf" || true
+          echo "clean"
