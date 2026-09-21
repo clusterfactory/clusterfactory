@@ -228,26 +228,19 @@ jobs:
           name: zarf-package-upstream
           path: pkg
 
-      - name: Previous package (latest successful CI run on main) for the upgrade gate
+      - name: Previous package (published to forge/main by the last green run on main) for the upgrade gate
         id: prev
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yaml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-          mkdir -p prev
-          if [ -n "$RUN" ] && gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream -D prev 2>/dev/null; then
+          if gcloud storage ls "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" >/dev/null 2>&1; then
             echo "found=true" >> "$GITHUB_OUTPUT"
           else
             echo "found=false" >> "$GITHUB_OUTPUT"; echo "no previous main package - upgrade gate skipped"
           fi
 
-      - name: Copy this run's packages and the gate scripts to the VM over the IAP tunnel
+      - name: Gate scripts to the VM over the IAP tunnel; the 1.2 GB package via the bucket (the tunnel drops large uploads)
         run: |
-          mkdir -p run/new run/bin
-          cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub run/new/
-          if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
-            mkdir -p run/prev && cp prev/zarf-package-clusterfactory-*.tar.zst run/prev/
-          fi
+          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst cosign.pub "$BUCKET/runs/${GITHUB_RUN_ID}/"
+          mkdir -p run/bin
           cp hack/airgap-install.sh hack/airgap-pull.sh run/bin/
           cp tests/deploy-check.sh tests/snapshot-state.sh tests/compare-state.py run/bin/
           cp jenkins/plugins.txt run/bin/plugins.txt
@@ -262,7 +255,12 @@ jobs:
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail
-          A=/root/artifacts; mkdir -p \$A/init
+          A=/root/artifacts; mkdir -p \$A/init \$A/run/new
+          gcloud storage cp "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/new/ >/dev/null 2>&1
+          if [ "${{ steps.prev.outputs.found }}" = "true" ]; then
+            mkdir -p \$A/run/prev
+            gcloud storage cp "$BUCKET/forge/main/zarf-package-clusterfactory-*.tar.zst" \$A/run/prev/ >/dev/null 2>&1
+          fi
           \$A/run/bin/airgap-pull.sh "$BUCKET/init/${ZARF_VERSION}" \$A/init/${ZARF_VERSION}
           \$A/run/bin/airgap-install.sh down
           cd \$A/init/${ZARF_VERSION} && timeout 1500 zarf init --confirm --no-color 2>&1 | grep -E "ERR|preflight ok|rke2 ready|init complete"
@@ -309,6 +307,7 @@ jobs:
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
             --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts/run /root/gate" || true
+          gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}" || true
 
   rke2-negative:
     name: preflight refuses a broken cluster (RKE2 with flannel, no StorageClass)
