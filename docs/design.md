@@ -6,10 +6,9 @@
 > (see [`CHANGELOG.md`](../CHANGELOG.md) 0.4.0); what is still ahead is in
 > [`roadmap.md`](roadmap.md).
 
-Audience: Claude Code, working in the `clusterfactory/clusterfactory` repo.
-Read this whole file before touching anything. Every section marked
-**DECIDED** is settled; sections marked **OPEN** need a spike or a question
-back to the human before implementing.
+Sections marked **DECIDED** were settled before the work started; sections
+marked **OPEN** were resolved by a spike and an ADR (0007/0008 for §6, 0012
+for §12) during it.
 
 ## 0. Why we are doing this
 
@@ -32,7 +31,7 @@ conventions** (not UDS Core, not Istio, not the UDS Operator — none of that
 is a dependency here). Where their pattern is a poor fit for a lightweight
 Gitea + Jenkins + Nexus forge, this doc says so and what we do instead.
 
-Reference material Claude Code should read before implementing:
+Reference material this design leans on:
 
 - UDS package anatomy (structure + GitLab walkthrough):
   https://uds.defenseunicorns.com/structure/packages/
