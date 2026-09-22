@@ -7,7 +7,7 @@ ok / created / updated / skipped. Exit 0 only if every step converged.
 
 Standard library only - nothing to mirror.
 
-Steps (uds-way.md §4):
+Steps (docs/design.md §4):
   1. Gitea: org, repo, Jenkinsfile content
   2. Gitea: integration user + API token, persisted in a Kubernetes Secret
      (tokens are not re-readable; the Secret is the source of truth on re-runs)

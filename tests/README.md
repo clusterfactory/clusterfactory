@@ -1,7 +1,7 @@
 # tests/ — integration checks against a deployed forge
 
 Run on the RKE2 runner (or any RKE2 host) after `zarf package deploy`. Each check is a small script that exits non-zero
-on failure and prints one line per assertion. Planned (uds-way.md §11):
+on failure and prints one line per assertion. Planned (docs/design.md §11):
 
 | Gate | Check |
 |---|---|

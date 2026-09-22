@@ -20,6 +20,7 @@ permissions:
 jobs:
   vm:
     name: cf-runner-1 ${{ inputs.action }}
+    if: vars.CF_RIG == '1'   # needs the air-gapped rig (docs/ci.md)
     runs-on: ubuntu-latest
     steps:
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093  # v3

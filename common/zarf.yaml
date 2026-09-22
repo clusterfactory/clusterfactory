@@ -1,7 +1,7 @@
 # clusterfactory — flavor-agnostic package definition (ADR 0001).
 #
 # Imported by every flavor component in the root zarf.yaml. Charts deploy
-# in the listed order; that ordering is the sequencing mechanism (uds-way.md §3):
+# in the listed order; that ordering is the sequencing mechanism (docs/design.md §3):
 #
 #   1. cf-config    namespaces + PSA labels, NetworkPolicies, admin Secrets
 #   2. (reserved: database component, none shipped - ADR 0008)
@@ -151,7 +151,7 @@ components:
               ./zarf tools kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine --tail=200 || true
               ./zarf tools kubectl get job,pod -n clusterfactory -l app.kubernetes.io/name=cf-wire-engine || true
 
-    # Readiness gating (uds-way.md §3): kstatus-based healthChecks on the
+    # Readiness gating (docs/design.md §3): kstatus-based healthChecks on the
     # workloads; the wire Job is gated by the action above.
     healthChecks:
       - apiVersion: apps/v1

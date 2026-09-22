@@ -4,7 +4,6 @@ ignore: |
   charts/*/templates/
   templates/
   charts/*.tgz
-  docs/index.yaml
   *.bak
   .git/
 

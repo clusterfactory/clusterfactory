@@ -6,7 +6,7 @@
 ## Context
 
 The demo needs an in-cluster Docker registry that Jenkins/Kaniko can push
-to and that the pipeline pulls base images from. uds-way.md §6 proposed
+to and that the pipeline pulls base images from. docs/design.md §6 proposed
 Sonatype's `nxrm-ha` chart, single replica, Community Edition, backed by
 an external Postgres, with "raw manifests + embedded H2" as the fallback.
 

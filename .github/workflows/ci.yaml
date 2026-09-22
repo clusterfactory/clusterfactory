@@ -1,6 +1,6 @@
 name: CI
 
-# uds-way.md §11 gates, in order; every gate must pass. Everything that needs
+# docs/design.md §11 gates, in order; every gate must pass. Everything that needs
 # a cluster runs on the self-hosted RKE2 runner (Rocky 9, SELinux enforcing,
 # ADR 0014): there is no kind, nothing runs on a laptop.
 #   1. lint      zarf dev lint, helm lint on helper charts, yamllint, OSCAL schema  (hosted)
@@ -100,7 +100,7 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "oscal-component.yaml not present yet (uds-way.md §13 step 9) - skipping"
+            echo "oscal-component.yaml not present yet (docs/design.md §13 step 9) - skipping"
           fi
 
       - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
@@ -218,7 +218,8 @@ jobs:
     # and drives the VM over the IAP tunnel (no public IP, no SSH exposure).
     runs-on: ubuntu-latest
     needs: [create]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Needs the air-gapped rig (docs/ci.md); skipped unless the repo variable CF_RIG is 1.
+    if: vars.CF_RIG == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     timeout-minutes: 60
     concurrency:
       group: cf-runner-1
@@ -335,7 +336,8 @@ jobs:
     name: preflight refuses a broken cluster (RKE2 with flannel, no StorageClass)
     runs-on: ubuntu-latest
     needs: [rke2]
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Needs the air-gapped rig (docs/ci.md); skipped unless the repo variable CF_RIG is 1.
+    if: vars.CF_RIG == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     timeout-minutes: 30
     concurrency:
       group: cf-runner-1
@@ -363,7 +365,7 @@ jobs:
           zarf package create preflight -f upstream --confirm --no-color --skip-sbom -o build
           mkdir -p run
           cp build/zarf-package-clusterfactory-preflight-*.tar.zst run/
-          cp hack/airgap-install.sh hack/airgap-pull.sh tests/preflight-negative.sh run/
+          cp hack/airgap-install.sh tests/preflight-negative.sh run/
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
           gcloud compute scp --recurse run "$VM:/tmp/cf-run" --zone "$ZONE" --tunnel-through-iap --quiet
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo bash -s" <<'EOS'
@@ -376,7 +378,7 @@ jobs:
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
           A=/root/artifacts
-          \$A/run/airgap-pull.sh "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }}
+          mkdir -p \$A/platform && gcloud storage rsync "$BUCKET/platform/${{ env.RKE2_VERSION }}" \$A/platform/${{ env.RKE2_VERSION }} >/dev/null 2>&1
           # flannel -> no NetworkPolicy enforcement. local-path must exist for zarf init's PVC;
           # the default-class annotation is removed afterwards so the preflight sees no default.
           CNI=flannel ARTIFACT_DIR=\$A/platform/${{ env.RKE2_VERSION }} \$A/run/airgap-install.sh up

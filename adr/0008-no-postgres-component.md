@@ -5,7 +5,7 @@
 
 ## Context
 
-uds-way.md §6 asked for a Postgres chart choice (CloudNativePG, Zalando
+docs/design.md §6 asked for a Postgres chart choice (CloudNativePG, Zalando
 operator or Bitnami) because the `nxrm-ha` chart requires an external
 database. ADR 0007 replaces `nxrm-ha` with Nexus CE on its embedded H2
 store, and Gitea runs on SQLite. No component in the package needs

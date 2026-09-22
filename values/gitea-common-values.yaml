@@ -52,7 +52,7 @@ gitea:
       DISABLE_REGISTRATION: true
       REQUIRE_SIGNIN_VIEW: false
 
-# Rootless image (uds-way.md §3) — PSA restricted.
+# Rootless image (docs/design.md §3) — PSA restricted.
 podSecurityContext:
   fsGroup: 1000
   runAsNonRoot: true

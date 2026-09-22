@@ -1,4 +1,10 @@
-# Refactor: clusterfactory → UDS-style Zarf packages (upstream flavor)
+# Design: clusterfactory as a UDS-style Zarf package
+
+> The design document the v0.4 rewrite was built from (originally `uds-way.md`).
+> Kept as the rationale behind the layout; where it and an ADR disagree, the
+> ADR wins ([`adr/`](../adr/README.md)). The migration it planned is complete
+> (see [`CHANGELOG.md`](../CHANGELOG.md) 0.4.0); what is still ahead is in
+> [`roadmap.md`](roadmap.md).
 
 Audience: Claude Code, working in the `clusterfactory/clusterfactory` repo.
 Read this whole file before touching anything. Every section marked
@@ -376,51 +382,12 @@ Also OPEN: task runner. UDS repos use `tasks.yaml` + `uds run` (maru).
 That's a good fit if we go **B**; if we stay **A**, a plain `Makefile` is
 fewer dependencies. Decide together with ADR 0012.
 
-## 13. Migration steps (DECIDED order; each step is a PR that passes CI)
+## 13. Migration steps
 
-0. Add `adr/` with ADRs 0001–0006 and 0009–0011 written up front from this
-   doc. Add `renovate.json`. Add the lint gate (§11.1).
-1. Create the new layout skeleton: `common/zarf.yaml`, root `zarf.yaml`
-   with the single `upstream` flavor component importing `common/`,
-   `values/common-values.yaml`, `values/upstream-values.yaml`,
-   `charts/config`, `charts/settings` (empty templates), `bundle/`,
-   `tests/`. Wire the create gate (§11.2). Package must build even if it
-   deploys nothing useful yet.
-2. Move Gitea and Jenkins to upstream charts referenced from
-   `common/zarf.yaml`. Delete the umbrella chart and both `Dockerfile.wire`
-   files. Add `securityContext` to every values file so pods admit under
-   PSA `restricted`. Add the egress-blocked deploy gate (§11.3) — from
-   here on every PR must pass it.
-3. `charts/config`: namespaces + PSA labels, deny-all-egress
-   `NetworkPolicy`, admin Secrets. Disable update checkers/telemetry in
-   Gitea and Jenkins values.
-4. Jenkins plugin volume (§5). Gate: Jenkins Ready with all plugins loaded
-   in the airgapped cluster.
-5. Wire engine (§4): `wire-engine/` image + `charts/settings` Job + RBAC,
-   steps 1–4 only (Gitea + Jenkins), fully idempotent. `healthChecks` +
-   `wait: condition: complete` + `onFailure` log dump in `common/zarf.yaml`.
-   Remove all structural-SHA code. Gate: wire Job Complete; second deploy
-   yields only `ok`/`skipped`.
-6. **Spike (§6):** `nxrm-ha` CE single replica + chosen Postgres chart on
-   the egress-blocked cluster. Write ADRs 0007/0008 with the result. If the
-   spike fails, take the fallback and say so in the ADR.
-7. Add Postgres and Nexus components per the spike. Extend `charts/config`
-   with their Secrets and `NetworkPolicy` entries. Disable Nexus outreach/
-   telemetry.
-8. Wire engine steps 5–7 (Nexus repo, credential, base-image pre-seed).
-   Add Kaniko executor + demo base image to `images:`. `cf-build`
-   namespace, exemption doc, `NetworkPolicy`. Update the demo Jenkinsfile
-   to build with Kaniko and push to Nexus. Add the functional gate (§11.4).
-9. Signing + SBOM publishing + CVE scan in CI (§8). `oscal-component.yaml`.
-   Add the upgrade gate (§11.5).
-10. `rke2/` bundle and the VM-based RKE2 gate (§11.6).
-11. Docs: README (install flow, port-forward access, what's in the
-    package), SECURITY.md (threat model, what is and isn't enforced, the
-    Kaniko exemption), CONTRIBUTING.md (how to add a flavor, how to add a
-    wiring step), PREREQUISITES.md. Delete `refactor-to-zarf.md` and
-    `DEPLOYMENT_MODES_IMPLEMENTATION.md` once their content lives in ADRs.
-12. Tag a release; attach `.tar.zst`, `cosign.pub`, SBOMs. Optionally
-    `zarf package publish oci://ghcr.io/clusterfactory/clusterfactory`.
+Done. Steps 0–9 (layout, upstream charts, config chart, plugins, wire engine,
+Nexus, Kaniko, hardening/signing) and 10 (RKE2 as a custom init package that
+carries the forge, ADR 0015) are on `main`; the record is the ADRs and the
+0.4.0 changelog entry. Remaining work: [`roadmap.md`](roadmap.md).
 
 ## 14. Remaining risks
 

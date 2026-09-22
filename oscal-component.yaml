@@ -1,4 +1,4 @@
-# Minimal OSCAL component definition (uds-way.md §8): only controls this
+# Minimal OSCAL component definition (docs/design.md §8): only controls this
 # package actually enforces, mapped to NIST SP 800-53 rev5. Validated in CI
 # against the OSCAL component-definition JSON schema. Keep it small and true.
 component-definition:

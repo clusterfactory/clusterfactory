@@ -1,6 +1,6 @@
 # 0013 — Argo CD as an optional component
 
-**Status:** Proposed (implementation scheduled after Nexus, uds-way.md §13 step 8)
+**Status:** Proposed (implementation scheduled after Nexus, docs/roadmap.md)
 **Date:** 2026-09-18
 
 ## Context

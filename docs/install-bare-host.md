@@ -71,8 +71,8 @@ gcloud compute instances create cf-host --zone europe-west1-b \
 gcloud compute scp --tunnel-through-iap zarf cosign.pub clusterfactory-0.4.0-rc.2-SHA256SUMS cf-host:/tmp/ --zone europe-west1-b
 ```
 
-Any other VM (AWS EL9 was the first real one, see `docs/handover-2026-09-20.md`)
-works the same; only the transfer differs.
+Any other VM (an AWS EL9 jumpbox was the first real one) works the same;
+only the transfer differs.
 
 ## 3. Transfer
 

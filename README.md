@@ -169,9 +169,10 @@ Inspect the wiring: `kubectl logs -n clusterfactory -l app.kubernetes.io/name=cf
 
 ### Run the gate yourself
 
-The gates run only on the RKE2 runner; there is no laptop path. On any RKE2
-host with the package deployed, `hack/vm-demo.sh` triggers the demo pipeline
-and checks Nexus, and `tests/deploy-check.sh` runs the full gate.
+There is no laptop path; the gates run on a real host. On any host with the
+package deployed, `tests/deploy-check.sh clusterfactory` runs the full gate
+(including a Kaniko build pushed to Nexus). How CI does it, and how to bring
+the air-gapped rig back, is in [`docs/ci.md`](docs/ci.md).
 
 ## Repo layout
 
@@ -184,9 +185,12 @@ charts/settings        AFTER the apps: the wire-engine Job, RBAC, demo Jenkinsfi
 values/                <app>-common-values.yaml (behaviour) / <app>-upstream-values.yaml (images)
 wire-engine/           wire.py + Dockerfile (stdlib only)
 jenkins/               plugins.txt → plugins.lock → data-only plugins image
-tests/                 the gate scripts (run on the RKE2 runner)
+rke2/                  the init package: RKE2 + Zarf + (imported) the forge - the all-in-one
+preflight/             the executable contract; PREREQUISITES.md is generated from it
+tests/                 the gate scripts (run on a real host, never a laptop)
+hack/                  build, pin, stage and install helpers
 adr/                   why things are the way they are
-docs/exemptions/       every deviation from PSA restricted
+docs/                  install runbook, CI, lessons, roadmap, design; exemptions/ = PSA deviations
 ```
 
 **Flavor = image provenance only** (ADR 0003). Behaviour, charts, ordering and
@@ -208,18 +212,18 @@ This is meant to be forked. The seams are deliberate:
 - **Your own policy** — `charts/config` is where namespaces, NetworkPolicies and
   Secrets live; extend it rather than the app charts.
 - **Per-app packages / a UDS bundle** — each app block is self-contained so it
-  can be lifted into its own package later (ADR 0012, still open).
+  can be lifted into its own package (we chose not to, ADR 0012).
 
 If you build something on top, an ADR in your fork explaining what you changed
 and why is the whole point.
 
 ## Status
 
-Steps 0–9 of the migration plan ([`uds-way.md`](uds-way.md) §13) are done and
-CI-green: the package is signed, every image's SBOM is CVE-gated, upgrades are
-tested N-1→N. Remaining: Argo CD optional component
-([ADR 0013](adr/0013-argocd-optional-component.md)), the `rke2/` platform bundle,
-and a first tagged release.
+v0.4: the all-in-one init package and the forge package are built, signed and
+gated on every change; the first release carrying both is `v0.4.0`. What is
+ahead — policy profiles, Ubuntu flavor, Ingress, Argo CD — is in
+[`docs/roadmap.md`](docs/roadmap.md); what already bit us is in
+[`docs/lessons.md`](docs/lessons.md).
 
 ## License
 

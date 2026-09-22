@@ -35,7 +35,7 @@ jobs:
   rke2:
     name: release on the air-gapped RKE2 host
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: vars.CF_RIG == '1'   # needs the air-gapped rig (docs/ci.md)
     timeout-minutes: 60
     concurrency:
       group: cf-runner-1

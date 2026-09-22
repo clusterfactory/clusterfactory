@@ -37,7 +37,7 @@ values/common-values.yaml, values/<flavor>-values.yaml
 
 UDS Core, Istio, the UDS Operator, `Package` CRs and `Exemption` CRs are
 **not** dependencies. Where the UDS pattern is a poor fit for a lightweight
-Gitea + Jenkins + Nexus forge, the design doc (`uds-way.md`) says so and
+Gitea + Jenkins + Nexus forge, the design doc (`docs/design.md`) says so and
 what we do instead.
 
 ## Consequences

@@ -1,6 +1,6 @@
 name: Release
 
-# uds-way.md §13 step 12 / §8: on a version tag, build the signed packages on a
+# docs/design.md §8: on a version tag, build the signed packages on a
 # connected runner and attach them, the public key, the SBOMs and checksums to
 # a GitHub release: the all-in-one init package (bare host -> RKE2 + Zarf + the
 # forge with one `zarf init`) and the forge-only package (your own cluster, and
