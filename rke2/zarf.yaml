@@ -1,8 +1,11 @@
-# clusterfactory custom Zarf init package (ADR 0015): RKE2 in the slot where
-# upstream puts k3s, followed by the upstream init components. Built on a
-# connected host (`make init-package`), deployed on the offline host with
-# `zarf init --confirm` - nothing else is needed to get from bare OS to a
-# Kubernetes cluster with the Zarf registry and agent.
+# clusterfactory all-in-one init package (ADR 0015): one file, one command.
+#   zarf init --confirm --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true
+# on a bare Rocky/RHEL 9 host gives RKE2 (air-gapped), the Zarf registry and
+# agent, then the forge itself (the root package's components, same flavor).
+# RKE2 sits in the slot where upstream puts k3s. Built on a connected host
+# with `make init-package`; the forge-only package (root zarf.yaml) remains
+# the artifact for clusters you bring yourself, and the upgrade path over an
+# all-in-one install (Helm release names do not depend on the package).
 #
 # Platform invariants (ADR 0014): RKE2 pinned below, single node, Canal,
 # local-path, tarball image loading. Policy (CIS profile, PSA, audit) comes
@@ -10,8 +13,9 @@
 kind: ZarfInitConfig
 metadata:
   name: init
-  description: clusterfactory init - RKE2 (air-gapped) + Zarf registry/agent
+  description: "clusterfactory ###ZARF_PKG_TMPL_CF_VERSION### all-in-one: RKE2 (air-gapped) + Zarf registry/agent + Gitea/Jenkins/Nexus"
   # Must match the Zarf CLI version: `zarf init` looks for zarf-init-<arch>-<this>.tar.zst
+  # (the build renames the flavored output to that name)
   version: v0.75.0
   architecture: amd64
   url: https://github.com/clusterfactory/clusterfactory
@@ -141,3 +145,18 @@ components:
     required: true
     import:
       url: oci://ghcr.io/zarf-dev/packages/init:v0.75.0
+
+  # --- the forge: the root package's components, imported by name so the
+  # image pins, values and wiring have exactly one home (root zarf.yaml + common/).
+  - name: preflight
+    required: true
+    only:
+      flavor: upstream
+    import:
+      path: ../
+  - name: clusterfactory
+    required: true
+    only:
+      flavor: upstream
+    import:
+      path: ../

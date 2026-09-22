@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
-# Build the clusterfactory init package (rke2/zarf.yaml) on a CONNECTED host.
-# Resolves the checksums Zarf verifies at create time, produces the local-path
-# files, then `zarf package create`. Output: zarf-init-amd64-<zarf version>.tar.zst
+# Build the clusterfactory all-in-one init package (rke2/zarf.yaml) on a
+# CONNECTED host. Resolves the checksums Zarf verifies at create time, produces
+# the local-path files, then `zarf package create -f $FLAVOR`. The forge
+# components it imports need the locally built images, so run it through
+# `make init-package` (passes ZARF_EXTRA with their tags; needs docker).
+# Output: zarf-init-amd64-<zarf version>.tar.zst - the name `zarf init` looks for.
 #   hack/build-init-package.sh [output-dir]      (needs zarf, skopeo, curl, python3)
 set -euo pipefail
 OUT="${1:-build}"
+FLAVOR="${FLAVOR:-upstream}"
 RKE2_VERSION=$(grep -A1 'name: RKE2_VERSION' rke2/zarf.yaml | tail -1 | awk '{print $2}')
 ZARF_VERSION=$(awk '/^  version:/ {print $2; exit}' rke2/zarf.yaml)
+CF_VERSION=$(awk '/^  version:/ {print $2; exit}' zarf.yaml)
 LOCAL_PATH_VERSION="${LOCAL_PATH_VERSION:-v0.0.37}"
 U="https://github.com/rancher/rke2/releases/download/${RKE2_VERSION//+/%2B}"
 W=$(mktemp -d)
@@ -41,9 +46,15 @@ echo "== zarf package create"
 mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd)
 # zarf reads zarf-config.toml from the working directory: the upstream components' create-time templates
 cd rke2
-zarf package create . --confirm --no-color -o "$OUT" \
+# shellcheck disable=SC2086  # ZARF_EXTRA is a list of --set flags
+zarf package create . -f "$FLAVOR" --confirm --no-color -o "$OUT" \
+  --set CF_VERSION="$CF_VERSION" \
   --set SHA_RKE2_TARBALL="$S_TARBALL" --set SHA_RKE2_IMAGES_CORE="$S_CORE" --set SHA_RKE2_IMAGES_CANAL="$S_CANAL" \
   --set SHA_RKE2_SUMS="$S_SUMS" --set SHA_RKE2_SELINUX="$S_RKE2_SELINUX" --set SHA_CONTAINER_SELINUX="$S_CONTAINER_SELINUX" \
+  ${ZARF_EXTRA:-} \
   ${SIGNING_KEY:+--signing-key "$SIGNING_KEY" --signing-key-pass "$SIGNING_KEY_PASS"} 2>&1 | grep -E "ERR|WRN|writing package|creating"
 cd ..
+# Zarf appends the flavor to the file name; `zarf init` has no flavor flag and
+# looks for the canonical name, so the all-in-one is shipped under that name.
+mv "$OUT/zarf-init-amd64-${ZARF_VERSION}-${FLAVOR}.tar.zst" "$OUT/zarf-init-amd64-${ZARF_VERSION}.tar.zst"
 ls -lh "$OUT"/zarf-init-*.tar.zst

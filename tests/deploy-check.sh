@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gate 3 (uds-way.md §11): assert the package is healthy in an egress-blocked cluster.
+# Gate 3 (docs/design.md §11): assert the package is healthy in an egress-blocked cluster.
 #   - every pod in the package namespace is Ready
 #   - Gitea and Jenkins answer over their ClusterIP Services
 #   - egress to the internet from the package namespace is blocked

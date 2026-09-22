@@ -1,4 +1,4 @@
-# cf-config — deployed BEFORE the apps (uds-way.md §3, ADR 0001).
+# cf-config — deployed BEFORE the apps (docs/design.md §3, ADR 0001).
 # Owns: the application namespaces (with PSA labels), the NetworkPolicies
 # that enforce airgap, and the admin Secrets the apps consume.
 #

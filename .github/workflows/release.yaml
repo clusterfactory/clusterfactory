@@ -1,8 +1,10 @@
 name: Release
 
-# uds-way.md §13 step 12 / §8: on a version tag, build the signed package on a
-# connected runner and attach it, the public key, the SBOMs and checksums to
-# a GitHub release. Consumers verify with `zarf package deploy --key cosign.pub`.
+# docs/design.md §8: on a version tag, build the signed packages on a
+# connected runner and attach them, the public key, the SBOMs and checksums to
+# a GitHub release: the all-in-one init package (bare host -> RKE2 + Zarf + the
+# forge with one `zarf init`) and the forge-only package (your own cluster, and
+# the upgrade path). Consumers verify with `--key cosign.pub`.
 on:
   push:
     tags:
@@ -39,11 +41,12 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
 
-      - name: Install Zarf
+      - name: Install Zarf and skopeo
         run: |
           curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/${ZARF_VERSION}/zarf_${ZARF_VERSION}_Linux_amd64" -o /usr/local/bin/zarf
           chmod +x /usr/local/bin/zarf
           zarf version
+          sudo apt-get -qq update && sudo apt-get -qq install -y skopeo >/dev/null
 
       - name: Build and sign
         env:
@@ -54,10 +57,14 @@ jobs:
           (umask 077; printf '%s' "$COSIGN_PRIVATE_KEY" > "$RUNNER_TEMP/cosign.key")
           mkdir -p dist
           make package OUT=dist ZARF_CREATE_ARGS=--no-color SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD"
+          make init-package OUT=dist SIGNING_KEY="$RUNNER_TEMP/cosign.key" SIGNING_KEY_PASS="$COSIGN_PASSWORD"
           rm -f "$RUNNER_TEMP/cosign.key"
 
-      - name: Verify the signature with the published public key
-        run: zarf package inspect definition dist/zarf-package-clusterfactory-*.tar.zst --key cosign.pub --no-color > /dev/null
+      - name: Verify the signatures with the published public key
+        run: |
+          for p in dist/zarf-package-clusterfactory-*.tar.zst dist/zarf-init-amd64-*.tar.zst; do
+            zarf package inspect definition "$p" --key cosign.pub --no-color > /dev/null
+          done
 
       - name: Extract SBOMs and checksums
         run: |
@@ -73,16 +80,27 @@ jobs:
           {
             echo "## clusterfactory ${{ steps.version.outputs.version }}"
             echo
-            echo "Signed Zarf package (upstream flavor). Verify and deploy:"
+            echo "Two signed Zarf packages (upstream flavor), one public key, SBOMs and checksums."
+            echo
+            echo "**Bare host** (Rocky/RHEL 9, x86_64, SELinux fine, no internet needed): copy"
+            echo "\`zarf\` ${ZARF_VERSION}, \`zarf-init-amd64-${ZARF_VERSION}.tar.zst\` and \`cosign.pub\` to it and run, as root:"
             echo
             echo '```bash'
-            echo "sha256sum -c clusterfactory-${{ steps.version.outputs.version }}-SHA256SUMS"
+            echo "sha256sum -c clusterfactory-${{ steps.version.outputs.version }}-SHA256SUMS --ignore-missing"
+            echo "zarf init --confirm --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true"
+            echo '```'
+            echo
+            echo "That gives RKE2, the Zarf registry and the wired forge (Gitea, Jenkins, Nexus) in about 8 minutes."
+            echo
+            echo "**Your own cluster**, or **upgrading** an existing install:"
+            echo
+            echo '```bash'
             echo "zarf package deploy zarf-package-clusterfactory-amd64-*-upstream.tar.zst \\"
             echo "  --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true"
             echo '```'
             echo
-            echo "Assets: package, \`cosign.pub\`, per-image SBOMs (Syft JSON + HTML), SHA256SUMS."
-            echo "Images and charts are pinned in \`zarf.yaml\`; decisions in \`adr/\`."
+            echo "Prerequisites and the preflight contract: \`PREREQUISITES.md\`. Images and charts are pinned in"
+            echo "\`zarf.yaml\`; the platform in \`rke2/zarf.yaml\`; decisions in \`adr/\`."
           } > notes.md
 
       - name: Publish GitHub release

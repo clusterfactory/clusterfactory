@@ -1,15 +1,19 @@
 name: RKE2 gate
 
-# Nightly / manual: a release (or the latest CI artifact) on the air-gapped
-# RKE2 host cf-runner-1 - Rocky 9, SELinux enforcing, no internet route.
-# Artifacts go through the private GCS bucket; control goes through the IAP
+# Nightly / manual: the customer path, verbatim - the all-in-one init package
+# of a release (or of the last green run on main) on the air-gapped bare host
+# cf-runner-1 (Rocky 9, SELinux enforcing, no internet route):
+#   zarf init --confirm --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true
+# then the gate, then the forge-only package of the same build over it (the
+# documented upgrade path; must be idempotent) and the gate again.
+# Packages go through the private GCS bucket; control goes through the IAP
 # tunnel from this hosted job. Uninstalls RKE2 at the end unless keep_cluster.
 on:
   workflow_dispatch:
     inputs:
       package_source:
-        description: "release tag (e.g. v0.4.0-rc.1) or 'artifact' for the latest successful CI build on main"
-        default: v0.4.0-rc.1
+        description: "release tag (e.g. v0.4.0) or 'main' for the packages of the last green run on main"
+        default: main
       keep_cluster:
         description: leave RKE2 and the forge running after the gate (for manual inspection; next run cleans up)
         type: boolean
@@ -31,7 +35,7 @@ jobs:
   rke2:
     name: release on the air-gapped RKE2 host
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: vars.CF_RIG == '1'   # needs the air-gapped rig (docs/ci.md)
     timeout-minutes: 60
     concurrency:
       group: cf-runner-1
@@ -44,7 +48,7 @@ jobs:
       ZONE: europe-west1-b
       VM: cf-runner-1
       BUCKET: gs://cf-artifacts-${{ secrets.GCP_PROJECT_ID }}
-      SRC: ${{ inputs.package_source || 'v0.4.0-rc.1' }}
+      SRC: ${{ inputs.package_source || 'main' }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
       - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093  # v3
@@ -54,43 +58,43 @@ jobs:
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db  # v3.0.1
 
-      - name: Fetch the package (${{ inputs.package_source || 'v0.4.0-rc.1' }}) and stage it
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Stage the packages (${{ inputs.package_source || 'main' }}) and the gate scripts
         run: |
-          mkdir -p pkg && cd pkg
-          if [ "$SRC" = "artifact" ]; then
-            RUN=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yaml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-            gh run download "$RUN" --repo "$GITHUB_REPOSITORY" -n zarf-package-upstream && cp "$GITHUB_WORKSPACE/cosign.pub" .
+          D="$BUCKET/runs/${GITHUB_RUN_ID}"
+          if [ "$SRC" = "main" ]; then
+            gcloud storage cp "$BUCKET/forge/main/*" "$D/new/"
           else
+            mkdir -p pkg && cd pkg
             R="https://github.com/${GITHUB_REPOSITORY}/releases/download/${SRC}"; V="${SRC#v}"
+            curl -sSfLO "$R/zarf-init-amd64-${ZARF_VERSION}.tar.zst"
             curl -sSfLO "$R/zarf-package-clusterfactory-amd64-${V%%-rc.*}-upstream.tar.zst"
             curl -sSfLO "$R/cosign.pub"; curl -sSfLO "$R/clusterfactory-${V}-SHA256SUMS"
             sha256sum -c "clusterfactory-${V}-SHA256SUMS" --ignore-missing
+            cd .. && gcloud storage cp pkg/zarf-init-amd64-*.tar.zst pkg/zarf-package-clusterfactory-*.tar.zst pkg/cosign.pub "$D/new/"
           fi
-          cd ..
-          D="$BUCKET/runs/${GITHUB_RUN_ID}"
-          gcloud storage cp pkg/zarf-package-clusterfactory-*.tar.zst pkg/cosign.pub "$D/new/"
-          gcloud storage cp hack/airgap-install.sh tests/deploy-check.sh "$D/bin/"
-          gcloud storage cp jenkins/plugins.txt "$D/bin/plugins.txt"
+          mkdir -p run/bin && cp hack/airgap-install.sh tests/deploy-check.sh run/bin/ && cp jenkins/plugins.txt run/bin/plugins.txt
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "rm -rf /tmp/cf-run"
+          gcloud compute scp --recurse run "$VM:/tmp/cf-run" --zone "$ZONE" --tunnel-through-iap --quiet
+          gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo bash -s" <<'EOS'
+          rm -rf /root/artifacts/run && mkdir -p /root/artifacts
+          mv /tmp/cf-run /root/artifacts/run && chmod +x /root/artifacts/run/bin/*
+          EOS
 
-      - name: On the VM - RKE2 up (air-gapped), zarf init, deploy, gate, idempotent redeploy
+      - name: On the VM - zarf init (RKE2 + Zarf + forge), gate, forge-only package over it, gate
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet --command "sudo -E bash -s" <<EOS
           set -euo pipefail; export PATH=\$PATH:/usr/local/bin:/var/lib/rancher/rke2/bin  # sudo secure_path lacks both
-          A=/root/artifacts; rm -rf \$A; mkdir -p \$A/run
-          gcloud storage cp -r "$BUCKET/platform/${{ env.RKE2_VERSION }}/*" \$A/ >/dev/null 2>&1
-          gcloud storage cp -r "$BUCKET/runs/${GITHUB_RUN_ID}/*" \$A/run/ >/dev/null 2>&1
-          chmod +x \$A/run/bin/*.sh
-          ARTIFACT_DIR=\$A \$A/run/bin/airgap-install.sh up
-          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml PATH=\$PATH:/var/lib/rancher/rke2/bin:/usr/local/bin
-          cd \$A/run; mkdir -p ../gate/jenkins && cp bin/plugins.txt ../gate/jenkins/ && cp bin/*.sh ../gate/
-          dep() {
-            zarf package deploy new/zarf-package-clusterfactory-*.tar.zst --key new/cosign.pub --confirm --no-color \
-              --timeout 15m --set NEXUS_ACCEPT_CE_EULA=true 2>&1 | grep -E "ERR|Verified|wire engine"
-          }
-          dep; ../gate/deploy-check.sh clusterfactory
-          dep; EXPECT_IDEMPOTENT=1 ../gate/deploy-check.sh clusterfactory
+          A=/root/artifacts/run; mkdir -p \$A/new
+          gcloud storage cp "$BUCKET/runs/${GITHUB_RUN_ID}/new/*" \$A/new/ >/dev/null 2>&1
+          \$A/bin/airgap-install.sh down
+          cd \$A; mkdir -p ../gate/jenkins && cp bin/plugins.txt ../gate/jenkins/ && cp bin/*.sh ../gate/
+          export KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+          (cd new && timeout 2400 zarf init --confirm --no-color --key cosign.pub --set NEXUS_ACCEPT_CE_EULA=true 2>&1 \
+            | grep -E "ERR|Verified|preflight ok|rke2 ready|init complete|wire engine")
+          ../gate/deploy-check.sh clusterfactory
+          zarf package deploy new/zarf-package-clusterfactory-*.tar.zst --confirm --no-color --timeout 15m \
+            --key new/cosign.pub --set NEXUS_ACCEPT_CE_EULA=true 2>&1 | grep -E "ERR|Verified|wire engine"
+          EXPECT_IDEMPOTENT=1 ../gate/deploy-check.sh clusterfactory
           EOS
 
       - name: Diagnostics on failure
@@ -106,5 +110,5 @@ jobs:
         if: always() && inputs.keep_cluster != true
         run: |
           gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --quiet \
-            --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts /root/gate" || true
+            --command "sudo bash /root/artifacts/run/bin/airgap-install.sh down; sudo rm -rf /root/artifacts/run /root/gate" || true
           gcloud storage rm -r "$BUCKET/runs/${GITHUB_RUN_ID}" || true

@@ -5,34 +5,69 @@ All notable changes to clusterfactory are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning: [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [0.4.0] - unreleased (rc.1 2026-09-20)
 
-### Changed — UDS-style Zarf package (uds-way.md steps 0–8)
-- Repo restructured after the UDS package anatomy: root `zarf.yaml` with a
-  single `upstream` flavor importing `common/zarf.yaml`; `charts/config`
-  (namespaces, PSA, NetworkPolicies, Secrets) before the apps, `charts/settings`
-  (wire-engine Job) after them.
-- Gitea and Jenkins deployed from unmodified upstream charts; umbrella chart,
-  custom Jenkins image and both wire Dockerfiles removed.
-- Nexus Repository CE added (embedded H2, own helper chart); no Postgres
-  component (ADRs 0007/0008).
-- Jenkins plugins resolved on the connected side into a data-only image;
-  update centre disabled (ADR 0006).
-- Wire engine rewritten as a stdlib-only in-cluster Job: Gitea org/repo/token,
-  Jenkins credentials/job, Nexus setup, Kaniko docker config, base image copied
-  from the Zarf registry into Nexus. Idempotent; structural SHA dropped (ADR 0004).
-- Kaniko pod-agent builds in `cf-build` at PSA baseline with a declared exemption.
-- CI: lint → create (SBOM + grype) → airgapped deploy on kind + Calico with the
-  full functional gate, including an idempotent redeploy.
-- ADRs 0001–0011, 0013 and `renovate.json` added; Dependabot config removed.
-- Step 10a: `preflight` component (executable contract, PREREQUISITES.md
-  generated); CI moved entirely to an air-gapped RKE2 host on GCP fed from a
-  private bucket (`hack/airgap-fetch.sh`, `hack/airgap-install.sh`); kind and
-  laptop paths removed.
-- Step 9: upstream bumps (Gitea chart 12.7.0 / 1.27.0, Jenkins chart 5.9.63 /
-  2.568.3, inbound-agent, k8s-sidecar 2.9.0, alpine 3.22.2); `.grype.yaml`
-  CVE policy blocking on every image; cosign signing in `make package`, CI and
-  the new Zarf release workflow; `oscal-component.yaml`; N-1→N upgrade gate.
+clusterfactory is no longer a Helm chart. It is a signed Zarf package
+(`zarf-package-clusterfactory-amd64-0.4.0-upstream.tar.zst`) and an all-in-one
+Zarf init package (`zarf-init-amd64-v0.75.0.tar.zst`) that takes a bare
+Rocky/RHEL 9 host to RKE2 + a wired Gitea/Jenkins/Nexus forge with one
+`zarf init`, with no internet at any point. Read `README.md` first; the
+reasoning is in `adr/` (0001–0016), the rationale document in `docs/design.md`.
+
+### Added
+- Root `zarf.yaml` (variables, `upstream` flavor, pinned images) importing
+  `common/zarf.yaml` (charts in deploy order, health checks, wire-Job gating).
+- `charts/config` (namespaces, PSA labels, deny-all-egress NetworkPolicies
+  with the API server resolved at deploy time, admin Secrets) before the apps;
+  `charts/settings` (the wire-engine Job, RBAC, demo pipeline) after them.
+- Nexus Repository CE 3.96 on embedded H2, own helper chart `charts/nexus`
+  (ADR 0007); no Postgres (ADR 0008).
+- Jenkins plugin closure resolved on the connected side (`jenkins/plugins.txt`
+  → `plugins.lock`) into a data-only image (ADR 0006); update centre off.
+- Wire engine: stdlib-only `wire-engine/wire.py` Job, 18 idempotent
+  check-then-act steps across Gitea, Jenkins and Nexus; a redeploy on a
+  converged cluster prints only `ok` (ADR 0002, 0004).
+- In-cluster image builds with Kaniko pod agents in `cf-build` (PSA baseline,
+  one declared exemption, ADR 0009); demo pipeline builds from the
+  Nexus-hosted base image and pushes back to Nexus.
+- `preflight` component: executable contract (NetworkPolicy enforcement,
+  default StorageClass binds, PSA, DNS, Zarf registry, API endpoint) that
+  refuses the deploy; `PREREQUISITES.md` generated from it (ADR 0014).
+- `rke2/`: custom Zarf init package — RKE2 v1.36.4+rke2r1 from tarballs,
+  SELinux policy RPMs, local-path StorageClass, Canal, host preflight — that
+  also carries the forge components (ADR 0015, 0012). `make init-package`.
+- Supply chain: cosign signing of both packages (`cosign.pub` in the repo and
+  every release), per-image SBOMs, CVE gate (`.grype.yaml`: KEV blocks
+  anywhere, critical-with-fix blocks on images built here),
+  `oscal-component.yaml` validated in CI, Renovate.
+- CI on a physically air-gapped Rocky 9 / SELinux host (no internet route;
+  packages through a private bucket, control through an IAP tunnel): install
+  from the all-in-one, gate with a real Kaniko build, upgrade N-1→N, idempotent
+  redeploy, and a negative test the preflight must refuse. Gated on the repo
+  variable `CF_RIG`; hosted lint/create jobs need nothing (`docs/ci.md`).
+- Release workflow: tag `v*` → both packages built, signed, verified and
+  attached with SBOMs and checksums; nightly gate installs the release as a
+  customer would. Docs: `docs/install-bare-host.md`, `docs/lessons.md`,
+  `docs/roadmap.md`.
+
+### Changed
+- Gitea 1.27.3 (chart 12.7.0, `strategy: Recreate`), Jenkins 2.568.3 (chart
+  5.9.63), inbound-agent 3385, k8s-sidecar 2.9.0, Kaniko 1.24.0-debug,
+  alpine 3.22.2 — all upstream, pinned by linux/amd64 manifest digest.
+- Access is cluster-internal plain HTTP via port-forward for now (ADR 0010);
+  Ingress and TLS are roadmap items.
+
+### Removed
+- The umbrella Helm chart, the Helm repository on GitHub Pages
+  (`docs/*.tgz`, `index.yaml`), the custom Jenkins image, the bash and
+  Python "factory engine" wiring, Gitea act_runner, the three deployment
+  modes, Dependabot, all kind/laptop test paths, and `docs/archive/`.
+  Every decision they embodied is either an ADR or gone on purpose.
+
+### Breaking changes
+- There is no Helm install path anymore. Migrate by deploying the Zarf
+  package into a fresh cluster (or a fresh host with the all-in-one); no
+  data migration from the 0.2.x chart is provided.
 
 ## [0.2.0] - 2026-04-05
 

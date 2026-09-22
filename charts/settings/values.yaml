@@ -1,4 +1,4 @@
-# cf-settings — deployed AFTER the apps (uds-way.md §4, ADR 0002). Its only
+# cf-settings — deployed AFTER the apps (docs/design.md §4, ADR 0002). Its only
 # job is to template the wire-engine Job and its RBAC. Package-level
 # overrides live in values/common-values.yaml (flavor-agnostic) and
 # values/<flavor>-values.yaml (image only).
