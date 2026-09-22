@@ -14,21 +14,41 @@ same one on every change (`.github/workflows/ci.yaml`, job `rke2`).
 The Zarf CLI comes from Zarf's releases; its version is in the init file name:
 `https://github.com/zarf-dev/zarf/releases/download/<zarf>/zarf_<zarf>_Linux_amd64`.
 
-Fetch on a connected machine:
+Fetch on a connected machine — literally, for the current release
+`v0.4.0-rc.2` (the first one that carries the all-in-one file; `v0.4.0-rc.1`
+and older have only the forge-only package):
 
 ```bash
-V=0.4.0; Z=v0.75.0
-R=https://github.com/clusterfactory/clusterfactory/releases/download/v$V
-mkdir clusterfactory-$V && cd clusterfactory-$V
-curl -sSfLO "$R/zarf-init-amd64-$Z.tar.zst"
-curl -sSfLO "$R/cosign.pub"
-curl -sSfLO "$R/clusterfactory-$V-SHA256SUMS"
-curl -sSfL "https://github.com/zarf-dev/zarf/releases/download/$Z/zarf_${Z}_Linux_amd64" -o zarf
-sha256sum -c "clusterfactory-$V-SHA256SUMS" --ignore-missing
+mkdir clusterfactory-0.4.0-rc.2 && cd clusterfactory-0.4.0-rc.2
+curl -sSfLO https://github.com/clusterfactory/clusterfactory/releases/download/v0.4.0-rc.2/zarf-init-amd64-v0.75.0.tar.zst
+curl -sSfLO https://github.com/clusterfactory/clusterfactory/releases/download/v0.4.0-rc.2/cosign.pub
+curl -sSfLO https://github.com/clusterfactory/clusterfactory/releases/download/v0.4.0-rc.2/clusterfactory-0.4.0-rc.2-SHA256SUMS
+curl -sSfL  https://github.com/zarf-dev/zarf/releases/download/v0.75.0/zarf_v0.75.0_Linux_amd64 -o zarf
+sha256sum -c clusterfactory-0.4.0-rc.2-SHA256SUMS --ignore-missing
 ```
 
-For a CI artifact instead: `gh run download <run-id> -n zarf-init-upstream`
-and take `cosign.pub` from the repo at that commit.
+Expected:
+
+```
+zarf-init-amd64-v0.75.0.tar.zst: OK
+cosign.pub: OK
+```
+
+(`zarf` itself is not in our SHA256SUMS; Zarf publishes its own checksums at
+`https://github.com/zarf-dev/zarf/releases/download/v0.75.0/checksums.txt`.)
+
+You end up with four files, about 2.3 GB:
+
+```
+clusterfactory-0.4.0-rc.2/
+├── zarf                              188 MB   the CLI, v0.75.0
+├── zarf-init-amd64-v0.75.0.tar.zst   2.1 GB   RKE2 + Zarf + the forge, signed
+├── cosign.pub                        178 B    the project's public key
+└── clusterfactory-0.4.0-rc.2-SHA256SUMS
+```
+
+For an unreleased commit instead: `gh run download <run-id> -n zarf-init-upstream`
+(Actions → the run → Artifacts) and take `cosign.pub` from the repo at that commit.
 
 ## 2. The VM
 
@@ -48,7 +68,7 @@ gcloud compute instances create cf-host --zone europe-west1-b \
   --machine-type n2-custom-16-32768 --image-family rocky-linux-9 --image-project rocky-linux-cloud \
   --boot-disk-size 80GB --no-address --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring
 # copy files through the IAP tunnel (small ones only; the 2 GB file goes via a bucket or a disk image):
-gcloud compute scp --tunnel-through-iap zarf cosign.pub clusterfactory-0.4.0-SHA256SUMS cf-host:/tmp/ --zone europe-west1-b
+gcloud compute scp --tunnel-through-iap zarf cosign.pub clusterfactory-0.4.0-rc.2-SHA256SUMS cf-host:/tmp/ --zone europe-west1-b
 ```
 
 Any other VM (AWS EL9 was the first real one, see `docs/handover-2026-09-20.md`)
@@ -56,7 +76,7 @@ works the same; only the transfer differs.
 
 ## 3. Transfer
 
-Put the four files in one directory on the host, e.g. `/root/clusterfactory-0.4.0/`:
+Put the four files in one directory on the host, e.g. `/root/clusterfactory-0.4.0-rc.2/`:
 USB, `scp` through a jump host, a bucket the VM can reach privately — whatever
 the gap allows. Re-verify after the transfer: `sha256sum -c … --ignore-missing`.
 
@@ -65,7 +85,7 @@ the gap allows. Re-verify after the transfer: `sha256sum -c … --ignore-missing
 As root, on the host:
 
 ```bash
-cd /root/clusterfactory-0.4.0
+cd /root/clusterfactory-0.4.0-rc.2
 install -m 755 zarf /usr/local/bin/zarf
 export PATH=$PATH:/usr/local/bin          # sudo's secure_path lacks /usr/local/bin on EL9
 zarf init --confirm --key cosign.pub \
@@ -102,7 +122,9 @@ Deploy the forge-only package of the newer release over it; the all-in-one is
 not re-run (its host preflight refuses a host that already has RKE2):
 
 ```bash
-zarf package deploy zarf-package-clusterfactory-amd64-<newer>-upstream.tar.zst \
+curl -sSfLO https://github.com/clusterfactory/clusterfactory/releases/download/v0.4.0/zarf-package-clusterfactory-amd64-0.4.0-upstream.tar.zst
+# … carry it across …
+zarf package deploy zarf-package-clusterfactory-amd64-0.4.0-upstream.tar.zst \
   --key cosign.pub --confirm --set NEXUS_ACCEPT_CE_EULA=true
 ```
 
