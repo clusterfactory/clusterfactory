@@ -169,10 +169,10 @@ runbook and as the oracle the init package is compared against.
 |---|---|---|
 | 10a | **Preflight component** in `common/zarf.yaml` (contract + advisory checks, `PREFLIGHT_STRICT`), `PREREQUISITES.md` generated from the check table | RKE2: preflight passes; RKE2 with flannel + no StorageClass is refused |
 | 10b | **Policy profiles** `policy/baseline`, `policy/cis`: denies move out of `charts/config`; `profile.yaml` read by preflight | CI deploys `baseline` before the forge; egress test unchanged |
-| 10c | **Custom init package** `rke2/zarf.yaml` — **done** (RPM flavor; deb flavor, registry-on-PVC override and Traefik `Ingress` by hostname still open) | done by hand on the air-gapped host; CI uses it next |
+| 10c | **Custom init package** `rke2/zarf.yaml` — **done**, and since 2026-09-21 it is the **all-in-one** (imports the forge components; `zarf init` = whole product). Still open: deb flavor, registry-on-PVC override, Traefik `Ingress` by hostname | CI installs from it on the air-gapped host on every change |
 | 10d | Tier-2 self-hosted Rocky VM gate (SELinux enforcing, snapshot-revert), weekly + pre-release | needs a runner from you |
 | 11 | Docs pass: README usage for the three-package flow, SECURITY (policy layer), CONTRIBUTING, runbook | — |
-| 12 | **Deliverable tar** (Zarf binary, init package, forge, profiles, `cosign.pub`, signed `SHA256SUMS`, install script, runbook) built by the release workflow; tag `v0.4.0` | release workflow green; nightly gate installs from the tar |
+| 12 | **Release** = all-in-one init package + forge-only package + `cosign.pub` + SBOMs + `SHA256SUMS`, built and signed by `release.yaml` (done 2026-09-21; the "deliverable tar" collapsed into the all-in-one file); tag `v0.4.0` | release workflow green; nightly gate (`rke2-gate.yaml`) installs the release exactly as a customer would |
 | 8b | Argo CD optional component (ADR 0013) - after 10a–10c, it is independent | functional gate extended |
 | v0.5 | TLS via policy profile; etcd snapshot + PV backup procedure; system-upgrade-controller for factory-built clusters | |
 

@@ -77,3 +77,26 @@ directory must be labelled `container_file_t`.
   (ADR 0014); it cannot be tested on kind.
 - Zarf version, RKE2 version and the init package version are pinned
   together; Renovate bumps them one at a time.
+
+## Amendment 2026-09-21: the init package carries the forge
+
+The init package imports the root package's `preflight` and `clusterfactory`
+components after `zarf-agent` (same flavor; one home for pins and values). One
+file, one command: `zarf init --confirm --key cosign.pub` on a bare host gives
+RKE2, the Zarf registry and the wired forge. Zarf names a flavored init package
+`zarf-init-<arch>-<version>-<flavor>.tar.zst` and `zarf init` has no flavor
+flag, so the build renames it to the canonical name.
+
+The forge-only package stays: it is the artifact for clusters the customer
+brings, and the upgrade path for everyone — Helm release names are the chart
+names, not derived from the package, so the forge package upgrades releases
+the all-in-one created. A second `zarf init` is refused by the host preflight
+("RKE2 already running") on purpose; RKE2 upgrades are a separate, manual
+procedure (ADR 0014 Q9).
+
+Versions are coupled in the all-in-one (RKE2, Zarf, forge): every forge change
+ships a new 2 GB file. Accepted — the alternative (customer assembles two files)
+is exactly what the single-file story removes. CI installs from the all-in-one
+of the previous `main` build and upgrades with the forge package under test, so
+both paths are exercised on every change; the nightly gate runs the release
+exactly as a customer would.
